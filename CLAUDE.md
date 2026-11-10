@@ -3,6 +3,7 @@
 Debian 13 / Ubuntu için açık kaynak sunucu ve hosting yönetim paneli. Rust arka uç (tek statik ikili dosya, arayüz içine gömülü) + React arayüz.
 
 İlerleme ve yol haritası: `docs/DURUM.md` (her anlamlı adımdan sonra güncellenir).
+Sıradaki işler ve alt ajanlara devir kuralları: `docs/YOL-HARITASI.md`.
 Açık kaynak panellerden çıkarılan somut notlar: `docs/arastirma-notlari.md`.
 
 ## Dil kuralları
