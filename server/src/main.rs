@@ -2,6 +2,7 @@
 
 mod api;
 mod auth;
+mod backup;
 mod components;
 mod config;
 mod db;
@@ -131,6 +132,7 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     deploy::mark_interrupted(&state.db).map_err(|err| anyhow::anyhow!(err.to_string()))?;
     tasks::spawn_certificate_renewal(state.clone());
     tasks::spawn_db_tool_cleanup(state.clone());
+    tasks::spawn_backup_scheduler(state.clone());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");

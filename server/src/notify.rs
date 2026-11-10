@@ -22,6 +22,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("deploy_success", "Yayınlama başarıyla bittiğinde"),
     ("ssl_failed", "SSL sertifikası yenilenemediğinde"),
     ("login_new_ip", "Hesabınıza yeni bir adresten giriş yapıldığında"),
+    ("backup_failed", "Yedekleme başarısız olduğunda"),
 ];
 
 const SMTP_KEY: &str = "smtp";

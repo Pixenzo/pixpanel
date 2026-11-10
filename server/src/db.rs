@@ -273,6 +273,43 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN recovery_codes TEXT NOT NULL DEFAULT '[]';
     "#,
+    // 12: yedekleme hedefleri ve planları
+    r#"
+    CREATE TABLE backup_targets (
+        id               INTEGER PRIMARY KEY,
+        name             TEXT NOT NULL UNIQUE,
+        kind             TEXT NOT NULL CHECK (kind IN ('local', 'sftp', 's3')),
+        config           TEXT NOT NULL,
+        secret           TEXT NOT NULL DEFAULT '',
+        password         TEXT NOT NULL,
+        public_key       TEXT NOT NULL DEFAULT '',
+        last_check_at    INTEGER,
+        last_check_ok    INTEGER NOT NULL DEFAULT 0,
+        last_check_error TEXT NOT NULL DEFAULT '',
+        created_at       INTEGER NOT NULL
+    );
+    CREATE TABLE backup_plans (
+        id           INTEGER PRIMARY KEY,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name         TEXT NOT NULL,
+        target_id    INTEGER NOT NULL REFERENCES backup_targets(id) ON DELETE RESTRICT,
+        scope        TEXT NOT NULL,
+        frequency    TEXT NOT NULL CHECK (frequency IN ('manual', 'daily', 'weekly', 'monthly')),
+        at_minute    INTEGER NOT NULL DEFAULT 180,
+        weekday      INTEGER NOT NULL DEFAULT 1,
+        month_day    INTEGER NOT NULL DEFAULT 1,
+        keep_daily   INTEGER NOT NULL DEFAULT 7,
+        keep_weekly  INTEGER NOT NULL DEFAULT 4,
+        keep_monthly INTEGER NOT NULL DEFAULT 6,
+        enabled      INTEGER NOT NULL DEFAULT 1,
+        next_run_at  INTEGER,
+        last_run_at  INTEGER,
+        last_status  TEXT NOT NULL DEFAULT '',
+        last_job_id  INTEGER,
+        created_at   INTEGER NOT NULL
+    );
+    CREATE INDEX backup_plans_target ON backup_plans(target_id);
+    "#,
 ];
 
 #[derive(Clone)]

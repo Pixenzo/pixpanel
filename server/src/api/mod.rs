@@ -5,6 +5,7 @@ use axum::Router;
 use crate::state::AppState;
 
 mod auth;
+mod backup;
 mod components;
 mod cron;
 mod databases;
@@ -46,6 +47,7 @@ pub fn router() -> Router<AppState> {
         .nest("/firewall", firewall::router())
         .nest("/fail2ban", fail2ban::router())
         .nest("/redis", redis::router())
+        .nest("/backup", backup::router())
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())

@@ -3,6 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  Archive,
   Boxes,
   CalendarClock,
   Cog,
@@ -64,6 +65,7 @@ export const navigation: NavGroup[] = [
       { to: "/docker", label: "Docker", icon: Container, visible: isAdmin },
       { to: "/php", label: "PHP", icon: FileCode2, visible: isAdmin },
       { to: "/redis", label: "Redis", icon: DatabaseZap, visible: isAdmin },
+      { to: "/backups", label: "Yedekler", icon: Archive, visible: isAdmin },
       { to: "/components", label: "Bileşenler", icon: Boxes, visible: isAdmin },
       { to: "/services", label: "Servisler", icon: Cog, visible: isAdmin },
       { to: "/processes", label: "Süreçler", icon: Activity, visible: isAdmin },

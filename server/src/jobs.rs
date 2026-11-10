@@ -90,6 +90,22 @@ impl JobCtx {
         program: &str,
         stdin: Option<Vec<u8>>,
     ) -> AppResult<()> {
+        let code = self.run_status(command, program, stdin).await?;
+        if code == 0 {
+            Ok(())
+        } else {
+            Err(AppError::internal(format!("{program} başarısız oldu (kod {code})")))
+        }
+    }
+
+    /// `run_streaming` gibi, ama çıkış kodunu yorumlamadan döner (sıfırdan farklı
+    /// kodu uyarı sayan komutlar için).
+    pub async fn run_status(
+        &self,
+        command: &mut tokio::process::Command,
+        program: &str,
+        stdin: Option<Vec<u8>>,
+    ) -> AppResult<i32> {
         if stdin.is_some() {
             command.stdin(Stdio::piped());
         }
@@ -125,14 +141,7 @@ impl JobCtx {
 
         let status = child.wait().await?;
         let _ = tokio::join!(out_task, err_task);
-        if status.success() {
-            Ok(())
-        } else {
-            Err(AppError::internal(format!(
-                "{program} başarısız oldu (kod {})",
-                status.code().unwrap_or(-1)
-            )))
-        }
+        Ok(status.code().unwrap_or(-1))
     }
 }
 

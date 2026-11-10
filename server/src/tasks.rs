@@ -41,6 +41,19 @@ pub fn spawn_db_tool_cleanup(state: AppState) {
     });
 }
 
+/// Zamanı gelen yedekleme planlarını başlatır.
+pub fn spawn_backup_scheduler(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        loop {
+            if let Err(err) = crate::backup::run::start_due_plans(&state).await {
+                tracing::error!(error = %err, "yedekleme planları denetlenemedi");
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+    });
+}
+
 async fn renew_due_certificates(state: &AppState) -> AppResult<()> {
     for site in sites::list_with_ssl(&state.db)? {
         let expires_at = ssl::read_info(&site.domain).map(|info| info.not_after).unwrap_or(0);

@@ -162,7 +162,7 @@ pub async fn grant(database: &str, user: &str, access: Access) -> AppResult<()> 
 
 pub fn dump_command(database: &str) -> Command {
     let mut command = as_postgres("pg_dump");
-    command.args(["--no-owner", "--no-acl", "--", database]);
+    command.args(["--no-owner", "--no-acl", "--clean", "--if-exists", "--", database]);
     command
 }
 

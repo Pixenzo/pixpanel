@@ -65,7 +65,7 @@ Bu kurallar her paketin brifine eklenir.
 - **Örnek al:** `api/ssl.rs`, `hosting/acme.rs`, `mail::tls_paths`.
 - **Kabul:** Pebble ile panel sertifikası alınır, tarayıcı yeniden başlatma olmadan yeni sertifikayı görür; IMAP ve SMTP aynı sertifikayı sunar.
 
-### 5. Yedekleme ve geri yükleme — B, sistem katmanı + arayüz
+### 5. Yedekleme ve geri yükleme — TAMAMLANDI (10.11.2026; kalanlar: S3'ün gerçek depoyla sınanması, PostgreSQL/posta geri yükleme sınaması, tam sunucu kurtarma komutu, müşteri hesaplarına açma)
 
 - **Karar (önerilen):** depolama için **restic** (yinelemesiz, şifreli, artımlı; yerel klasör, SFTP, S3 uyumlu hedefler). Panel restic'i çağırır, kendi biçimini uydurmaz.
 - **Parçalar:**
@@ -76,7 +76,7 @@ Bu kurallar her paketin brifine eklenir.
   - 5e. Felaket kurtarma: boş sunucuya panelin kendisini geri yükleme (belge + komut).
   - 5f. Arayüz: hedefler, planlar, yedek listesi, geri yükleme sihirbazı, canlı günlük.
 - **Kabul:** site silinir, yedekten geri gelir (dosya sahipliği, veritabanı içeriği, posta dahil); bozuk hedefte görev başarısız olur ve bildirim gider; saklama ilkesi eski kopyaları siler.
-- **Tasarım (10.11.2026, kod henüz yazılmadı):**
+- **Tasarım (10.11.2026, uygulandı; döküm dosya adı `/<motor>-<ad>.sql` oldu):**
   - İlk sürüm yalnız yönetici; restic ≥ 0.17 (Debian 13'te 0.18; Ubuntu 24.04'teki 0.16 yetmez). Bileşen kataloğuna `restic` eklenir.
   - Modüller: `backup/mod.rs` (türler, doğrulama, zamanlama), `backup/restic.rs` (restic çağrıları; parola ve anahtarlar yalnız ortam değişkeniyle), `backup/run.rs` (yedek ve geri yükleme görevleri), `api/backup.rs`; göç 12: `backup_targets`, `backup_plans`.
   - Hedef başına tek depo ve panelin ürettiği depo parolası (var olan depoyu bağlamak için parola verilebilir). SFTP için hedefe özel ed25519 anahtarı (`/etc/pixpanel/backup/target-<id>.key`), S3 için `AWS_*` ortam değişkenleri.

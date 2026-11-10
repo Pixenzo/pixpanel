@@ -188,6 +188,15 @@ pub fn catalog() -> Vec<Component> {
             Repo::Distro,
         ),
         component(
+            "restic",
+            "Yedekleme (restic)",
+            "Şifreli ve artımlı yedekler; yerel klasöre, SFTP sunucusuna ya da S3 uyumlu depoya.",
+            "web",
+            &["restic", "openssh-client"],
+            None,
+            Repo::Distro,
+        ),
+        component(
             "ftp",
             "FTP sunucusu",
             "pure-ftpd. Site başına, o sitenin klasörüne hapsedilmiş FTP hesapları açılır.",
