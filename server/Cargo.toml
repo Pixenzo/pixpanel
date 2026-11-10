@@ -43,6 +43,7 @@ nix = { version = "0.30", features = ["user", "fs"] }
 zip = { version = "4", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
+portable-pty = "0.9"
 regex = "1"
 
 [profile.release]

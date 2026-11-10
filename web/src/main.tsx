@@ -19,6 +19,7 @@ import { ProcessesPage } from "./pages/Processes";
 import { ServicesPage } from "./pages/Services";
 import { SiteDetailPage } from "./pages/SiteDetail";
 import { SitesPage } from "./pages/Sites";
+import { TerminalPage } from "./pages/Terminal";
 import { UsersPage } from "./pages/Users";
 import "./styles.css";
 
@@ -49,6 +50,7 @@ function App() {
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/processes" element={<ProcessesPage />} />
+            <Route path="/terminal" element={<TerminalPage />} />
             <Route path="/audit" element={<AuditPage />} />
           </>
         )}

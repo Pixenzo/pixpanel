@@ -12,6 +12,7 @@ mod jobs;
 mod sites;
 pub mod ssl;
 mod system;
+mod terminal;
 mod users;
 
 pub fn router() -> Router<AppState> {
@@ -23,5 +24,6 @@ pub fn router() -> Router<AppState> {
         .nest("/components", components::router())
         .nest("/databases", databases::router())
         .nest("/files", files::router())
+        .nest("/terminal", terminal::router())
         .nest("/sites", sites::router().merge(ssl::router()))
 }

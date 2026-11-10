@@ -25,6 +25,9 @@ pub struct Config {
     pub acme_directory: String,
     /// ACME sağlayıcısı özel bir kök sertifika kullanıyorsa (ör. sınama sunucusu) PEM dosyasının yolu.
     pub acme_root_ca: Option<PathBuf>,
+    /// Panelin kendi adresi dışında WebSocket bağlantısına izin verilen kaynaklar
+    /// (ör. geliştirme sunucusu: `http://localhost:5183`).
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for Config {
@@ -37,6 +40,7 @@ impl Default for Config {
             session_ttl_secs: 12 * 3600,
             acme_directory: "https://acme-v02.api.letsencrypt.org/directory".into(),
             acme_root_ca: None,
+            allowed_origins: Vec::new(),
         }
     }
 }
