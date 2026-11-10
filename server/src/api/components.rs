@@ -50,6 +50,11 @@ postfix postfix/mailname string {}
             ctx.run_streaming(&mut preseed, "debconf-set-selections", Some(answers.into_bytes())).await?;
         }
         components::install(&ctx, &component).await?;
+        if matches!(component.id.as_str(), "phpmyadmin" | "adminer" | "roundcube") {
+            ctx.log("Araç panel üzerinden erişime hazırlanıyor");
+            let _sys = job_state.sys_lock.lock().await;
+            crate::dbtools::ensure_runtime(&job_state.cfg).await?;
+        }
         if component.id == "mail" {
             ctx.log("Posta servisleri yapılandırılıyor");
             let _sys = job_state.sys_lock.lock().await;

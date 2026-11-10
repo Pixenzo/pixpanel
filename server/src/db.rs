@@ -223,6 +223,17 @@ const MIGRATIONS: &[&str] = &[
         UNIQUE (domain_id, local)
     );
     "#,
+    // 7: veritabanı araçları için açılan geçici hesaplar
+    r#"
+    CREATE TABLE db_tool_sessions (
+        id         INTEGER PRIMARY KEY,
+        engine     TEXT NOT NULL,
+        name       TEXT NOT NULL,
+        host       TEXT NOT NULL DEFAULT '',
+        database   TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+    );
+    "#,
 ];
 
 #[derive(Clone)]

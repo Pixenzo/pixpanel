@@ -273,6 +273,7 @@ export interface DatabaseOverview {
   databases: DatabaseInfo[];
   users: DbUserInfo[];
   name_prefix: string;
+  tools: { phpmyadmin: boolean; adminer: boolean };
 }
 
 export interface CertInfo {

@@ -1274,6 +1274,13 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
       <Panel title={t("Posta istemcisi ayarları")}>
         <p className="mb-3 max-w-[75ch] text-ink-2">{t("Outlook, Thunderbird ya da telefon uygulamasında hesabı bu bilgilerle tanımlayın.")}</p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+          <dt className="text-ink-2">{t("Web postası")}</dt>
+          <dd>
+            <a href="/webmail/" target="_blank" rel="noreferrer" className="font-mono text-[12.5px] text-accent hover:underline">
+              {window.location.origin}/webmail/
+            </a>{" "}
+            <span className="text-ink-3">{t("(kuruluysa; adres ve parolayla girilir)")}</span>
+          </dd>
           <dt className="text-ink-2">{t("IMAP sunucusu")}</dt>
           <dd>
             <Mono>{hostname}</Mono> · {t("port")} <Mono>993</Mono> (SSL/TLS)

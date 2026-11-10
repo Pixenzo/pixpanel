@@ -22,6 +22,7 @@ import { MailPage } from "./pages/Mail";
 import { MailDomainPage } from "./pages/MailDomain";
 import { PhpPage } from "./pages/Php";
 import { ProcessesPage } from "./pages/Processes";
+import { RedisPage } from "./pages/Redis";
 import { ServicesPage } from "./pages/Services";
 import { SettingsPage } from "./pages/Settings";
 import { SiteDetailPage } from "./pages/SiteDetail";
@@ -57,6 +58,7 @@ function App() {
             <Route path="/server" element={<DashboardPage />} />
             <Route path="/docker" element={<DockerPage />} />
             <Route path="/php" element={<PhpPage />} />
+            <Route path="/redis" element={<RedisPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/services" element={<ServicesPage />} />

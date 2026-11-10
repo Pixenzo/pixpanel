@@ -26,6 +26,18 @@ pub fn spawn_certificate_renewal(state: AppState) {
     });
 }
 
+/// Veritabanı araçları için açılan geçici hesapları süreleri dolunca siler.
+pub fn spawn_db_tool_cleanup(state: AppState) {
+    tokio::spawn(async move {
+        loop {
+            if let Err(err) = crate::dbtools::cleanup(&state.db).await {
+                tracing::warn!(error = %err, "geçici veritabanı hesapları temizlenemedi");
+            }
+            tokio::time::sleep(Duration::from_secs(600)).await;
+        }
+    });
+}
+
 async fn renew_due_certificates(state: &AppState) -> AppResult<()> {
     for site in sites::list_with_ssl(&state.db)? {
         let expires_at = ssl::read_info(&site.domain).map(|info| info.not_after).unwrap_or(0);

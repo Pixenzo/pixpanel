@@ -6,6 +6,7 @@ mod components;
 mod config;
 mod db;
 mod dbms;
+mod dbtools;
 mod deploy;
 mod error;
 mod fsop;
@@ -104,6 +105,7 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     deploy::mark_interrupted(&state.db).map_err(|err| anyhow::anyhow!(err.to_string()))?;
     tasks::spawn_certificate_renewal(state.clone());
+    tasks::spawn_db_tool_cleanup(state.clone());
 
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();
     let addr = SocketAddr::new(cfg.listen_addr, cfg.listen_port);

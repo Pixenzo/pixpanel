@@ -16,6 +16,7 @@ mod logs;
 mod mail;
 mod notify;
 mod php;
+mod redis;
 mod sites;
 pub mod ssl;
 mod system;
@@ -36,6 +37,7 @@ pub fn router() -> Router<AppState> {
         .nest("/logs", logs::router())
         .nest("/php", php::router())
         .nest("/mail", mail::router())
+        .nest("/redis", redis::router())
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())

@@ -2,7 +2,7 @@
 // ayarları ve etkinlik sekmeleri.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, RefreshCw, RotateCw, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -132,6 +132,8 @@ interface MailOverview {
   installed: boolean;
   services: MailService[];
   hostname: string;
+  /** Web postası (Roundcube) kurulu mu? */
+  webmail: boolean;
   domains: MailDomain[];
   available_domains: string[];
   owners: { id: number; username: string }[];
@@ -799,11 +801,31 @@ export function MailPage() {
         title={t("Posta")}
         description={t("Alan adlarınız için e-posta kutuları, takma adlar ve istenmeyen posta koruması.")}
         actions={
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>
-            {t("Alan adı ekle")}
-          </Button>
+          <>
+            {overview.data?.webmail && (
+              <a
+                href="/webmail/"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3.5 font-medium hover:bg-sunken"
+              >
+                {t("Web postasını aç")} <ExternalLink className="size-3.5 text-ink-3" />
+              </a>
+            )}
+            <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>
+              {t("Alan adı ekle")}
+            </Button>
+          </>
         }
       />
+      {overview.data && !overview.data.webmail && isAdmin && (
+        <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-2.5 text-[13px] text-ink-2">
+          {t("Kutu sahiplerinin postalarına tarayıcıdan erişebilmesi için web postasını (Roundcube) kurabilirsiniz.")}{" "}
+          <Link to="/components" className="font-medium text-accent hover:underline">
+            {t("Bileşenler sayfasına git")}
+          </Link>
+        </p>
+      )}
       {isAdmin && (
         <Tabs
           tabs={tabs}

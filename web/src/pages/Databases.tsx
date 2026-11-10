@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, KeyRound, Plus, Trash2, Upload, UserCog, Wand2 } from "lucide-react";
+import { Download, ExternalLink, KeyRound, Plus, Trash2, Upload, UserCog, Wand2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -467,6 +467,23 @@ export function DatabasesPage() {
   const data = overview.data;
   const available = data.engines.filter((engine) => engine.installed);
   const engine = available.find((item) => item.id === engineChoice) ?? available[0];
+  // MariaDB phpMyAdmin ile, PostgreSQL Adminer ile açılır.
+  const toolName = engine?.id === "postgresql" ? "Adminer" : "phpMyAdmin";
+  const toolInstalled = engine?.id === "postgresql" ? data.tools.adminer : data.tools.phpmyadmin;
+
+  /** Veritabanını web aracında yeni sekmede açar; panel geçici bir hesapla oturumu kendisi başlatır. */
+  async function openTool(database: DatabaseInfo) {
+    // Sekme tıklama anında açılır; adres sonradan verilir. Aksi hâlde tarayıcı açılır pencereyi engeller.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const result = await api.post<{ url: string }>(`/databases/${database.id}/open`);
+      if (tab) tab.location.href = result.url;
+      else window.location.href = result.url;
+    } catch (error) {
+      tab?.close();
+      feedback.error(error);
+    }
+  }
   const showOwner = me.role === "admin";
 
   if (!engine) {
@@ -542,6 +559,14 @@ export function DatabasesPage() {
           {t("{name} servisi çalışmıyor. Servisler sayfasından başlatın.", { name: engine.label })}
         </div>
       )}
+      {engine.running && !toolInstalled && me.role === "admin" && (
+        <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-2.5 text-[13px] text-ink-2">
+          {t("Veritabanlarını tarayıcıdan yönetmek için {tool} kurabilirsiniz; kurulduğunda her veritabanının satırında açma düğmesi görünür.", { tool: toolName })}{" "}
+          <Link to="/components" className="font-medium text-accent hover:underline">
+            {t("Bileşenler sayfasına git")}
+          </Link>
+        </p>
+      )}
 
       <div className="flex flex-col gap-4">
         <Panel flush title={t("Veritabanları")}>
@@ -591,6 +616,11 @@ export function DatabasesPage() {
                     )}
                     <Td align="right" className="py-0.5">
                       <div className="flex justify-end gap-0.5">
+                        {toolInstalled && (
+                          <Button size="sm" className="mr-1 self-center" icon={<ExternalLink className="size-3.5" />} onClick={() => void openTool(database)}>
+                            {toolName}
+                          </Button>
+                        )}
                         <IconButton label={t("Erişimi yönet")} onClick={() => setDialog({ kind: "access", database })}>
                           <UserCog className="size-4" />
                         </IconButton>

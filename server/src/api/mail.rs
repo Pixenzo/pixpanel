@@ -60,6 +60,8 @@ struct Overview {
     installed: bool,
     services: Vec<ServiceState>,
     hostname: String,
+    /// Web postası (Roundcube) kurulu mu? Kuruluysa `/webmail/` yolunda yayınlanır.
+    webmail: bool,
     domains: Vec<MailDomain>,
     /// Posta açılabilecek alan adları (hesabın siteleri; yönetici her adı yazabilir).
     available_domains: Vec<String>,
@@ -98,7 +100,14 @@ async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
     } else {
         Vec::new()
     };
-    Ok(Json(Overview { installed, services: service_states, hostname: mail::hostname(&state.db), domains, available_domains, owners }))
+    let webmail = crate::dbtools::installed().roundcube;
+    if webmail {
+        // Paket panel dışında kurulduysa yapılandırma ilk bakışta tamamlanır.
+        if let Err(err) = crate::dbtools::ensure_runtime(&state.cfg).await {
+            tracing::warn!(error = %err, "web postası yapılandırılamadı");
+        }
+    }
+    Ok(Json(Overview { installed, services: service_states, hostname: mail::hostname(&state.db), webmail, domains, available_domains, owners }))
 }
 
 // ---- Alan adları ----

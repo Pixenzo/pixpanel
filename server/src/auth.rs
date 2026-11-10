@@ -368,6 +368,27 @@ impl FromRequestParts<AppState> for AuthUser {
     }
 }
 
+/// İstekteki oturum çerezinin geçerli bir panel oturumuna ait olduğunu doğrular.
+///
+/// Panelin vekillediği araçlar (phpMyAdmin, Adminer) için kullanılır: bu
+/// araçların formları panelin CSRF başlığını gönderemez; çapraz site isteklerine
+/// karşı koruma, oturum çerezinin `SameSite=Strict` olmasıyla sağlanır.
+pub fn session_is_valid(parts: &Parts, state: &AppState) -> bool {
+    let Some(token) = cookie_value(parts, SESSION_COOKIE) else { return false };
+    let token_hash = hash_token(token);
+    state
+        .db
+        .call(|conn| {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id
+                               WHERE s.token_hash = ?1 AND s.expires_at >= ?2 AND u.status = 'active')",
+                params![token_hash, now()],
+                |row| row.get::<_, bool>(0),
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Denetim günlüğüne kayıt düşer. Günlük yazılamaması asıl işlemi bozmamalıdır.
 pub fn audit(db: &Db, user: &AuthUser, action: &str, target: &str, detail: &str) {
     let result = db.call(|conn| {

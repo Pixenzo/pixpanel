@@ -31,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(overview).post(create_database))
         .route("/{id}", delete(drop_database))
         .route("/{id}/export", get(export))
+        .route("/{id}/open", post(open_tool))
         .route("/{id}/import", post(import).layer(axum::extract::DefaultBodyLimit::disable()))
         .route("/{id}/grants/{db_user_id}", put(set_grant).delete(remove_grant))
         .route("/users", post(create_user))
@@ -81,6 +82,8 @@ struct Overview {
     users: Vec<DbUserInfo>,
     /// Yönetici olmayan hesapların adlarının başlaması gereken ön ek.
     name_prefix: String,
+    /// Kurulu web araçları (phpMyAdmin, Adminer).
+    tools: crate::dbtools::Installed,
 }
 
 /// Hesaplar arası ad çakışmasını önlemek için yönetici dışındaki hesapların
@@ -168,7 +171,7 @@ async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
         let engine = Engine::parse(&database.engine)?;
         database.size = sizes.get(&engine).and_then(|map| map.get(&database.name)).copied();
     }
-    Ok(Json(Overview { engines, databases, users, name_prefix: name_prefix(&state, &user)? }))
+    Ok(Json(Overview { engines, databases, users, name_prefix: name_prefix(&state, &user)?, tools: crate::dbtools::installed() }))
 }
 
 struct DbRow {
@@ -191,6 +194,17 @@ fn load_database(state: &AppState, user: &AuthUser, id: i64) -> AppResult<DbRow>
         return Err(AppError::NotFound);
     }
     Ok(DbRow { id, user_id, engine: Engine::parse(&engine)?, name })
+}
+
+/// Veritabanını web aracında (phpMyAdmin ya da Adminer) açmak için tek kullanımlık adres üretir.
+async fn open_tool(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let database = load_database(&state, &user, id)?;
+    database.engine.require_installed()?;
+    let _guard = state.sys_lock.lock().await;
+    let url = crate::dbtools::open(&state.db, &state.cfg, database.engine, &database.name).await?;
+    auth::audit(&state.db, &user, "database.open_tool", &database.name, database.engine.as_str());
+    Ok(Json(json!({ "url": url })))
 }
 
 struct DbUserRow {
