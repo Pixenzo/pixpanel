@@ -23,7 +23,7 @@ finding() { jget "next((f['$3'] for f in d['report']['findings'] if f['key']=='$
 # unreachable <rapor> <site no> <alan adı> <alan>: sertifikasız site bulgusu; çok sayıda site varsa
 # bulgular tek satırda toplandığı için alan adı ayrıntıda aranır.
 unreachable() { jget "next((f['$4'] for f in d['report']['findings'] if f['key']=='ssl.unreachable:$2' or (f['rule']=='ssl.unreachable' and '$3' in f['detail'])), 'yok')" <<<"$1"; }
-SETTINGS_ON='{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":false,"security_updates":false}'
+SETTINGS_ON='{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":false,"security_updates":false,"update_wordpress":false}'
 
 rm -f $J
 api POST /auth/login -d "{\"username\":\"$PX_USER\",\"password\":\"$PX_PASS\"}" >/dev/null
@@ -34,7 +34,7 @@ say "Erişim ve rapor"
 check "oturumsuz erişim" "$(curl -sk -o /dev/null -w '%{http_code}' $B/health)" 401
 R=$(recheck)
 check "denetim yapıldı" "$(jget 'd["report"]["checks"] > 10 and d["report"]["checked_at"] > 0' <<<"$R")" True
-check "ayarlar raporla gelir" "$(jget 'sorted(d["settings"].keys())' <<<"$R")" "['check_sites', 'issue_certificates', 'notify', 'restart_services', 'security_updates']"
+check "ayarlar raporla gelir" "$(jget 'sorted(d["settings"].keys())' <<<"$R")" "['check_sites', 'issue_certificates', 'notify', 'restart_services', 'security_updates', 'update_wordpress']"
 check "bulgular önem sırasıyla" "$(jget '(lambda order: order == sorted(order, reverse=True))([{"info":0,"warning":1,"critical":2}[f["severity"]] for f in d["report"]["findings"]])' <<<"$R")" True
 check "geçersiz ayar gövdesi" "$(code PUT /health/settings -d '{"restart_services":"evet"}')" 422
 
@@ -70,7 +70,7 @@ if systemctl is-active --quiet nginx; then
     check "bulgu kalktı" "$(finding "$R" service.failed:nginx.service severity)" yok
     check "kendiliğinden düzeltme günlüğe düştü" "$(jget '(d["actions"][0]["rule"], d["actions"][0]["target"], d["actions"][0]["automatic"], d["actions"][0]["success"])' <<<"$R")" "('service.failed', 'nginx.service', True, True)"
 
-    api PUT /health/settings -d '{"restart_services":false,"issue_certificates":true,"check_sites":true,"notify":false,"security_updates":false}' >/dev/null
+    api PUT /health/settings -d '{"restart_services":false,"issue_certificates":true,"check_sites":true,"notify":false,"security_updates":false,"update_wordpress":false}' >/dev/null
     systemctl kill -s KILL nginx; sleep 1
     R=$(recheck); sleep 1
     check "ayar kapalıyken kendiliğinden düzeltilmez" "$(finding "$R" service.failed:nginx.service auto) $(systemctl is-active nginx)" "False failed"
@@ -110,7 +110,7 @@ check "DNS'i bu sunucuyu göstermeyen siteye sertifika alınmaz" "$(unreachable 
 R=$(recheck)
 check "ikinci başarısız yoklamada kritik bulgu" "$(finding "$R" site.down:$S severity)" critical
 has "nedeni başlıkta" "$(finding "$R" site.down:$S title)" "HTTP 502"
-api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":false,"notify":false,"security_updates":false}' >/dev/null
+api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":false,"notify":false,"security_updates":false,"update_wordpress":false}' >/dev/null
 R=$(recheck)
 check "site yoklaması kapatılabilir" "$(finding "$R" site.down:$S severity)" yok
 api PUT /health/settings -d "$SETTINGS_ON" >/dev/null
@@ -121,7 +121,7 @@ check "silinen sitenin bulguları kalkar" "$(unreachable "$R" $S saglik-e2e.test
 say "Güvenlik güncellemeleri"
 AUTO=/etc/apt/apt.conf.d/20auto-upgrades
 check "kapalıyken kendiliğinden kurulum kapalı" "$(grep -c 'Unattended-Upgrade "0"' $AUTO)" 1
-api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":false,"security_updates":true}' >/dev/null
+api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":false,"security_updates":true,"update_wordpress":false}' >/dev/null
 for _ in $(seq 1 60); do grep -q 'Unattended-Upgrade "1"' $AUTO 2>/dev/null && break; sleep 2; done
 check "açılınca ayar yazılır" "$(grep -c 'Unattended-Upgrade "1"' $AUTO)" 1
 check "gerekli paket kurulur" "$(command -v unattended-upgrade >/dev/null && echo var)" var
@@ -152,5 +152,5 @@ if [ -n "$OLDEST" ]; then
   check "süren bulgunun ilk görülme anı değişmez" "$(finding "$R" "$OLDEST" since)" "$SINCE"
 fi
 check "bulgu kayıtları güncel bulgularla aynı sayıda" "$(sqlite3 /var/lib/pixpanel/pixpanel.db 'SELECT COUNT(*) FROM health_findings' 2>/dev/null || python3 -c 'import sqlite3; print(sqlite3.connect("/var/lib/pixpanel/pixpanel.db").execute("SELECT COUNT(*) FROM health_findings").fetchone()[0])')" "$(jget 'len(d["report"]["findings"])' <<<"$R")"
-api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":true,"security_updates":true}' >/dev/null
+api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":true,"security_updates":true,"update_wordpress":false}' >/dev/null
 echo "bitti"

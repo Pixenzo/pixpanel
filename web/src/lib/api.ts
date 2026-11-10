@@ -408,6 +408,7 @@ export interface HealthSettings {
   check_sites: boolean;
   notify: boolean;
   security_updates: boolean;
+  update_wordpress: boolean;
 }
 
 export interface HealthAction {

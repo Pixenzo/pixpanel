@@ -83,11 +83,13 @@ pub struct Settings {
     pub notify: bool,
     /// İşletim sisteminin güvenlik güncellemeleri her gün kendiliğinden kurulsun.
     pub security_updates: bool,
+    /// WordPress sitelerinin bekleyen güncellemeleri her gece (önce yedek alınarak) kurulsun.
+    pub update_wordpress: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { restart_services: true, issue_certificates: true, check_sites: true, notify: true, security_updates: true }
+        Self { restart_services: true, issue_certificates: true, check_sites: true, notify: true, security_updates: true, update_wordpress: false }
     }
 }
 
@@ -705,6 +707,66 @@ pub async fn scan_wordpress(state: &AppState) {
     *state.health.wordpress.write().unwrap_or_else(|p| p.into_inner()) = found;
 }
 
+/// Gece güncellemelerinin yapıldığı saat aralığı (sunucunun yerel saatiyle).
+const NIGHT_WINDOW_HOURS: std::ops::Range<i64> = 2..5;
+
+/// Verilen an, yerel saatle gece güncelleme aralığında mı?
+fn in_night_window(unix: i64, offset_secs: i64) -> bool {
+    NIGHT_WINDOW_HOURS.contains(&((unix + offset_secs).rem_euclid(86400) / 3600))
+}
+
+/// Yerel takvim gününün sıra numarası; "bu gece yapıldı mı" karşılaştırması için.
+fn local_day(unix: i64, offset_secs: i64) -> i64 {
+    (unix + offset_secs).div_euclid(86400)
+}
+
+/// Ayar açıksa ve gece aralığındaysak, güncellemesi bekleyen WordPress sitelerini sırayla
+/// günceller. Her gece en çok bir kez çalışır; `last_day` son çalıştığı günü tutar.
+pub async fn update_wordpress_nightly(state: &AppState, last_day: &mut i64) {
+    if !load_settings(state).update_wordpress {
+        return;
+    }
+    let offset = crate::backup::local_offset().await;
+    let today = local_day(now(), offset);
+    if !in_night_window(now(), offset) || *last_day == today {
+        return;
+    }
+    *last_day = today;
+    // Güncel olmayan bir taramayla iş yapılmasın.
+    scan_wordpress(state).await;
+    let pending: Vec<i64> = state.health.wordpress.read().unwrap_or_else(|p| p.into_inner()).iter().filter(|(_, updates)| !updates.is_empty()).map(|(id, _)| *id).collect();
+    for id in pending {
+        let Ok(Some(site)) = crate::hosting::sites::load(&state.db, id) else { continue };
+        let domain = site.domain.clone();
+        let outcome = match crate::wordpress::start_update_job(state, None, site, "all".into()) {
+            Ok(job_id) => wait_for_job(state, job_id).await,
+            Err(err) => Err(err.to_string()),
+        };
+        let (success, detail) = match outcome {
+            Ok(()) => (true, "Yedeği alındı, güncellemeler kuruldu, site yanıt veriyor.".to_string()),
+            Err(reason) => (false, reason),
+        };
+        log_action(state, "wordpress.updates", &id.to_string(), &format!("{domain} gece güncellemesi"), true, success, &detail);
+        if !success && load_settings(state).notify {
+            notify_admins(state, &format!("{domain} gece güncellenemedi"), &detail).await;
+        }
+    }
+}
+
+/// Görev bitene kadar bekler; başarısızsa günlüğünün son satırını neden olarak döner.
+async fn wait_for_job(state: &AppState, job_id: i64) -> Result<(), String> {
+    for _ in 0..360 {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        match state.jobs.get(job_id) {
+            Ok((info, _)) if info.status == "running" => continue,
+            Ok((info, _)) if info.status == "success" => return Ok(()),
+            Ok((_, log)) => return Err(log.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("görev başarısız oldu").trim_start_matches("HATA: ").to_string()),
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+    Err("güncelleme 30 dakikada bitmedi".into())
+}
+
 /// Tek bir sitenin güncelleme durumunu yeniler (güncelleme görevi bittikten sonra).
 pub async fn rescan_wordpress_site(state: &AppState, site: &Site) {
     let pending = crate::wordpress::pending_updates(site).await;
@@ -957,10 +1019,15 @@ fn bump_attempts(state: &AppState, key: &str) -> AppResult<()> {
 
 fn record_action(state: &AppState, finding: &Finding, automatic: bool, success: bool, detail: &str) {
     let target = finding.key.split_once(':').map(|(_, target)| target).unwrap_or("");
+    log_action(state, finding.rule, target, &finding.title, automatic, success, detail);
+}
+
+/// Yapılan bir bakım işlemini "Son yapılanlar" günlüğüne yazar.
+fn log_action(state: &AppState, rule: &str, target: &str, summary: &str, automatic: bool, success: bool, detail: &str) {
     let saved = state.db.call(|conn| {
         conn.execute(
             "INSERT INTO health_actions (created_at, rule, target, summary, automatic, success, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![now(), finding.rule, target, finding.title, automatic, success, detail],
+            params![now(), rule, target, summary, automatic, success, detail],
         )?;
         // Günlük sınırsız büyümesin.
         conn.execute("DELETE FROM health_actions WHERE id NOT IN (SELECT id FROM health_actions ORDER BY id DESC LIMIT 500)", [])
@@ -1213,6 +1280,20 @@ mod tests {
         assert_eq!(merged.title, "8 site");
         assert!(merged.detail.contains("site1.test") && merged.detail.contains("ve 3 site daha"));
         assert!(many.iter().any(|finding| finding.rule == "disk.full"), "öteki kurallara dokunulmaz");
+    }
+
+    #[test]
+    fn night_window_follows_local_time() {
+        const UTC3: i64 = 3 * 3600;
+        // 2026-11-11 00:30 UTC = 03:30 (UTC+3): aralıkta.
+        let night = 1_794_357_000;
+        assert!(in_night_window(night, UTC3));
+        assert!(!in_night_window(night, 0), "UTC ile 00:30 aralık dışında");
+        // Altı saat sonrası (09:30 yerel) aralık dışında.
+        assert!(!in_night_window(night + 6 * 3600, UTC3));
+        // Aynı yerel gün içinde gün numarası değişmez; ertesi gece değişir.
+        assert_eq!(local_day(night, UTC3), local_day(night + 3600, UTC3));
+        assert_eq!(local_day(night + 86400, UTC3), local_day(night, UTC3) + 1);
     }
 
     #[test]

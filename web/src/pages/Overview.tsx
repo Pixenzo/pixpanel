@@ -47,6 +47,11 @@ const automations: { key: keyof HealthSettings; label: string; hint: string }[] 
     hint: "İşletim sisteminin güvenlik yamaları her gün kendiliğinden kurulur; öteki güncellemeler size bırakılır.",
   },
   {
+    key: "update_wordpress",
+    label: "WordPress sitelerini gece güncelle",
+    hint: "Her gece 02:00–05:00 arasında bekleyen çekirdek, eklenti ve tema güncellemeleri kurulur. Önce sitenin yedeği alınır; güncelleme siteyi bozarsa haber verilir.",
+  },
+  {
     key: "notify",
     label: "Sorunları ve yapılanları bildir",
     hint: "Kritik sorunlar ve panelin yaptığı düzeltmeler e-posta ya da Telegram ile gönderilir (Hesabım → Bildirimler).",

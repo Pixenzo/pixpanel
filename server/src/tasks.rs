@@ -66,13 +66,21 @@ pub fn spawn_health_monitor(state: AppState) {
     });
 }
 
-/// WordPress sitelerini bekleyen güncellemeler için altı saatte bir tarar.
+/// WordPress sitelerini bekleyen güncellemeler için altı saatte bir tarar; ayar açıksa
+/// gece aralığında güncellemeleri kurar.
 pub fn spawn_wordpress_scan(state: AppState) {
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(90)).await;
+        let mut last_update_day = 0;
+        let mut tick: u64 = 0;
         loop {
-            crate::health::scan_wordpress(&state).await;
-            tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
+            if tick % 12 == 0 {
+                crate::health::scan_wordpress(&state).await;
+            }
+            crate::health::update_wordpress_nightly(&state, &mut last_update_day).await;
+            tick += 1;
+            // Yarım saatte bir uyanmak, üç saatlik gece aralığını kaçırmamaya yeter.
+            tokio::time::sleep(Duration::from_secs(30 * 60)).await;
         }
     });
 }
