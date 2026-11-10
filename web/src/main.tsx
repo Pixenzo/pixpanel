@@ -12,6 +12,7 @@ import { AuditPage } from "./pages/Audit";
 import { ComponentsPage } from "./pages/Components";
 import { DashboardPage } from "./pages/Dashboard";
 import { DatabasesPage } from "./pages/Databases";
+import { FilesPage } from "./pages/Files";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
 import { ProcessesPage } from "./pages/Processes";
@@ -55,6 +56,7 @@ function App() {
         {canSites && <Route path="/sites" element={<SitesPage />} />}
         {canSites && <Route path="/sites/:id" element={<SiteDetailPage />} />}
         {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
+        {can("files") && <Route path="/files" element={<FilesPage />} />}
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

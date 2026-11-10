@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Cog,
   Database,
+  FolderOpen,
   Globe,
   LayoutDashboard,
   ListChecks,
@@ -56,6 +57,7 @@ const navigation: NavGroup[] = [
     items: [
       { to: "/sites", label: "Siteler", icon: Globe, visible: can("sites") },
       { to: "/databases", label: "Veritabanları", icon: Database, visible: can("databases") },
+      { to: "/files", label: "Dosyalar", icon: FolderOpen, visible: can("files") },
     ],
   },
   {

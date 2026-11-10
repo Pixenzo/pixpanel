@@ -7,6 +7,7 @@ mod config;
 mod db;
 mod dbms;
 mod error;
+mod fsop;
 mod hosting;
 mod jobs;
 mod state;
@@ -50,10 +51,20 @@ enum Command {
     },
     /// Bir kullanıcının parolasını sıfırlar ve yeni parolayı yazdırır
     ResetPassword { username: String },
+    /// Dosya yöneticisinin yardımcı süreci; panel tarafından başlatılır
+    #[command(hide = true)]
+    FsHelper,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // Yardımcı süreç yetki düşürüp chroot yapacağından olabildiğince yalın
+    // başlar: ne eşzamansız çalışma zamanı kurulur ne de veritabanı açılır.
+    if matches!(cli.command, Some(Command::FsHelper)) {
+        std::process::exit(fsop::run_helper());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -61,14 +72,14 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let cli = Cli::parse();
     let cfg = Config::load(&cli.config)?;
     let db = Db::open(&cfg.db_path())?;
 
     match cli.command.unwrap_or(Command::Serve) {
-        Command::Serve => serve(cfg, db).await,
+        Command::Serve => tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(serve(cfg, db)),
         Command::CreateAdmin { username, password } => create_admin(&db, &username, password),
         Command::ResetPassword { username } => reset_password(&db, &username),
+        Command::FsHelper => unreachable!("yardımcı süreç yukarıda ele alındı"),
     }
 }
 

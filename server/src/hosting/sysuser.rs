@@ -5,11 +5,17 @@
 //!
 //! Dizin düzeni:
 //! ```text
-//! /home/<kullanıcı>            kullanıcı:kullanıcı  0711
+//! /home/<kullanıcı>            root:kullanıcı       0751   üst düzey kullanıcı tarafından değiştirilemez
 //! /home/<kullanıcı>/tmp        kullanıcı:kullanıcı  0700   PHP geçici dosyaları ve oturumlar
-//! /home/<kullanıcı>/sites      root:root            0711   kullanıcı site klasörlerini değiştiremez
+//! /home/<kullanıcı>/.ssh ...   kullanıcı:kullanıcı  0700   araçların ayar ve önbellek klasörleri
+//! /home/<kullanıcı>/sites      root:kullanıcı       0751   kullanıcı listeler ama site klasörü ekleyip çıkaramaz
 //! /home/<kullanıcı>/sites/<alan adı>  kullanıcı:www-data  2750
 //! ```
+//!
+//! Ev klasörünün üst düzeyi bilerek root'a aittir. Kullanıcıya ait olsaydı
+//! `sites` klasörünü yeniden adlandırıp yerine başka bir yeri gösteren
+//! sembolik bağ koyabilir, panel de root yetkisiyle o bağın ardında klasör
+//! oluşturup sahiplik verirdi. Aynı düzen SFTP hapsinin (chroot) de şartıdır.
 
 use std::os::unix::fs::{lchown, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -102,6 +108,7 @@ pub async fn ensure(name: &str) -> AppResult<SysUser> {
                 "“{name}” adında panelin yönetmediği bir sistem kullanıcısı zaten var; başka bir kullanıcı adı seçin"
             )));
         }
+        harden_home(&user)?;
         return Ok(user);
     }
 
@@ -121,18 +128,41 @@ pub async fn ensure(name: &str) -> AppResult<SysUser> {
     .await?;
     let user = lookup(name).ok_or_else(|| AppError::internal("kullanıcı oluşturuldu ama okunamadı"))?;
 
-    // Kullanıcı henüz hiçbir süreç çalıştırmadığından bu klasörleri root
-    // olarak oluşturmak güvenlidir.
-    set_mode(&user.home, 0o711)?;
-    let tmp = user.tmp_dir();
-    std::fs::create_dir_all(&tmp)?;
-    lchown(&tmp, Some(user.uid), Some(user.gid))?;
-    set_mode(&tmp, 0o700)?;
-    let sites = user.sites_dir();
-    std::fs::create_dir_all(&sites)?;
-    lchown(&sites, Some(0), Some(0))?;
-    set_mode(&sites, 0o711)?;
+    harden_home(&user)?;
     Ok(user)
+}
+
+/// Kullanıcının kendi yazabildiği, ev klasörünün üst düzeyindeki klasörler.
+/// Üst düzey root'a ait olduğundan araçların beklediği klasörler önceden açılır.
+const USER_DIRS: &[&str] = &["tmp", ".ssh", ".config", ".cache", ".local", ".composer", ".npm"];
+
+/// Ev klasörünün sahipliğini ve izinlerini yukarıdaki düzene getirir.
+/// Her çağrıda aynı sonucu verir; eski düzendeki hesapları da onarır.
+fn harden_home(user: &SysUser) -> AppResult<()> {
+    // Önce üst düzey kilitlenir: bundan sonra kullanıcı buradaki adları
+    // değiştiremeyeceği için aşağıdaki işlemler sembolik bağ oyununa açık değildir.
+    lchown(&user.home, Some(0), Some(user.gid))?;
+    set_mode(&user.home, 0o751)?;
+
+    let ensure_dir = |name: &str, uid: u32, gid: u32, mode: u32| -> AppResult<()> {
+        let path = user.home.join(name);
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) if meta.is_dir() => {}
+            // Aynı adda dosya ya da sembolik bağ varsa (eski düzenden kalma) kaldırılır.
+            Ok(_) => {
+                std::fs::remove_file(&path)?;
+                std::fs::create_dir(&path)?;
+            }
+            Err(_) => std::fs::create_dir(&path)?,
+        }
+        lchown(&path, Some(uid), Some(gid))?;
+        set_mode(&path, mode)
+    };
+    for name in USER_DIRS {
+        ensure_dir(name, user.uid, user.gid, 0o700)?;
+    }
+    // Kullanıcı (grup üzerinden) listeleyebilir, nginx (diğerleri) yalnızca içinden geçebilir.
+    ensure_dir("sites", 0, user.gid, 0o751)
 }
 
 const WELCOME_PAGE: &str = include_str!("templates/welcome.html");
