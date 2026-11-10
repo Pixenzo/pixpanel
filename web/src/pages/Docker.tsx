@@ -1067,7 +1067,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
   return (
     <Modal
       open
-      wide
+      extraWide
       onClose={onClose}
       title={t("Konteyner oluştur")}
       description={t("İmaj gerekirse indirilir, ardından konteyner başlatılır.")}
@@ -1468,7 +1468,7 @@ function StackEditorModal({
   return (
     <Modal
       open
-      wide
+      extraWide
       onClose={onClose}
       title={mode === "create" ? t("Yığın oluştur") : t("Yığını düzenle: {name}", { name: stackName ?? "" })}
       footer={

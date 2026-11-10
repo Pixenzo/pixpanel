@@ -11,6 +11,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  Mail,
   ShieldCheck,
   SlidersHorizontal,
   SquareTerminal,
@@ -88,6 +89,9 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
   }
   if (site.kind === "proxy") {
     tools.push({ id: "proxy", label: t("Ters vekil"), icon: ArrowRightLeft, to: `${base}/proxy`, status: site.proxy_target ?? "" });
+  }
+  if (can("mail")) {
+    tools.push({ id: "mail", label: t("Posta"), icon: Mail, to: "/mail", status: t("Kutular, takma adlar, filtreler") });
   }
   if (can("ssl")) {
     tools.push({ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck, to: `${base}/ssl`, ...sslStatus(site, summary) });

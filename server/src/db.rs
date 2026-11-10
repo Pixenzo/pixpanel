@@ -187,6 +187,42 @@ const MIGRATIONS: &[&str] = &[
         config  TEXT NOT NULL
     );
     "#,
+    // 6: posta
+    r#"
+    CREATE TABLE mail_domains (
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        domain      TEXT NOT NULL UNIQUE,
+        catch_all   TEXT NOT NULL DEFAULT '',
+        dkim_record TEXT NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX mail_domains_user ON mail_domains(user_id);
+
+    CREATE TABLE mailboxes (
+        id            INTEGER PRIMARY KEY,
+        domain_id     INTEGER NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
+        local         TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        quota_mb      INTEGER NOT NULL DEFAULT 1024,
+        enabled       INTEGER NOT NULL DEFAULT 1,
+        forward_to    TEXT NOT NULL DEFAULT '',
+        forward_keep  INTEGER NOT NULL DEFAULT 1,
+        auto_reply    TEXT NOT NULL DEFAULT '{}',
+        filters       TEXT NOT NULL DEFAULT '[]',
+        created_at    INTEGER NOT NULL,
+        UNIQUE (domain_id, local)
+    );
+
+    CREATE TABLE mail_aliases (
+        id           INTEGER PRIMARY KEY,
+        domain_id    INTEGER NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
+        local        TEXT NOT NULL,
+        destinations TEXT NOT NULL,
+        created_at   INTEGER NOT NULL,
+        UNIQUE (domain_id, local)
+    );
+    "#,
 ];
 
 #[derive(Clone)]

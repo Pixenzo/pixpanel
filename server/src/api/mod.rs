@@ -13,6 +13,7 @@ mod files;
 mod git;
 mod jobs;
 mod logs;
+mod mail;
 mod notify;
 mod php;
 mod sites;
@@ -34,6 +35,7 @@ pub fn router() -> Router<AppState> {
         .nest("/cron", cron::router())
         .nest("/logs", logs::router())
         .nest("/php", php::router())
+        .nest("/mail", mail::router())
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())

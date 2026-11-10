@@ -14,6 +14,7 @@ import {
   Gauge,
   Globe,
   ListChecks,
+  Mail,
   ScrollText,
   Settings,
   SquareTerminal,
@@ -42,6 +43,7 @@ export const navigation: NavGroup[] = [
     title: null,
     items: [
       { to: "/sites", label: "Siteler", icon: Globe, visible: can("sites") },
+      { to: "/mail", label: "Posta", icon: Mail, visible: can("mail") },
       { to: "/databases", label: "Veritabanları", icon: Database, visible: can("databases") },
       { to: "/files", label: "Dosyalar", icon: FolderOpen, visible: can("files") },
       { to: "/cron", label: "Zamanlı görevler", icon: CalendarClock, visible: can("cron") },

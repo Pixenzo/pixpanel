@@ -18,6 +18,8 @@ import { FilesPage } from "./pages/Files";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
 import { LogsPage } from "./pages/Logs";
+import { MailPage } from "./pages/Mail";
+import { MailDomainPage } from "./pages/MailDomain";
 import { PhpPage } from "./pages/Php";
 import { ProcessesPage } from "./pages/Processes";
 import { ServicesPage } from "./pages/Services";
@@ -66,6 +68,8 @@ function App() {
         {me.role !== "member" && <Route path="/users" element={<UsersPage />} />}
         {canSites && <Route path="/sites" element={<SitesPage />} />}
         {canSites && <Route path="/sites/:id/:section?" element={<SiteDetailPage />} />}
+        {can("mail") && <Route path="/mail" element={<MailPage />} />}
+        {can("mail") && <Route path="/mail/:id" element={<MailDomainPage />} />}
         {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
         {can("files") && <Route path="/files" element={<FilesPage />} />}
         {can("cron") && <Route path="/cron" element={<CronPage />} />}

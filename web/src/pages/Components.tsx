@@ -13,6 +13,7 @@ const categories: { id: ComponentStatus["category"]; title: string }[] = [
   { id: "php", title: "PHP sürümleri" },
   { id: "database", title: "Veritabanı ve önbellek" },
   { id: "container", title: "Konteyner" },
+  { id: "mail", title: "Posta" },
 ];
 
 export function ComponentsPage() {

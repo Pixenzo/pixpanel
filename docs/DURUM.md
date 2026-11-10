@@ -1,6 +1,6 @@
 # Durum
 
-Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, Git yayınlama, Docker)
+Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, Git yayınlama, Docker, posta)
 
 ## Kararlar
 
@@ -43,6 +43,10 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 - Git ile yayınlama: depo + dal + yayın betiği, site başına SSH yayın anahtarı, web kancası (`/api/v1/hooks/deploy/<anahtar>`), yayın geçmişi ve günlüğü, eski sürüme dönüş; yayın sürerken gelen istekler tek bir sıradaki yayına indirgenir.
 - Bildirimler: SMTP (yönetici tanımlar) ve Telegram (hesap kendi botunu tanımlar); yayın başarılı/başarısız ve sertifika yenileme hatası olayları.
 - Docker: konteyner (oluştur, başlat/durdur, günlük, ayrıntı, içinde terminal), imaj, birim, ağ ve compose yığınları (`/opt/pixpanel/stacks/<ad>/compose.yaml`); yayınlanan portu tek tıkla ters vekil sitesine bağlama.
+- Posta: Postfix + Dovecot 2.4 + Rspamd. Alan adları (DKIM anahtarı, MX/SPF/DKIM/DMARC kayıt önerileri ve canlı DNS denetimi, hepsini yakala adresi), kutular (kota, kapatma, parola), takma adlar, yönlendirme (kopyalı/kopyasız), otomatik yanıt (tarih aralıklı), kural kurucuyla filtreler (Sieve betiğine çevrilir), posta kuyruğu, istenmeyen posta eşikleri ile beyaz/kara liste, Rspamd etkinlik görünümü.
+  - Hesaplar panelin veritabanında; her değişiklikte `/etc/pixpanel/mail/` altındaki düz eşleme dosyaları (texthash + Dovecot passwd-file) baştan üretilir. Postalar `/var/vmail/<alan>/<kutu>` altında, `vmail` kullanıcısıyla.
+  - Yönetici dışındakiler yalnızca kendi sitelerinin alan adına posta açabilir (başkasının adresine giden postayı ele geçirmeyi önler).
+  - Kimliği doğrulanan kullanıcı yalnızca kendi adresinden (ve hedefi olduğu takma adlardan) gönderebilir.
 - Arayüz düzeni (Plesk "power user" görünümünden esinle): ana sayfa siteler; her site, araçlarını ve o anki durumlarını gösteren bir kart. Site çalışma alanında sol bölüm menüsü. Ctrl+K ile site/araç/sayfa araması. Koyu yan menü.
 - Arayüz: giriş, genel bakış, siteler ve site ayrıntısı (genel, PHP, vekil, SSL, gelişmiş), veritabanları, dosyalar, zamanlı görevler, günlükler, bileşenler, servisler, süreçler, terminal, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
 
@@ -58,6 +62,7 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 - Genel PHP ayarının siteye devralındığı, sitenin kendi değeriyle ezebildiği; geçersiz saat dilimi ve satır sonlu yönergenin reddedildiği.
 - Git: yayın anahtarıyla SSH üzerinden çekme, betiğin site kullanıcısıyla çalışması, web kancasında başka dalın atlanması ve art arda gelen çağrıların sıraya alınması, eski sürüme dönüş, hatalı betikte yayının başarısız sayılıp e-posta ve Telegram bildirimi gitmesi; `ext::`, `--upload-pack`, `file://`, parolalı adres ve seçenek gibi dal adlarının reddedildiği.
 - Docker: konteyner ve compose yığını oluşturma/kaldırma; `--privileged` gibi seçenek enjeksiyonu ve birim kaçışı denemelerinin reddedildiği; ortam değişkeni değerlerinin görev günlüğüne yazılmadığı.
+- Posta (`scripts/e2e/mail.sh`): kimlikli gönderim (587/465), IMAP, takma ad dağıtımı, dışarıdan teslim, açık aktarmanın ve başkası adına gönderimin reddi, filtreyle klasöre taşıma, otomatik yanıt, kopyasız yönlendirme, hepsini yakala, kutuyu kapatınca oturumun hemen reddedilmesi, parola değişimi; tırnak/satır sonu/yol kaçışı içeren kural ve adların reddedildiği ya da zararsız kaldığı.
 - Müşteri hesabının başka hesabın sitesini, veritabanını ve bileşen sayfasını göremediği.
 - Dosya yöneticisinde `..`, gerçek sistem yolu ve `/etc/passwd` dosyasına verilen sembolik bağın "bulunamadı" döndüğü (hapis çalışıyor).
 - Kullanıcının ev klasörünün üst düzeyini (`sites` dahil) değiştiremediği.
@@ -67,6 +72,7 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 ## Test ortamı notları
 
 - Uçtan uca sınamalar: `scripts/e2e/features.sh` (PHP genel ayarları, bildirimler, Git yayınlama, Docker). Test makinesine kopyalanıp `PX_USER=… PX_PASS=… bash features.sh [php git docker]` ile çalışır; `mocks.py` sahte Telegram (9911) ve SMTP (2525) sunucusudur, `/etc/pixpanel/config.toml` içindeki `telegram_api` ona bakar.
+- Posta sınaması `scripts/e2e/mail.sh` + `mailflow.py`; test makinesinde `deneme.test` için örnek kutular (bilgi, destek) duruyor. Makinenin gerçek bir alan adı ve açık 25. portu olmadığından dış sunucularla alışveriş (gerçek teslim, SPF/DKIM doğrulaması) denenmedi.
 - Git sınaması için makinede `gitsrv` kullanıcısı ve `/home/gitsrv/demo.git` deposu var.
 
 - Test makinesinde `/etc/pixpanel/config.toml` paneli Pebble'a yönlendirir (`acme_directory`, `acme_root_ca`); gerçek Let's Encrypt için bu dosya silinmelidir.
@@ -74,7 +80,7 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 
 ## Sıradaki (öncelik sırasıyla)
 
-1. Posta: Postfix + Dovecot + Rspamd; kutular, kota, takma adlar, yönlendirme, otomatik yanıt, Sieve filtreleri, DKIM/SPF/DMARC, karantina, web postası.
+1. Posta eksikleri: web postası (Roundcube ya da SnappyMail), posta sunucusu adı için kendiliğinden Let's Encrypt, karantina (şu an şüpheli iletiler Junk klasörüne gider), kutu sahibinin kendi kurallarını yönetebileceği giriş, bayi/hesap başına kutu sınırı.
 2. Güvenlik duvarı (nftables), fail2ban.
 3. DNS (PowerDNS), FTP (pure-ftpd).
 4. Node.js uygulamaları, phpMyAdmin.
@@ -82,6 +88,10 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 6. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
 
 ## Bilinen eksikler
+
+- Posta bileşeninin sıfırdan kurulumu (Bileşenler sayfasından) denenmedi; test makinesinde paketler elle kuruldu, yapılandırma `POST /mail/setup` ile uygulandı.
+- Docker, PHP, Ayarlar ve Posta sayfalarının arayüzü tarayıcıda açılıp gözle denetlendi ama her düğmesi tek tek tıklanarak sınanmadı; arka uçları `scripts/e2e` ile sınandı.
+- Web kancası yalnızca adresteki gizli anahtarla korunuyor; GitHub imza başlığı (`X-Hub-Signature-256`) doğrulanmıyor.
 
 - Panel sertifikası kendinden imzalı; panelin kendi alan adına Let's Encrypt alması SSL aşamasında gelecek.
 - Birim testleri az (7 test: alan adı, sertifika, SQL kaçışlama, cron doğrulama) ve `scripts/test.sh` ile test makinesinde çalışıyor; kod Linux'a özgü olduğundan Windows'ta derlenmiyor.

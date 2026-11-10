@@ -134,6 +134,18 @@ pub fn catalog() -> Vec<Component> {
             Some("docker.service"),
             Repo::Docker,
         ),
+        component(
+            "mail",
+            "Posta sunucusu",
+            "Postfix (SMTP), Dovecot (IMAP, filtreler) ve Rspamd (istenmeyen posta süzgeci, DKIM).",
+            "mail",
+            &[
+                "postfix", "dovecot-imapd", "dovecot-lmtpd", "dovecot-sieve", "dovecot-managesieved", "rspamd",
+                "redis-server", "bind9-dnsutils",
+            ],
+            Some("postfix.service"),
+            Repo::Distro,
+        ),
     ]);
     list
 }

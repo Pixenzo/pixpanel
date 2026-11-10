@@ -30,6 +30,7 @@ async fn install(
         return Err(AppError::conflict(format!("{} zaten kurulu", component.name)));
     }
     let apt_lock = state.apt_lock.clone();
+    let job_state = state.clone();
     let title = format!("{} kurulumu", component.name);
     let job_id = state.jobs.start("component.install", &title, Some(user.id), move |ctx| async move {
         // Aynı anda yalnızca bir paket işlemi yürür; diğerleri sırasını bekler.
@@ -37,7 +38,25 @@ async fn install(
             ctx.log("Başka bir kurulumun bitmesi bekleniyor");
         }
         let _guard = apt_lock.lock().await;
-        components::install(&ctx, &component).await
+        if component.id == "mail" {
+            // Postfix kurulurken soru sormasın ve internet sunucusu olarak yapılandırılsın.
+            let answers = format!(
+                "postfix postfix/main_mailer_type select Internet Site
+postfix postfix/mailname string {}
+",
+                crate::mail::system_hostname()
+            );
+            let mut preseed = crate::sys::exec::base_command("debconf-set-selections");
+            ctx.run_streaming(&mut preseed, "debconf-set-selections", Some(answers.into_bytes())).await?;
+        }
+        components::install(&ctx, &component).await?;
+        if component.id == "mail" {
+            ctx.log("Posta servisleri yapılandırılıyor");
+            let _sys = job_state.sys_lock.lock().await;
+            crate::mail::setup(&job_state.db, &job_state.cfg).await?;
+            ctx.log("Posta sunucusu hazır");
+        }
+        Ok(())
     })?;
     auth::audit(&state.db, &user, "component.install", &id, "");
     Ok(Json(json!({ "job_id": job_id })))

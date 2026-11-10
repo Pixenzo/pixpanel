@@ -348,6 +348,7 @@ export function Modal({
   children,
   footer,
   wide,
+  extraWide,
 }: {
   open: boolean;
   onClose: () => void;
@@ -356,6 +357,8 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /** Kural kurucu, günlük görüntüleyici gibi geniş içerikler için. */
+  extraWide?: boolean;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
@@ -364,9 +367,10 @@ export function Modal({
         <Dialog.Content
           aria-describedby={undefined}
           className={classNames(
-            "fixed top-[12vh] left-1/2 z-50 flex max-h-[80vh] w-[calc(100vw-2rem)] -translate-x-1/2 flex-col",
+            "fixed left-1/2 z-50 flex w-[calc(100vw-2rem)] -translate-x-1/2 flex-col",
+            extraWide ? "top-[6vh] max-h-[88vh]" : "top-[12vh] max-h-[80vh]",
             "animate-[pop-in_140ms_ease-out] rounded-xl border border-line bg-surface shadow-pop",
-            wide ? "max-w-2xl" : "max-w-md",
+            extraWide ? "max-w-5xl" : wide ? "max-w-2xl" : "max-w-md",
           )}
         >
           <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
@@ -407,7 +411,7 @@ export function Tabs<T extends string>({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="mb-4 flex gap-1 overflow-x-auto border-b border-line">
+    <div role="tablist" aria-label={label} className="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line">
       {tabs.map((tab) => (
         <button
           key={tab.id}

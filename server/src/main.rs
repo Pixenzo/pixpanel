@@ -11,6 +11,7 @@ mod error;
 mod fsop;
 mod hosting;
 mod jobs;
+mod mail;
 mod notify;
 mod state;
 mod sys;

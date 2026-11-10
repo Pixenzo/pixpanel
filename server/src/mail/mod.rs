@@ -1,0 +1,890 @@
+//! Posta sunucusu: Postfix (SMTP), Dovecot (IMAP, teslimat, Sieve) ve Rspamd
+//! (istenmeyen posta süzgeci, DKIM imzası).
+//!
+//! Hesaplar panelin veritabanında tutulur. Her değişiklikte Postfix ve
+//! Dovecot'un okuduğu düz eşleme dosyaları (`/etc/pixpanel/mail/`) baştan
+//! üretilir; servisler panelin veritabanına doğrudan erişmez.
+
+pub mod sieve;
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
+
+use crate::auth::{AuthUser, Role};
+use crate::db::Db;
+use crate::error::{AppError, AppResult};
+use crate::hosting::sysuser::{self, SysUser};
+use crate::hosting::{atomic_write, domain as domain_rules, nginx};
+use crate::sys::{exec, runas, services};
+use sieve::{AutoReply, Filter};
+
+pub const MAIL_DIR: &str = "/etc/pixpanel/mail";
+pub const MAIL_ROOT: &str = "/var/vmail";
+const VMAIL_USER: &str = "vmail";
+const VMAIL_UID: u32 = 5000;
+const DKIM_DIR: &str = "/var/lib/rspamd/dkim";
+pub const DKIM_SELECTOR: &str = "pix";
+const HOSTNAME_KEY: &str = "mail.hostname";
+const SPAM_KEY: &str = "mail.spam";
+
+const DOVECOT_TEMPLATE: &str = include_str!("templates/dovecot.conf");
+const BEFORE_SIEVE: &str = include_str!("templates/before.sieve");
+
+pub const SERVICES: &[(&str, &str)] =
+    &[("postfix.service", "Postfix (SMTP)"), ("dovecot.service", "Dovecot (IMAP)"), ("rspamd.service", "Rspamd (istenmeyen posta süzgeci)")];
+
+pub fn is_installed() -> bool {
+    exec::binary_exists("postfix") && exec::binary_exists("dovecot") && exec::binary_exists("rspamd")
+}
+
+fn mail_file(name: &str) -> PathBuf {
+    Path::new(MAIL_DIR).join(name)
+}
+
+// ---- Adres doğrulama ----
+
+/// Kutu ve takma adların yerel bölümü (`@` öncesi).
+pub fn validate_local(value: &str) -> AppResult<String> {
+    let local = value.trim().to_ascii_lowercase();
+    let mut chars = local.bytes();
+    let valid = local.len() <= 64
+        && chars.next().is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && chars.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-' | b'+'))
+        && !local.ends_with('.')
+        && !local.contains("..");
+    if valid { Ok(local) } else { Err(AppError::bad("Geçersiz adres (harf, rakam, nokta, tire ve alt çizgi kullanılabilir)")) }
+}
+
+/// Tam e-posta adresi (yönlendirme ve takma ad hedefleri için; dış adresler olabilir).
+pub fn validate_address(value: &str) -> AppResult<String> {
+    let address = value.trim();
+    let invalid = || AppError::bad(format!("Geçersiz e-posta adresi: {address}"));
+    let (local, host) = address.rsplit_once('@').ok_or_else(invalid)?;
+    let local_ok = !local.is_empty()
+        && local.len() <= 64
+        && !local.starts_with('.')
+        && !local.ends_with('.')
+        && !local.contains("..")
+        && local.bytes().all(|b| b.is_ascii_alphanumeric() || b"._%+-".contains(&b));
+    if !local_ok {
+        return Err(invalid());
+    }
+    let host = domain_rules::normalize(host).map_err(|_| invalid())?;
+    Ok(format!("{}@{host}", local.to_ascii_lowercase()))
+}
+
+fn validate_addresses(values: &[String], max: usize) -> AppResult<Vec<String>> {
+    let mut list = Vec::new();
+    for value in values {
+        let address = validate_address(value)?;
+        if !list.contains(&address) {
+            list.push(address);
+        }
+    }
+    if list.len() > max {
+        return Err(AppError::bad(format!("En fazla {max} adres girilebilir")));
+    }
+    Ok(list)
+}
+
+// ---- Kayıtlar ----
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MailDomain {
+    pub id: i64,
+    pub user_id: i64,
+    pub owner: String,
+    pub domain: String,
+    /// `@alan` adresine gelen ve hiçbir kutuya uymayan iletilerin gideceği adres.
+    pub catch_all: String,
+    pub dkim_record: String,
+    pub mailbox_count: i64,
+    pub alias_count: i64,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Mailbox {
+    pub id: i64,
+    pub domain_id: i64,
+    pub local: String,
+    pub address: String,
+    pub quota_mb: i64,
+    pub enabled: bool,
+    pub forward_to: Vec<String>,
+    pub forward_keep: bool,
+    pub auto_reply: AutoReply,
+    pub filters: Vec<Filter>,
+    /// Kullanılan alan (bayt); Dovecot'tan okunur.
+    pub used_bytes: Option<i64>,
+    pub created_at: i64,
+    #[serde(skip)]
+    pub password_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MailAlias {
+    pub id: i64,
+    pub domain_id: i64,
+    pub local: String,
+    pub address: String,
+    pub destinations: Vec<String>,
+    pub created_at: i64,
+}
+
+fn split_list(raw: &str) -> Vec<String> {
+    raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect()
+}
+
+const DOMAIN_COLUMNS: &str = "d.id, d.user_id, u.username, d.domain, d.catch_all, d.dkim_record, d.created_at,
+     (SELECT COUNT(*) FROM mailboxes m WHERE m.domain_id = d.id),
+     (SELECT COUNT(*) FROM mail_aliases a WHERE a.domain_id = d.id)";
+
+fn read_domain(row: &rusqlite::Row<'_>) -> rusqlite::Result<MailDomain> {
+    Ok(MailDomain {
+        id: row.get(0)?,
+        user_id: row.get(1)?,
+        owner: row.get(2)?,
+        domain: row.get(3)?,
+        catch_all: row.get(4)?,
+        dkim_record: row.get(5)?,
+        created_at: row.get(6)?,
+        mailbox_count: row.get(7)?,
+        alias_count: row.get(8)?,
+    })
+}
+
+/// Kullanıcının görebildiği posta alan adları (siteler ile aynı kural).
+pub fn list_domains(db: &Db, user: &AuthUser) -> AppResult<Vec<MailDomain>> {
+    let owner = user.owner_id();
+    let (all, include_children) = (user.is_admin(), user.role == Role::Reseller);
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {DOMAIN_COLUMNS} FROM mail_domains d JOIN users u ON u.id = d.user_id
+             WHERE ?1 OR d.user_id = ?2 OR (?3 AND u.parent_id = ?2) ORDER BY d.domain"
+        ))?;
+        stmt.query_map(params![all, owner, include_children], read_domain)?.collect()
+    })
+}
+
+pub fn get_domain(db: &Db, user: &AuthUser, id: i64) -> AppResult<MailDomain> {
+    let found = db.call(|conn| {
+        conn.query_row(
+            &format!("SELECT {DOMAIN_COLUMNS}, u.parent_id FROM mail_domains d JOIN users u ON u.id = d.user_id WHERE d.id = ?1"),
+            params![id],
+            |row| Ok((read_domain(row)?, row.get::<_, Option<i64>>(9)?)),
+        )
+        .optional()
+    })?;
+    let (domain, owner_parent) = found.ok_or(AppError::NotFound)?;
+    let allowed = user.is_admin() || domain.user_id == user.owner_id() || (user.role == Role::Reseller && owner_parent == Some(user.id));
+    if allowed { Ok(domain) } else { Err(AppError::NotFound) }
+}
+
+const MAILBOX_COLUMNS: &str = "m.id, m.domain_id, m.local, d.domain, m.quota_mb, m.enabled, m.forward_to, m.forward_keep,
+     m.auto_reply, m.filters, m.created_at, m.password_hash";
+
+fn read_mailbox(row: &rusqlite::Row<'_>) -> rusqlite::Result<Mailbox> {
+    let (local, domain): (String, String) = (row.get(2)?, row.get(3)?);
+    let (forward_to, auto_reply, filters): (String, String, String) = (row.get(6)?, row.get(8)?, row.get(9)?);
+    Ok(Mailbox {
+        id: row.get(0)?,
+        domain_id: row.get(1)?,
+        address: format!("{local}@{domain}"),
+        local,
+        quota_mb: row.get(4)?,
+        enabled: row.get(5)?,
+        forward_to: split_list(&forward_to),
+        forward_keep: row.get(7)?,
+        auto_reply: serde_json::from_str(&auto_reply).unwrap_or_default(),
+        filters: serde_json::from_str(&filters).unwrap_or_default(),
+        used_bytes: None,
+        created_at: row.get(10)?,
+        password_hash: row.get(11)?,
+    })
+}
+
+pub fn list_mailboxes(db: &Db, domain_id: Option<i64>) -> AppResult<Vec<Mailbox>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {MAILBOX_COLUMNS} FROM mailboxes m JOIN mail_domains d ON d.id = m.domain_id
+             WHERE ?1 IS NULL OR m.domain_id = ?1 ORDER BY d.domain, m.local"
+        ))?;
+        stmt.query_map(params![domain_id], read_mailbox)?.collect()
+    })
+}
+
+pub fn load_mailbox(db: &Db, id: i64) -> AppResult<Mailbox> {
+    db.call(|conn| {
+        conn.query_row(
+            &format!("SELECT {MAILBOX_COLUMNS} FROM mailboxes m JOIN mail_domains d ON d.id = m.domain_id WHERE m.id = ?1"),
+            params![id],
+            read_mailbox,
+        )
+        .optional()
+    })?
+    .ok_or(AppError::NotFound)
+}
+
+pub fn save_mailbox(db: &Db, mailbox: &Mailbox) -> AppResult<()> {
+    let (auto_reply, filters) = (to_json(&mailbox.auto_reply)?, to_json(&mailbox.filters)?);
+    db.call(|conn| {
+        conn.execute(
+            "UPDATE mailboxes SET password_hash = ?1, quota_mb = ?2, enabled = ?3, forward_to = ?4, forward_keep = ?5,
+                    auto_reply = ?6, filters = ?7 WHERE id = ?8",
+            params![
+                mailbox.password_hash, mailbox.quota_mb, mailbox.enabled, mailbox.forward_to.join(","),
+                mailbox.forward_keep, auto_reply, filters, mailbox.id
+            ],
+        )
+    })?;
+    Ok(())
+}
+
+fn to_json<T: Serialize>(value: &T) -> AppResult<String> {
+    serde_json::to_string(value).map_err(|err| AppError::internal(err.to_string()))
+}
+
+fn read_alias(row: &rusqlite::Row<'_>) -> rusqlite::Result<MailAlias> {
+    let (local, domain, destinations): (String, String, String) = (row.get(2)?, row.get(3)?, row.get(4)?);
+    Ok(MailAlias {
+        id: row.get(0)?,
+        domain_id: row.get(1)?,
+        address: format!("{local}@{domain}"),
+        local,
+        destinations: split_list(&destinations),
+        created_at: row.get(5)?,
+    })
+}
+
+const ALIAS_COLUMNS: &str = "a.id, a.domain_id, a.local, d.domain, a.destinations, a.created_at";
+
+pub fn list_aliases(db: &Db, domain_id: Option<i64>) -> AppResult<Vec<MailAlias>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {ALIAS_COLUMNS} FROM mail_aliases a JOIN mail_domains d ON d.id = a.domain_id
+             WHERE ?1 IS NULL OR a.domain_id = ?1 ORDER BY d.domain, a.local"
+        ))?;
+        stmt.query_map(params![domain_id], read_alias)?.collect()
+    })
+}
+
+pub fn load_alias(db: &Db, id: i64) -> AppResult<MailAlias> {
+    db.call(|conn| {
+        conn.query_row(
+            &format!("SELECT {ALIAS_COLUMNS} FROM mail_aliases a JOIN mail_domains d ON d.id = a.domain_id WHERE a.id = ?1"),
+            params![id],
+            read_alias,
+        )
+        .optional()
+    })?
+    .ok_or(AppError::NotFound)
+}
+
+/// Takma ad hedeflerini doğrular (en fazla 50 adres).
+pub fn validate_destinations(values: &[String]) -> AppResult<Vec<String>> {
+    let list = validate_addresses(values, 50)?;
+    if list.is_empty() {
+        return Err(AppError::bad("En az bir hedef adres girin"));
+    }
+    Ok(list)
+}
+
+pub fn validate_forwards(values: &[String]) -> AppResult<Vec<String>> {
+    validate_addresses(values, sieve::MAX_FORWARDS)
+}
+
+pub fn validate_quota(quota_mb: i64) -> AppResult<()> {
+    if (10..=1_000_000).contains(&quota_mb) { Ok(()) } else { Err(AppError::bad("Kota 10 MB ile 1.000.000 MB arasında olmalı")) }
+}
+
+// ---- Sistem kullanıcısı ve kutu klasörleri ----
+
+fn vmail() -> AppResult<SysUser> {
+    sysuser::lookup(VMAIL_USER).ok_or_else(|| AppError::bad("Posta sunucusu kurulu değil; önce Bileşenler sayfasından kurun"))
+}
+
+fn mailbox_home(domain: &str, local: &str) -> PathBuf {
+    Path::new(MAIL_ROOT).join(domain).join(local)
+}
+
+/// `vmail` kullanıcısı adına komut çalıştırır; başarısızsa hata çıktısını döner.
+async fn as_vmail(cwd: &Path, program: &str, args: &[&str], stdin: Option<&[u8]>) -> AppResult<Result<String, String>> {
+    use tokio::io::AsyncWriteExt;
+    let mut cmd = runas::command(&vmail()?, cwd, program, args);
+    cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    if stdin.is_some() {
+        cmd.stdin(std::process::Stdio::piped());
+    }
+    let mut child = cmd.spawn().map_err(|err| AppError::internal(format!("{program} başlatılamadı: {err}")))?;
+    if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        pipe.write_all(data).await?;
+        pipe.shutdown().await?;
+    }
+    let output = tokio::time::timeout(Duration::from_secs(60), child.wait_with_output())
+        .await
+        .map_err(|_| AppError::internal(format!("{program} zaman aşımına uğradı")))??;
+    let (stdout, stderr) = (String::from_utf8_lossy(&output.stdout).into_owned(), String::from_utf8_lossy(&output.stderr).into_owned());
+    Ok(if output.status.success() { Ok(stdout) } else { Err(if stderr.trim().is_empty() { stdout } else { stderr }) })
+}
+
+/// Kutunun Sieve betiğini kurallarına göre yazar ya da (kural yoksa) kaldırır.
+/// Betik derlenemezse etkinleştirilmez ve hata döner.
+pub async fn apply_sieve(mailbox: &Mailbox) -> AppResult<()> {
+    let (local, domain) = mailbox.address.split_once('@').ok_or_else(|| AppError::internal("adres bozuk"))?;
+    let home = mailbox_home(domain, local);
+    let root = Path::new(MAIL_ROOT);
+    let home_str = home.to_string_lossy().into_owned();
+    let run = |result: Result<String, String>, what: &str| result.map_err(|detail| AppError::internal(format!("{what}: {}", detail.trim())));
+
+    run(as_vmail(root, "mkdir", &["-p", "--", &format!("{home_str}/sieve")], None).await?, "Kutu klasörü oluşturulamadı")?;
+    let active = format!("{home_str}/.dovecot.sieve");
+    if !sieve::is_needed(&mailbox.filters, &mailbox.auto_reply, &mailbox.forward_to) {
+        run(as_vmail(root, "rm", &["-f", "--", &active, &format!("{home_str}/.dovecot.svbin")], None).await?, "Betik kaldırılamadı")?;
+        return Ok(());
+    }
+
+    let script = sieve::render(&mailbox.address, &mailbox.filters, &mailbox.auto_reply, &mailbox.forward_to, mailbox.forward_keep);
+    // Önce geçici adla yazılıp derlenir; hatalı betik etkin betiğin yerini almaz.
+    let candidate = format!("{home_str}/sieve/pixpanel.new.sieve");
+    let target = format!("{home_str}/sieve/pixpanel.sieve");
+    run(as_vmail(root, "tee", &["--", &candidate], Some(script.as_bytes())).await?, "Betik yazılamadı")?;
+    if let Err(detail) = as_vmail(root, "sievec", &["--", &candidate], None).await? {
+        let _ = as_vmail(root, "rm", &["-f", "--", &candidate], None).await;
+        return Err(AppError::bad(format!("Kurallar uygulanamadı: {}", detail.trim())));
+    }
+    run(as_vmail(root, "mv", &["-f", "--", &candidate, &target], None).await?, "Betik etkinleştirilemedi")?;
+    let _ = as_vmail(root, "rm", &["-f", "--", &format!("{home_str}/sieve/pixpanel.new.svbin")], None).await;
+    run(as_vmail(root, "ln", &["-sfn", "--", "sieve/pixpanel.sieve", &active], None).await?, "Betik etkinleştirilemedi")?;
+    Ok(())
+}
+
+/// Kutunun (ya da `local` verilmezse alan adının) bütün postalarını siler.
+pub async fn remove_mail_data(domain: &str, local: Option<&str>) -> AppResult<()> {
+    let target = match local {
+        Some(local) => mailbox_home(domain, local),
+        None => Path::new(MAIL_ROOT).join(domain),
+    };
+    // Adlar doğrulanmış olsa da kökün dışına çıkılmadığı ayrıca denetlenir.
+    if !target.starts_with(MAIL_ROOT) || target == Path::new(MAIL_ROOT) {
+        return Err(AppError::internal("geçersiz posta klasörü"));
+    }
+    let target = target.to_string_lossy().into_owned();
+    as_vmail(Path::new(MAIL_ROOT), "rm", &["-rf", "--", &target], None)
+        .await?
+        .map_err(|detail| AppError::internal(format!("Postalar silinemedi: {}", detail.trim())))?;
+    Ok(())
+}
+
+/// Kutuların kullandığı alan (adres → bayt).
+pub async fn usage() -> std::collections::HashMap<String, i64> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(output) = exec::run_with_timeout("doveadm", &["-f", "tab", "quota", "get", "-A"], Duration::from_secs(30)).await else {
+        return map;
+    };
+    // Sütunlar: Username, Quota name, Type, Value, Limit, %
+    for line in output.stdout.lines().skip(1) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() >= 5 && fields[2] == "STORAGE" {
+            if let Ok(kilobytes) = fields[3].parse::<i64>() {
+                map.insert(fields[0].to_string(), kilobytes * 1024);
+            }
+        }
+    }
+    map
+}
+
+// ---- Eşleme dosyaları ----
+
+/// Postfix ve Dovecot'un okuduğu dosyaları veritabanından baştan üretir.
+pub async fn sync(db: &Db) -> AppResult<()> {
+    if !is_installed() {
+        return Ok(());
+    }
+    let account = vmail()?;
+    let domains: Vec<(i64, String, String)> = db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT id, domain, catch_all FROM mail_domains ORDER BY domain")?;
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?.collect()
+    })?;
+    let mailboxes = list_mailboxes(db, None)?;
+    let aliases = list_aliases(db, None)?;
+
+    let mut domain_map = String::new();
+    let mut mailbox_map = String::new();
+    let mut alias_map = String::new();
+    let mut sender_map = String::new();
+    let mut users = String::new();
+
+    for (id, domain, catch_all) in &domains {
+        domain_map.push_str(&format!("{domain} OK\n"));
+        let boxes: Vec<&Mailbox> = mailboxes.iter().filter(|m| m.domain_id == *id && m.enabled).collect();
+        for mailbox in &boxes {
+            mailbox_map.push_str(&format!("{} {domain}/{}/\n", mailbox.address, mailbox.local));
+            sender_map.push_str(&format!("{0} {0}\n", mailbox.address));
+            users.push_str(&format!(
+                "{}:{{ARGON2ID}}{}:{uid}:{gid}::{}::userdb_quota_storage_size={}M\n",
+                mailbox.address,
+                mailbox.password_hash,
+                mailbox_home(domain, &mailbox.local).display(),
+                mailbox.quota_mb,
+                uid = account.uid,
+                gid = account.gid,
+            ));
+            // "Hepsini yakala" tanımlıysa kutuların kendi adresi ondan önce eşleşmelidir.
+            if !catch_all.is_empty() {
+                alias_map.push_str(&format!("{0} {0}\n", mailbox.address));
+            }
+        }
+        for alias in aliases.iter().filter(|a| a.domain_id == *id) {
+            alias_map.push_str(&format!("{} {}\n", alias.address, alias.destinations.join(", ")));
+            // Takma ad adresinden, hedefi olan yerel kutular gönderim yapabilir.
+            let owners: Vec<&str> = alias.destinations.iter().filter(|d| boxes.iter().any(|m| &m.address == *d)).map(String::as_str).collect();
+            if !owners.is_empty() {
+                sender_map.push_str(&format!("{} {}\n", alias.address, owners.join(", ")));
+            }
+        }
+        if !catch_all.is_empty() {
+            alias_map.push_str(&format!("@{domain} {catch_all}\n"));
+        }
+    }
+
+    std::fs::create_dir_all(MAIL_DIR)?;
+    atomic_write(&mail_file("domains"), domain_map.as_bytes(), 0o644)?;
+    atomic_write(&mail_file("mailboxes"), mailbox_map.as_bytes(), 0o644)?;
+    atomic_write(&mail_file("aliases"), alias_map.as_bytes(), 0o644)?;
+    atomic_write(&mail_file("senders"), sender_map.as_bytes(), 0o644)?;
+    // Parola özetlerini yalnızca Dovecot okuyabilir.
+    let users_path = mail_file("dovecot-users");
+    atomic_write(&users_path, users.as_bytes(), 0o640)?;
+    std::os::unix::fs::chown(&users_path, Some(0), Some(sysuser::group_id("dovecot")?))?;
+
+    // texthash eşlemeleri süreç başlarken okunur; yeniden yükleme yeni içeriği devreye alır.
+    if services::is_active("postfix.service").await {
+        exec::run_ok("postfix", &["reload"]).await?;
+    }
+    // Dovecot kullanıcı dosyasındaki değişikliği birkaç saniye gecikmeyle fark eder;
+    // kapatılan kutunun ya da değişen parolanın hemen geçerli olması için yeniden yüklenir.
+    if services::is_active("dovecot.service").await {
+        exec::run_ok("doveadm", &["reload"]).await?;
+    }
+    Ok(())
+}
+
+/// Kullanıcının açık IMAP oturumlarını sonlandırır (kutu kapatıldığında ya da silindiğinde).
+pub async fn kick(address: &str) {
+    let _ = exec::run("doveadm", &["kick", "--", address]).await;
+}
+
+// ---- DKIM ve DNS ----
+
+fn dkim_key_path(domain: &str) -> PathBuf {
+    Path::new(DKIM_DIR).join(format!("{domain}.{DKIM_SELECTOR}.key"))
+}
+
+/// Alan adının DKIM anahtarını (yoksa) üretir ve DNS'e eklenecek kaydın değerini döner.
+pub async fn ensure_dkim(domain: &str) -> AppResult<String> {
+    let key = dkim_key_path(domain);
+    let key_str = key.to_string_lossy().into_owned();
+    std::fs::create_dir_all(DKIM_DIR)?;
+    let record_path = key.with_extension("txt");
+    if !key.exists() {
+        let output = exec::run_ok("rspamadm", &["dkim_keygen", "-s", DKIM_SELECTOR, "-d", domain, "-b", "2048", "-k", &key_str]).await?;
+        std::fs::write(&record_path, &output)?;
+        let rspamd = sysuser::lookup("_rspamd").ok_or_else(|| AppError::internal("_rspamd kullanıcısı bulunamadı"))?;
+        for path in [&key, &record_path] {
+            std::os::unix::fs::chown(path, Some(rspamd.uid), Some(rspamd.gid))?;
+        }
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o640))?;
+    }
+    // Çıktı bir BIND kaydıdır: tırnak içindeki parçalar birleştirilince kaydın değeri elde edilir.
+    let raw = std::fs::read_to_string(&record_path)?;
+    let value: String = raw.split('"').skip(1).step_by(2).collect();
+    if value.is_empty() {
+        return Err(AppError::internal("DKIM kaydı okunamadı"));
+    }
+    Ok(value)
+}
+
+pub fn remove_dkim(domain: &str) {
+    let key = dkim_key_path(domain);
+    let _ = std::fs::remove_file(key.with_extension("txt"));
+    let _ = std::fs::remove_file(key);
+}
+
+#[derive(Debug, Serialize)]
+pub struct DnsRecord {
+    pub kind: &'static str,
+    pub name: String,
+    pub value: String,
+    pub purpose: &'static str,
+    /// `ok`, `missing`, `mismatch` ya da (denetlenmediyse) `unknown`.
+    pub status: &'static str,
+    /// DNS'te bulunan değer (uyuşmuyorsa göstermek için).
+    pub found: String,
+}
+
+/// Postanın düzgün çalışması için alan adına eklenmesi gereken kayıtlar.
+pub fn dns_records(domain: &MailDomain, hostname: &str) -> Vec<DnsRecord> {
+    let record = |kind, name: String, value: String, purpose| DnsRecord { kind, name, value, purpose, status: "unknown", found: String::new() };
+    vec![
+        record("MX", domain.domain.clone(), format!("10 {hostname}."), "Gelen postanın bu sunucuya teslim edilmesi"),
+        record("TXT", domain.domain.clone(), "v=spf1 mx ~all".to_string(), "SPF: bu alan adı adına yalnızca posta sunucunuz gönderebilir"),
+        record("TXT", format!("{DKIM_SELECTOR}._domainkey.{}", domain.domain), domain.dkim_record.clone(), "DKIM: giden postanın imzasını doğrular"),
+        record(
+            "TXT",
+            format!("_dmarc.{}", domain.domain),
+            format!("v=DMARC1; p=quarantine; rua=mailto:postmaster@{}", domain.domain),
+            "DMARC: SPF/DKIM doğrulanamazsa alıcının ne yapacağı",
+        ),
+    ]
+}
+
+async fn dig(kind: &str, name: &str) -> Vec<String> {
+    let Ok(output) = exec::run_with_timeout("dig", &["+short", "+time=3", "+tries=1", kind, "--", name], Duration::from_secs(10)).await else {
+        return Vec::new();
+    };
+    // Uzun TXT kayıtları tırnaklı parçalara bölünür; parçalar birleştirilir.
+    output.stdout.lines().map(|line| line.replace("\" \"", "").trim_matches('"').to_string()).filter(|line| !line.is_empty()).collect()
+}
+
+/// Kayıtları genel DNS'te arar ve her birinin durumunu işaretler.
+pub async fn check_dns(records: &mut [DnsRecord]) {
+    for record in records.iter_mut() {
+        let answers = dig(record.kind, &record.name).await;
+        let normalize = |value: &str| value.to_ascii_lowercase().replace(' ', "").trim_end_matches('.').to_string();
+        let expected = normalize(&record.value);
+        let relevant: Vec<&String> = match record.name.as_str() {
+            name if name.starts_with("_dmarc.") => answers.iter().filter(|a| a.to_ascii_lowercase().starts_with("v=dmarc1")).collect(),
+            name if name.contains("._domainkey.") => answers.iter().filter(|a| a.contains("p=")).collect(),
+            _ if record.kind == "TXT" => answers.iter().filter(|a| a.to_ascii_lowercase().starts_with("v=spf1")).collect(),
+            _ => answers.iter().collect(),
+        };
+        record.found = relevant.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(" | ");
+        record.status = if relevant.is_empty() {
+            "missing"
+        } else if record.name.starts_with("_dmarc.") {
+            // DMARC ilkesi alan adı sahibinin tercihidir; kaydın bulunması yeterlidir.
+            "ok"
+        } else if record.kind == "MX" {
+            // Öncelik değeri farklı olabilir; hedef sunucu aynıysa kayıt doğrudur.
+            let target = expected.trim_start_matches(|c: char| c.is_ascii_digit());
+            if relevant.iter().any(|a| normalize(a).trim_start_matches(|c: char| c.is_ascii_digit()) == target) { "ok" } else { "mismatch" }
+        } else if record.name.contains("._domainkey.") {
+            if relevant.iter().any(|a| normalize(a) == expected) { "ok" } else { "mismatch" }
+        } else {
+            // SPF: sunucuyu kapsayan herhangi bir kayıt kabul edilir (mx, a ya da ip4 ile).
+            "ok"
+        };
+    }
+}
+
+// ---- Genel ayarlar ----
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SpamSettings {
+    /// Bu puanın üstündeki iletiler reddedilir.
+    pub reject_score: f64,
+    /// Bu puanın üstündekiler istenmeyen posta olarak işaretlenip Junk klasörüne alınır.
+    pub junk_score: f64,
+    pub greylisting: bool,
+    /// Bu puanın üstündeki (ama işaretlenmeyen) iletiler gri listeye alınır.
+    pub greylist_score: f64,
+    /// Her zaman kabul edilen gönderenler: adres ya da `@alan`.
+    pub whitelist: Vec<String>,
+    /// Her zaman reddedilen gönderenler.
+    pub blacklist: Vec<String>,
+}
+
+impl Default for SpamSettings {
+    fn default() -> Self {
+        Self { reject_score: 15.0, junk_score: 6.0, greylisting: true, greylist_score: 4.0, whitelist: Vec::new(), blacklist: Vec::new() }
+    }
+}
+
+fn normalize_sender_entry(value: &str) -> AppResult<String> {
+    let entry = value.trim();
+    match entry.strip_prefix('@') {
+        Some(domain) => Ok(format!("@{}", domain_rules::normalize(domain)?)),
+        None => validate_address(entry),
+    }
+}
+
+impl SpamSettings {
+    pub fn normalized(mut self) -> AppResult<Self> {
+        let in_range = |value: f64| (0.5..=100.0).contains(&value);
+        if !in_range(self.reject_score) || !in_range(self.junk_score) || !in_range(self.greylist_score) {
+            return Err(AppError::bad("Puan eşikleri 0,5 ile 100 arasında olmalı"));
+        }
+        if self.junk_score >= self.reject_score {
+            return Err(AppError::bad("Reddetme eşiği, istenmeyen posta eşiğinden büyük olmalı"));
+        }
+        if self.greylist_score > self.junk_score {
+            return Err(AppError::bad("Gri liste eşiği, istenmeyen posta eşiğini aşamaz"));
+        }
+        for list in [&mut self.whitelist, &mut self.blacklist] {
+            if list.len() > 500 {
+                return Err(AppError::bad("Listeler en fazla 500 kayıt içerebilir"));
+            }
+            *list = list.iter().filter(|entry| !entry.trim().is_empty()).map(|entry| normalize_sender_entry(entry)).collect::<AppResult<_>>()?;
+            list.sort();
+            list.dedup();
+        }
+        Ok(self)
+    }
+}
+
+pub fn load_spam(db: &Db) -> AppResult<SpamSettings> {
+    Ok(db.setting(SPAM_KEY)?.and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default())
+}
+
+pub fn system_hostname() -> String {
+    std::process::Command::new("hostname")
+        .arg("-f")
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "localhost".into())
+}
+
+/// Posta sunucusunun kendini tanıttığı ad (MX kayıtlarının gösterdiği ad).
+pub fn hostname(db: &Db) -> String {
+    db.setting(HOSTNAME_KEY).ok().flatten().filter(|name| !name.is_empty()).unwrap_or_else(system_hostname)
+}
+
+/// Posta servislerinin kullanacağı sertifika: sunucu adıyla açılmış ve sertifikası
+/// olan bir site varsa onunki, yoksa panelin kendi sertifikası.
+fn tls_paths(cfg: &crate::config::Config, hostname: &str) -> (PathBuf, PathBuf) {
+    let (cert, key) = nginx::certificate_paths(hostname);
+    if cert.exists() && key.exists() {
+        return (cert, key);
+    }
+    (cfg.tls_dir().join("panel.crt"), cfg.tls_dir().join("panel.key"))
+}
+
+// ---- Temel yapılandırma ----
+
+async fn postconf(args: &[String]) -> AppResult<()> {
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    exec::run_ok("postconf", &args).await?;
+    Ok(())
+}
+
+fn rspamd_number(value: f64) -> String {
+    format!("{value:.2}")
+}
+
+async fn write_rspamd(spam: &SpamSettings) -> AppResult<()> {
+    let local = Path::new("/etc/rspamd/local.d");
+    let maps = Path::new(MAIL_DIR).join("rspamd");
+    std::fs::create_dir_all(&maps)?;
+    std::fs::create_dir_all(local)?;
+
+    let split = |list: &[String]| -> (String, String) {
+        let (mut addresses, mut domains) = (String::new(), String::new());
+        for entry in list {
+            match entry.strip_prefix('@') {
+                Some(domain) => domains.push_str(&format!("{domain}\n")),
+                None => addresses.push_str(&format!("{entry}\n")),
+            }
+        }
+        (addresses, domains)
+    };
+    let (white_addresses, white_domains) = split(&spam.whitelist);
+    let (black_addresses, black_domains) = split(&spam.blacklist);
+    for (name, content) in [
+        ("whitelist_from.map", white_addresses),
+        ("whitelist_domains.map", white_domains),
+        ("blacklist_from.map", black_addresses),
+        ("blacklist_domains.map", black_domains),
+    ] {
+        atomic_write(&maps.join(name), content.as_bytes(), 0o644)?;
+    }
+
+    let maps = maps.display();
+    let files: [(&str, String); 6] = [
+        (
+            "actions.conf",
+            format!(
+                "# PixPanel tarafından üretildi.\nreject = {};\nadd_header = {};\ngreylist = {};\n",
+                rspamd_number(spam.reject_score),
+                rspamd_number(spam.junk_score),
+                rspamd_number(spam.greylist_score)
+            ),
+        ),
+        ("greylist.conf", format!("# PixPanel tarafından üretildi.\nenabled = {};\n", spam.greylisting)),
+        (
+            "milter_headers.conf",
+            "# PixPanel tarafından üretildi.\nuse = [\"x-spamd-bar\", \"x-spam-level\", \"x-spam-status\", \"authentication-results\"];\n".to_string(),
+        ),
+        ("redis.conf", "# PixPanel tarafından üretildi.\nservers = \"127.0.0.1\";\n".to_string()),
+        (
+            "dkim_signing.conf",
+            format!(
+                "# PixPanel tarafından üretildi.\npath = \"{DKIM_DIR}/$domain.$selector.key\";\nselector = \"{DKIM_SELECTOR}\";\n\
+                 allow_username_mismatch = true;\nuse_domain = \"header\";\n"
+            ),
+        ),
+        (
+            "multimap.conf",
+            format!(
+                "# PixPanel tarafından üretildi.\n\
+                 PIX_WHITELIST_FROM {{ type = \"from\"; map = \"{maps}/whitelist_from.map\"; score = -30.0; description = \"Her zaman kabul edilen gönderen\"; }}\n\
+                 PIX_WHITELIST_DOMAIN {{ type = \"from\"; filter = \"email:domain\"; map = \"{maps}/whitelist_domains.map\"; score = -30.0; description = \"Her zaman kabul edilen alan adı\"; }}\n\
+                 PIX_BLACKLIST_FROM {{ type = \"from\"; map = \"{maps}/blacklist_from.map\"; score = 30.0; description = \"Engellenen gönderen\"; }}\n\
+                 PIX_BLACKLIST_DOMAIN {{ type = \"from\"; filter = \"email:domain\"; map = \"{maps}/blacklist_domains.map\"; score = 30.0; description = \"Engellenen alan adı\"; }}\n"
+            ),
+        ),
+    ];
+    let previous: Vec<Option<Vec<u8>>> = files.iter().map(|(name, _)| std::fs::read(local.join(name)).ok()).collect();
+    for (name, content) in &files {
+        atomic_write(&local.join(name), content.as_bytes(), 0o644)?;
+    }
+    let test = exec::run("rspamadm", &["configtest"]).await?;
+    if !test.success() {
+        for ((name, _), content) in files.iter().zip(previous) {
+            match content {
+                Some(content) => atomic_write(&local.join(name), &content, 0o644)?,
+                None => {
+                    let _ = std::fs::remove_file(local.join(name));
+                }
+            }
+        }
+        return Err(AppError::bad(format!("Rspamd ayarları geçersiz: {}", test.stdout.trim())));
+    }
+    exec::run_ok("systemctl", &["reload-or-restart", "rspamd.service"]).await?;
+    Ok(())
+}
+
+pub async fn save_spam(db: &Db, spam: &SpamSettings) -> AppResult<()> {
+    write_rspamd(spam).await?;
+    let encoded = serde_json::to_string(spam).map_err(|err| AppError::internal(err.to_string()))?;
+    db.set_setting(SPAM_KEY, &encoded)
+}
+
+pub fn set_hostname(db: &Db, value: &str) -> AppResult<String> {
+    let name = domain_rules::normalize(value)?;
+    db.set_setting(HOSTNAME_KEY, &name)?;
+    Ok(name)
+}
+
+/// Postfix, Dovecot ve Rspamd'nin temel yapılandırmasını yazar ve servisleri
+/// yeniden başlatır. Tekrar tekrar çağrılabilir.
+pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
+    if sysuser::lookup(VMAIL_USER).is_none() {
+        exec::run_ok(
+            "useradd",
+            &["--system", "--uid", &VMAIL_UID.to_string(), "--user-group", "--home-dir", MAIL_ROOT, "--shell", "/usr/sbin/nologin", VMAIL_USER],
+        )
+        .await?;
+    }
+    let account = vmail()?;
+    std::fs::create_dir_all(MAIL_ROOT)?;
+    std::os::unix::fs::chown(MAIL_ROOT, Some(account.uid), Some(account.gid))?;
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(MAIL_ROOT, std::fs::Permissions::from_mode(0o750))?;
+    }
+
+    let sieve_dir = Path::new(MAIL_DIR).join("sieve");
+    std::fs::create_dir_all(&sieve_dir)?;
+    let before = sieve_dir.join("before.sieve");
+    atomic_write(&before, BEFORE_SIEVE.as_bytes(), 0o644)?;
+    exec::run_ok("sievec", &["--", &before.to_string_lossy()]).await?;
+
+    let name = hostname(db);
+    let (cert, key) = tls_paths(cfg, &name);
+    let (cert, key) = (cert.to_string_lossy().into_owned(), key.to_string_lossy().into_owned());
+    // Eşleme dosyaları servisler başlamadan önce var olmalı.
+    sync(db).await?;
+
+    // ---- Dovecot ----
+    let dovecot_conf = Path::new("/etc/dovecot/dovecot.conf");
+    let original = Path::new("/etc/dovecot/dovecot.conf.pixpanel-orig");
+    let previous = std::fs::read(dovecot_conf).ok();
+    if !original.exists() {
+        if let Some(content) = &previous {
+            std::fs::write(original, content)?;
+        }
+    }
+    let rendered = DOVECOT_TEMPLATE
+        .replace("{{users_file}}", &mail_file("dovecot-users").to_string_lossy())
+        .replace("{{mail_root}}", MAIL_ROOT)
+        .replace("{{vmail_uid}}", &account.uid.to_string())
+        .replace("{{tls_cert}}", &cert)
+        .replace("{{tls_key}}", &key)
+        .replace("{{sieve_before}}", &before.to_string_lossy());
+    atomic_write(dovecot_conf, rendered.as_bytes(), 0o644)?;
+    let test = exec::run("doveconf", &["-n"]).await?;
+    if !test.success() {
+        if let Some(content) = previous {
+            atomic_write(dovecot_conf, &content, 0o644)?;
+        }
+        return Err(AppError::internal(format!("Dovecot yapılandırması geçersiz: {}", test.stderr.trim())));
+    }
+
+    // ---- Postfix ----
+    let map = |file: &str| format!("texthash:{}", mail_file(file).display());
+    let mut main = vec!["-e".to_string()];
+    main.extend(
+        [
+            ("myhostname", name.clone()),
+            ("inet_interfaces", "all".into()),
+            ("virtual_mailbox_domains", map("domains")),
+            ("virtual_mailbox_maps", map("mailboxes")),
+            ("virtual_alias_maps", map("aliases")),
+            ("virtual_transport", "lmtp:unix:private/dovecot-lmtp".into()),
+            ("smtpd_sasl_type", "dovecot".into()),
+            ("smtpd_sasl_path", "private/auth".into()),
+            ("smtpd_sender_login_maps", map("senders")),
+            ("smtpd_tls_cert_file", cert.clone()),
+            ("smtpd_tls_key_file", key.clone()),
+            ("smtpd_tls_security_level", "may".into()),
+            ("smtp_tls_security_level", "may".into()),
+            ("smtpd_relay_restrictions", "permit_mynetworks,permit_sasl_authenticated,reject_unauth_destination".into()),
+            ("smtpd_milters", "inet:127.0.0.1:11332".into()),
+            ("non_smtpd_milters", "inet:127.0.0.1:11332".into()),
+            ("milter_default_action", "accept".into()),
+            ("milter_protocol", "6".into()),
+            ("message_size_limit", "52428800".into()),
+            ("smtpd_helo_required", "yes".into()),
+            ("disable_vrfy_command", "yes".into()),
+        ]
+        .into_iter()
+        .map(|(key, value)| format!("{key}={value}")),
+    );
+    postconf(&main).await?;
+    for (service, extra) in [("submission", "smtpd_tls_security_level=encrypt"), ("submissions", "smtpd_tls_wrappermode=yes")] {
+        postconf(&["-M".into(), format!("{service}/inet={service} inet n - y - - smtpd")]).await?;
+        let mut options = vec!["-P".to_string()];
+        options.extend(
+            [
+                format!("syslog_name=postfix/{service}"),
+                extra.to_string(),
+                "smtpd_sasl_auth_enable=yes".into(),
+                "smtpd_tls_auth_only=yes".into(),
+                "smtpd_client_restrictions=permit_sasl_authenticated,reject".into(),
+                // Kimliği doğrulanan kullanıcı yalnızca kendi adresinden gönderebilir.
+                "smtpd_sender_restrictions=reject_sender_login_mismatch".into(),
+            ]
+            .into_iter()
+            .map(|option| format!("{service}/inet/{option}")),
+        );
+        postconf(&options).await?;
+    }
+    exec::run_ok("postfix", &["check"]).await?;
+
+    // ---- Rspamd ----
+    write_rspamd(&load_spam(db)?).await?;
+
+    for (service, _) in SERVICES {
+        exec::run_ok("systemctl", &["enable", "--quiet", "--", service]).await?;
+        exec::run_ok("systemctl", &["restart", "--", service]).await?;
+    }
+    Ok(())
+}

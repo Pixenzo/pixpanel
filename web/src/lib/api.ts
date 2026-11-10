@@ -198,7 +198,7 @@ export interface ComponentStatus {
   id: string;
   name: string;
   description: string;
-  category: "web" | "php" | "database" | "container";
+  category: "web" | "php" | "database" | "container" | "mail";
   installed: boolean;
   version: string | null;
   service: string | null;
