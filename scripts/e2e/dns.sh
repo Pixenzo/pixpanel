@@ -92,6 +92,8 @@ check "yeni sitenin A kaydı kendiliğinden eklendi" "$(q A yeni.deneme.test)" "
 api DELETE "/sites/$NS?delete_files=true" >/dev/null
 
 say "DNS ile sertifika doğrulaması (joker sertifika)"
+# ACME sınama sunucusu (Pebble) yalnızca geliştirme makinesinde kurulu; yoksa bölüm atlanır.
+if [ -f /etc/systemd/system/pebble-test.service ]; then
 # Pebble doğrulama sorgularını yerel DNS sunucusuna yöneltir.
 PEBBLE=$(grep ^ExecStart /etc/systemd/system/pebble-test.service)
 if ! grep -q dnsserver <<<"$PEBBLE"; then sed -i 's|^ExecStart=\(.*\)$|ExecStart=\1 -dnsserver 127.0.0.1:53|' /etc/systemd/system/pebble-test.service; systemctl daemon-reload; systemctl restart pebble-test; sleep 3; fi
@@ -105,6 +107,7 @@ check "site kipi kaydedildi" "$(api GET /sites/1 | jget 'd["ssl_mode"]')" letsen
 check "site yeni sertifikayla yayında" "$(curl -sk -o /dev/null -w '%{http_code}' --resolve deneme.test:443:127.0.0.1 https://deneme.test/)" 200
 # Sonraki sınamalar için Pebble eski hâline döner.
 sed -i 's| -dnsserver 127.0.0.1:53||' /etc/systemd/system/pebble-test.service; systemctl daemon-reload; systemctl restart pebble-test
+else echo "  (Pebble yok; bölüm atlandı)"; fi
 
 say "Cloudflare (sahte API)"
 pkill -f "python3 $HERE/[m]ock_cloudflare" 2>/dev/null; : > /tmp/px-cf.log

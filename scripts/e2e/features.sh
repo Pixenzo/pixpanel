@@ -58,8 +58,12 @@ check "bozuk bot anahtarı" "$(code PUT /notifications -d '{"email_enabled":fals
 cat /tmp/px-mock.log
 
 say "Git deposu hazırlığı"
+# Panel git'i ilk yayında kendisi kurar; sınama deposunu hazırlamak için daha önce gerekir.
+command -v git >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git >/dev/null 2>&1
 id gitsrv >/dev/null 2>&1 || useradd -m -s /usr/bin/git-shell gitsrv
 rm -rf /home/gitsrv/demo.git /tmp/demo-work
+# Depo başka kullanıcıya ait; root'un ona gönderebilmesi için güvenli sayılması gerekir.
+git config --global --get-all safe.directory | grep -qx /home/gitsrv/demo.git || git config --global --add safe.directory /home/gitsrv/demo.git
 runuser -u gitsrv -- git init -q --bare -b main /home/gitsrv/demo.git
 git init -q -b main /tmp/demo-work && cd /tmp/demo-work
 git config user.email t@pix.test; git config user.name Deneme

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PixPanel kurulum betiği. Debian 12/13 ve Ubuntu 22.04/24.04 üzerinde çalışır.
+# PixPanel kurulum betiği. Debian 13 ve Ubuntu 26.04 üzerinde çalışır.
 #
 #   curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.sh | bash
 #
@@ -50,10 +50,10 @@ command -v systemctl >/dev/null || die "systemd bulunamadı"
 . /etc/os-release
 SUPPORTED=0
 case "${ID:-}:${VERSION_ID:-}" in
-  debian:12|debian:13|ubuntu:22.04|ubuntu:24.04) SUPPORTED=1 ;;
+  debian:13|ubuntu:26.04) SUPPORTED=1 ;;
 esac
 if [ "$SUPPORTED" = 0 ]; then
-  [ "$FORCE" = 1 ] || die "desteklenmeyen dağıtım: ${PRETTY_NAME:-bilinmiyor} (yine de denemek için --force)"
+  [ "$FORCE" = 1 ] || die "desteklenmeyen dağıtım: ${PRETTY_NAME:-bilinmiyor}. PixPanel Debian 13 ve Ubuntu 26.04 ister; eski sürümlerde posta, DNS ve yedekleme bileşenleri çalışmaz (yine de denemek için --force)"
   say "UYARI: ${PRETTY_NAME:-bu dağıtım} sınanmadı; --force ile devam ediliyor"
 fi
 
@@ -104,7 +104,10 @@ mv "$BINARY.new" "$BINARY"
 install -m 644 "$WORK/pixpanel.service" /etc/systemd/system/pixpanel.service
 install -m 755 "$WORK/uninstall.sh" /usr/local/sbin/pixpanel-uninstall
 install -d -m 755 "$CONFIG_DIR"
-install -d -m 700 "$DATA_DIR"
+# Klasörün içine girilebilir ama listelenemez: web sunucusu (doğrulama dosyaları, web
+# postası) ve site kullanıcıları (yayınlama araçları) alt klasörlere ulaşmak zorunda.
+# Gizli dosyalar (veritabanı, anahtarlar) kendi izinleriyle korunur.
+install -d -m 711 "$DATA_DIR"
 if [ ! -f "$CONFIG_DIR/config.toml" ]; then
   printf 'listen_port = %s\n' "$PORT" > "$CONFIG_DIR/config.toml"
   chmod 600 "$CONFIG_DIR/config.toml"

@@ -21,11 +21,14 @@ const PHP_EXTENSIONS: &[&str] = &[
     "soap", "readline", "redis", "imagick",
 ];
 
+const PHP_REPO_LIST: &str = "/etc/apt/sources.list.d/pixpanel-php.list";
+const DOCKER_REPO_LIST: &str = "/etc/apt/sources.list.d/pixpanel-docker.list";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Repo {
     /// Dağıtımın kendi deposu yeterli.
     Distro,
-    /// packages.sury.org (Debian) ya da ppa:ondrej/php (Ubuntu).
+    /// packages.sury.org
     Php,
     /// download.docker.com
     Docker,
@@ -265,7 +268,14 @@ pub async fn status(component: &Component) -> ComponentStatus {
             service: None,
         };
     }
-    let version = installed_version(&component.packages[0]).await;
+    // Bileşen, zorunlu paketlerinin hepsi kuruluysa kurulu sayılır: kimi sunucu kalıpları
+    // tek tek paketlerle (ör. Postfix) gelir ve bu, bileşenin panelce kurulduğunu göstermez.
+    let mut version = installed_version(&component.packages[0]).await;
+    for package in &component.packages[1..] {
+        if version.is_some() && installed_version(package).await.is_none() {
+            version = None;
+        }
+    }
     let running = match (&version, &component.service) {
         (Some(_), Some(service)) => services::is_active(service).await,
         _ => false,
@@ -328,8 +338,9 @@ async fn ensure_repo(ctx: &JobCtx, repo: Repo) -> AppResult<()> {
     apt_install(ctx, &["curl".into(), "ca-certificates".into(), "gnupg".into()]).await?;
 
     match (repo, os_id.as_str()) {
-        (Repo::Php, "debian") => {
-            let list_path = "/etc/apt/sources.list.d/pixpanel-php.list";
+        // packages.sury.org Debian'ın yanında Ubuntu sürümlerini de yayınlar (eski PPA oraya taşındı).
+        (Repo::Php, _) => {
+            let list_path = PHP_REPO_LIST;
             if !std::path::Path::new(list_path).exists() {
                 let keyring = "/var/lib/pixpanel/debsuryorg-archive-keyring.deb";
                 ctx.exec("curl", &["-fsSLo", keyring, "https://packages.sury.org/debsuryorg-archive-keyring.deb"]).await?;
@@ -342,12 +353,8 @@ async fn ensure_repo(ctx: &JobCtx, repo: Repo) -> AppResult<()> {
                 )?;
             }
         }
-        (Repo::Php, _) => {
-            apt_install(ctx, &["software-properties-common".into()]).await?;
-            ctx.exec("add-apt-repository", &["-y", "ppa:ondrej/php"]).await?;
-        }
         (Repo::Docker, _) => {
-            let list_path = "/etc/apt/sources.list.d/pixpanel-docker.list";
+            let list_path = DOCKER_REPO_LIST;
             if !std::path::Path::new(list_path).exists() {
                 std::fs::create_dir_all("/etc/apt/keyrings")?;
                 let key = "/etc/apt/keyrings/pixpanel-docker.asc";
@@ -365,6 +372,15 @@ async fn ensure_repo(ctx: &JobCtx, repo: Repo) -> AppResult<()> {
         (Repo::Distro, _) => {}
     }
     Ok(())
+}
+
+/// Ek deponun panelce yazılan kaynak dosyası.
+fn repo_list(repo: Repo) -> Option<&'static str> {
+    match repo {
+        Repo::Distro => None,
+        Repo::Php => Some(PHP_REPO_LIST),
+        Repo::Docker => Some(DOCKER_REPO_LIST),
+    }
 }
 
 /// Paketin depoda kurulabilir bir adayı var mı?
@@ -435,7 +451,14 @@ pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
     }
     ctx.log(format!("{} kuruluyor", component.name));
     ensure_repo(ctx, component.repo).await?;
-    ctx.exec("apt-get", &["update", "-o", "DPkg::Lock::Timeout=180"]).await?;
+    if let Err(err) = ctx.exec("apt-get", &["update", "-o", "DPkg::Lock::Timeout=180"]).await {
+        // Erişilemeyen bir ek depo bırakılırsa sonraki bütün kurulumlar da durur; geri alınır.
+        if let Some(list) = repo_list(component.repo).filter(|path| std::path::Path::new(path).exists()) {
+            let _ = std::fs::remove_file(list);
+            ctx.log(format!("Ek paket deposu kullanılamadığı için kaldırıldı: {list}"));
+        }
+        return Err(err);
+    }
 
     let mut packages = component.packages.clone();
     for package in &component.optional_packages {
@@ -451,7 +474,8 @@ pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
         ctx.log("nginx temel yapılandırması yazılıyor");
         hosting::nginx::ensure_base().await?;
     }
-    if let Some(service) = &component.service {
+    // PowerDNS arka ucu yapılandırılmadan başlayamaz; onu yapılandırma adımı başlatır.
+    if let Some(service) = component.service.as_ref().filter(|_| component.id != "dns") {
         ctx.exec("systemctl", &["enable", "--now", "--", service]).await?;
     }
     ctx.log(format!("{} kuruldu", component.name));

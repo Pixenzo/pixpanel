@@ -62,3 +62,4 @@ O zamana kadar kurulum `--from-dir` ile yapılır.
 
 - `scripts/e2e/update.sh`: imza/özet reddi, geçerli güncelleme, başlamayan sürümde geri dönüş (test makinesinde, yerel bir sürüm sunucusuna karşı).
 - `scripts/e2e/install.sh <sürüm klasörü> <konteyner no…>`: temiz Proxmox konteynerlerinde kurulum, yükseltme ve kaldırma.
+- `scripts/e2e/components.sh <sürüm klasörü> <konteyner no…>`: temiz konteynerde panel kurulur, bütün bileşenler panelden sıfırdan kurulup denenir. Sürüm yayınlamadan önce 190 (Debian 13) ve 191 (Ubuntu 26.04) üzerinde koşturulur; konteynerler `scripts/e2e/ct.sh create 190 191` ile kurulur, iş bitince `ct.sh destroy 190 191` ile silinir.

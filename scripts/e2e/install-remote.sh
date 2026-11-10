@@ -43,7 +43,9 @@ check "kurulu sürüm" "$(/usr/local/bin/pixpanel --version)" "pixpanel $RELEASE
 check "arayüz yayında" "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8443/)" 200
 check "verilen hesapla giriş" "$(login yonetici "$PASSWORD")" 200
 check "yanlış parolayla giriş olmaz" "$(login yonetici yanlis-parola-123)" 400
-check "yapılandırma ve veri izinleri" "$(stat -c '%a' /etc/pixpanel/config.toml /var/lib/pixpanel | tr '\n' ' ')" "600 700 "
+check "yapılandırma ve veri izinleri" "$(stat -c '%a' /etc/pixpanel/config.toml /var/lib/pixpanel | tr '\n' ' ')" "600 711 "
+check "veri klasörü listelenemez" "$(runuser -u nobody -- ls /var/lib/pixpanel 2>&1 | grep -c "Permission denied")" 1
+check "veritabanını başkası okuyamaz" "$(runuser -u nobody -- cat /var/lib/pixpanel/pixpanel.db 2>&1 | grep -c "Permission denied")" 1
 check "veritabanı yalnız root'a açık" "$(stat -c '%a %U' /var/lib/pixpanel/pixpanel.db)" "600 root"
 
 say "Yeniden çalıştırma (yükseltme)"

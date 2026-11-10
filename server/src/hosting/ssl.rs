@@ -13,7 +13,6 @@ use crate::error::{AppError, AppResult};
 use crate::hosting::atomic_write;
 use crate::hosting::nginx::certificate_paths;
 
-pub const MODES: &[&str] = &["none", "selfsigned", "custom", "letsencrypt"];
 const SELF_SIGNED_DAYS: i64 = 365;
 
 #[derive(Debug, Clone, Serialize)]

@@ -23,6 +23,37 @@ pub fn is_installed() -> bool {
 }
 
 /// PowerDNS'in veritabanını ve yapılandırmasını hazırlar, servisi yeniden başlatır.
+/// Ubuntu'da systemd-resolved 127.0.0.53:53 adresini dinler; PowerDNS bütün adreslerde
+/// 53. portu açamaz. Yerel dinleyici kapatılır, sunucunun kendi ad çözümlemesi
+/// resolved'ın yukarı akış sunucularını doğrudan kullanacak biçimde sürer.
+async fn release_dns_port() -> AppResult<()> {
+    const RESOLVED: &str = "systemd-resolved.service";
+    const DROP_IN: &str = "/etc/systemd/resolved.conf.d/pixpanel.conf";
+    const CONTENT: &str = "# PixPanel: 53. port DNS sunucusuna bırakılır.
+[Resolve]
+DNSStubListener=no
+";
+    if !crate::sys::services::is_active(RESOLVED).await {
+        return Ok(());
+    }
+    if std::fs::read_to_string(DROP_IN).ok().as_deref() == Some(CONTENT) {
+        return Ok(());
+    }
+    std::fs::create_dir_all("/etc/systemd/resolved.conf.d")?;
+    atomic_write(Path::new(DROP_IN), CONTENT.as_bytes(), 0o644)?;
+    // resolv.conf yerel dinleyiciyi gösteriyorsa gerçek sunucu listesine çevrilir.
+    let resolv = Path::new("/etc/resolv.conf");
+    let points_to_stub = std::fs::read_link(resolv).map(|target| target.ends_with("stub-resolv.conf")).unwrap_or(false);
+    if points_to_stub {
+        let temporary = Path::new("/etc/resolv.conf.pixpanel");
+        let _ = std::fs::remove_file(temporary);
+        std::os::unix::fs::symlink("/run/systemd/resolve/resolv.conf", temporary)?;
+        std::fs::rename(temporary, resolv)?;
+    }
+    exec::run_ok("systemctl", &["restart", "--", RESOLVED]).await?;
+    Ok(())
+}
+
 pub async fn setup() -> AppResult<()> {
     let pdns = sysuser::lookup("pdns").ok_or_else(|| AppError::internal("pdns kullanıcısı bulunamadı"))?;
     if !Path::new(DB_FILE).exists() {
@@ -58,6 +89,7 @@ pub async fn setup() -> AppResult<()> {
     // Dosya API anahtarını içerdiğinden yalnızca PowerDNS okuyabilir.
     atomic_write(Path::new(CONF_FILE), conf.as_bytes(), 0o640)?;
     std::os::unix::fs::chown(CONF_FILE, Some(0), Some(pdns.gid))?;
+    release_dns_port().await?;
     exec::run_ok("systemctl", &["enable", "--quiet", "--", SERVICE]).await?;
     exec::run_ok("systemctl", &["restart", "--", SERVICE]).await?;
     // API'nin isteklere yanıt vermesi kısa bir süre alır.

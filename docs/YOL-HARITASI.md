@@ -86,16 +86,49 @@ Bu kurallar her paketin brifine eklenir.
   - Geri yükleme: site yerinde (tümü ya da seçilen yollar, isteğe bağlı fazlalıkları silme), başka siteye (klon), silinmiş siteyi bildirimden yeniden kurma; veritabanı aynı ya da başka veritabanına (PostgreSQL dökümü `--clean --if-exists` ile); posta yerinde. Posta alanını yeniden oluşturma ve panelin kendisini geri yükleme ilk sürümde belge + komut.
   - Uçlar: `GET /backup`, hedefler (`POST/PUT/DELETE`, `/check`, `/password`, `/snapshots`, `/snapshots/{id}/files`), planlar (`POST/PUT/DELETE`, `/run`), `POST /backup/run`, `POST /backup/restore`.
 
-### 6. Kurulum betiği ve güncelleme — TAMAMLANDI (10.11.2026; kalanlar: ilk sürümün yayınlanması ve depo kapalıyken dağıtım kararı, arm64, Ubuntu 24.04 / Debian 12 sınaması)
+### 6. Kurulum betiği ve güncelleme — TAMAMLANDI (10.11.2026; kalanlar: ilk sürümün yayınlanması ve depo kapalıyken dağıtım kararı, arm64)
 
 - **Kapsam:** `install/install.sh` (tek komut; Debian 13 ve Ubuntu LTS; sürüm ikilisini indirir, sağlama toplamını doğrular, servis birimini kurar, ilk yöneticiyi oluşturur, nginx'i kurar); sürüm derlemesi (`--release`, x86_64 ve arm64); panelin kendini güncellemesi (yeni ikiliyi indir, doğrula, değiştir, başlamazsa eskisine dön); kaldırma betiği.
 - **Bağımlılık:** sürümlerin nerede yayınlanacağı kararı (aşağıda "Kararlar").
 - **Kabul:** temiz Debian 13 ve Ubuntu makinede tek komutla çalışan panel; bilerek bozulmuş güncellemede eski sürüme dönüş.
 
-### 7. Sınama altyapısı — O, ana oturum
+### 7. Sınama altyapısı — TAMAMLANDI (10.11.2026; kalan: Cloudflare'in gerçek hesapla bir kez elle doğrulanması, temiz makinede Let's Encrypt)
 
 - **Neden P0:** bileşenlerin sıfırdan kurulumu bugün yalnızca FTP ve Node.js için sınandı; her değişiklikte hepsini elle koşturmak sürdürülemez.
 - **Kapsam:** `scripts/e2e/run-all.sh` (bütün betikler, özet tablo); Proxmox'ta test konteynerinin anlık görüntüsünü alıp geri dönen betik (temiz makinede bileşen kurulumlarını sınamak için); Ubuntu konteyneri; posta, phpMyAdmin, Adminer, Roundcube, PowerDNS bileşenlerinin panelden sıfırdan kurulum sınaması; Cloudflare'in gerçek hesapla bir kez elle doğrulanması.
+
+---
+
+## Ö — Öne alınanlar (kullanıcı isteği, 10.11.2026)
+
+Kullanıcının sözü: "profesyonel şık ve premium duran, profesyonel bir web yönetim paneli istiyorum. Webcilerin normalde sürekli yapması gereken şeyleri otomatik yapıp halledecek bir sistem olmalı" ve "kaliteli, mobil uyumlu, anlaşılır, kullanılabilirliği yüksek, realtime özellikleri olan bir panel". Bu iki iş P1'in önüne alındı.
+
+### Ö1. Arayüzün elden geçirilmesi — B, ana oturum (sayfa sayfa uyarlama devre uygun)
+
+- **Canlı olay akışı:** tek bir SSE bağlantısı (`GET /api/v1/events`). Sunucu yükü (2 sn), görevlerin başlaması/bitmesi ve "şu kaynak değişti" bildirimleri akar; arayüz ilgili sorguları kendiliğinden yeniler. Başka sekmede ya da başka hesabın yaptığı değişiklik ekrana yansır, biten görev her sayfada bildirim verir, üst çubukta bağlantı göstergesi durur. Sayfalardaki sabit aralıklı yoklamalar kaldırılır ya da yedek olarak seyreltilir. Olaylar hesabın görebildiği kaynaklarla sınırlanır.
+- **Telefon düzeni:** tablolar dar ekranda kart satırlarına döner; altta sabit gezinme çubuğu; pencereler alttan açılan sayfa olur; dokunma hedefleri en az 40 px; yatay kaydırma kalmaz.
+- **Görsel dil:** var olan kimlik (IBM Plex, koyu yan gezinme, petrol mavisi vurgu) korunur ve inceltilir: tutarlı boşluk ve köşe ölçeği, sayfa başlıkları, boş durumlar, yükleme iskeletleri, klavye odağı.
+- **Kabul:** her sayfa 390 px genişlikte yatay kaydırma olmadan kullanılabilir; iki sekmeden biri bir kaynağı değiştirince öteki 2 sn içinde güncellenir; bağlantı kopunca arayüz bunu gösterir ve kendiliğinden yeniden bağlanır.
+
+### Ö2. Kendi kendine bakım ("Sağlık merkezi") — B, arka uç + arayüz
+
+Panelin ayırt edici özelliği: yöneticinin düzenli olarak elle yaptığı denetimleri panel sürekli yapar, güvenli olanları kendisi düzeltir, kalanını tek tıkla düzeltilecek biçimde sunar.
+
+- **Denetim motoru:** kurallar düzenli koşar, her bulgu bir önem derecesi, açıklama ve varsa "Düzelt" eylemi taşır. İlk kurallar:
+  - sertifikası olmayan ya da süresi yaklaşan site; DNS'i bu sunucuyu göstermeyen alan adı; sertifika alınabilecek durumda olup alınmamış site (DNS doğruysa kendiliğinden Let's Encrypt)
+  - son 24 saatte yedeği olmayan site/veritabanı; hiç yedek planı olmayan sunucu; başarısız son yedek
+  - çökmüş ya da durmuş servis (kendiliğinden yeniden başlatma, üst üste çökerse bildirim)
+  - disk, bellek ve inode doluluğu; büyüyen günlükler (kendiliğinden döndürme); eski yedek/önbellek temizliği önerisi
+  - bekleyen güvenlik güncellemeleri (işletim sistemi, panel); desteği bitmiş PHP sürümünde çalışan site
+  - yanıt vermeyen site (dakikalık HTTP denetimi, 5xx oranı), yavaşlayan site
+  - posta: kuyrukta bekleyen iletiler, eksik SPF/DKIM/DMARC, kara listeye girmiş sunucu adresi
+  - güvenlik: parolayla root SSH girişi açık, güvenlik duvarı kapalı, iki adımlı doğrulaması olmayan yönetici
+- **Kendiliğinden yapılanlar (her biri ayrı ayrı açılıp kapatılabilir):** sertifika alma/yenileme, servis yeniden başlatma, günlük döndürme, güvenlik güncellemeleri (unattended-upgrades), riskli işlemden önce yedek (PHP sürümü değişimi, güncelleme, geri yükleme), yeni siteye varsayılan yedek planı.
+- **Raporlama:** her kendiliğinden işlem denetim günlüğüne ve bildirim kanalına düşer; haftalık özet e-postası (ne denetlendi, ne düzeltildi, ne bekliyor).
+- **Arayüz:** giriş sayfası sunucunun genel sağlık durumunu ve bekleyen bulguları gösterir; her site kartında o sitenin durumu.
+- **Kabul:** servis elle öldürülünce bir dakika içinde ayağa kalkar ve bildirim gelir; DNS'i doğru yeni sitede sertifika kendiliğinden alınır; bulgular düzeltilince listeden kendiliğinden düşer.
+
+Ardından gelecek otomasyonlar P2'deki WordPress araçlarıyla birleşir (tek tıkla kurulum, çekirdek/eklenti güncellemelerinin yedek alıp sağlık denetimiyle yapılması, hazırlık kopyası).
 
 ---
 
