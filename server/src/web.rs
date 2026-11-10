@@ -61,10 +61,12 @@ async fn forward_to_tools(parts: axum::http::request::Parts, body: axum::body::B
         Ok(client) => client,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let mut forwarded = client.request(parts.method.clone(), target).header("x-forwarded-host", host);
+    // Gerçek adres bağlantının kendisinden alınır; istemcinin gönderdiği başlıklara güvenilmez.
+    let client_ip = crate::auth::client_ip(&parts);
+    let mut forwarded = client.request(parts.method.clone(), target).header("x-forwarded-host", host).header("x-real-ip", client_ip);
     for (name, value) in &parts.headers {
         // Bağlantıya özgü başlıklar aktarılmaz; panelin oturum çerezi de araçlara sızdırılmaz.
-        if matches!(name.as_str(), "host" | "connection" | "transfer-encoding" | "upgrade" | "x-forwarded-host" | "cookie") {
+        if matches!(name.as_str(), "host" | "connection" | "transfer-encoding" | "upgrade" | "x-forwarded-host" | "x-real-ip" | "x-forwarded-for" | "cookie") {
             continue;
         }
         forwarded = forwarded.header(name, value);

@@ -19,4 +19,7 @@ pub struct AppState {
     pub sys_lock: Arc<tokio::sync::Mutex<()>>,
     /// Aynı anda yalnızca bir paket kurulumu yürüsün diye.
     pub apt_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Panelin TLS yapılandırması; sertifika değişince yeniden başlatmadan yenilenir.
+    /// Panel düz HTTP ile çalışıyorsa `None`.
+    pub tls: Option<axum_server::tls_rustls::RustlsConfig>,
 }

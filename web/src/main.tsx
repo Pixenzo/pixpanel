@@ -16,6 +16,7 @@ import { DnsPage } from "./pages/Dns";
 import { DnsZonePage } from "./pages/DnsZone";
 import { DockerPage } from "./pages/Docker";
 import { DatabasesPage } from "./pages/Databases";
+import { Fail2banPage } from "./pages/Fail2ban";
 import { FilesPage } from "./pages/Files";
 import { FirewallPage } from "./pages/Firewall";
 import { JobsPage } from "./pages/Jobs";
@@ -60,6 +61,7 @@ function App() {
           <>
             <Route path="/server" element={<DashboardPage />} />
             <Route path="/firewall" element={<FirewallPage />} />
+            <Route path="/fail2ban" element={<Fail2banPage />} />
             <Route path="/docker" element={<DockerPage />} />
             <Route path="/php" element={<PhpPage />} />
             <Route path="/redis" element={<RedisPage />} />

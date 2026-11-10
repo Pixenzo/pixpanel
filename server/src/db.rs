@@ -267,6 +267,12 @@ const MIGRATIONS: &[&str] = &[
         token   TEXT NOT NULL
     );
     "#,
+    // 11: iki adımlı doğrulama
+    r#"
+    ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN recovery_codes TEXT NOT NULL DEFAULT '[]';
+    "#,
 ];
 
 #[derive(Clone)]

@@ -170,6 +170,15 @@ pub fn catalog() -> Vec<Component> {
             Repo::Distro,
         ),
         component(
+            "fail2ban",
+            "fail2ban",
+            "Parola deneme saldırılarını kendiliğinden engeller (SSH, panel, posta, FTP).",
+            "web",
+            &["fail2ban", "python3-systemd", "nftables"],
+            Some("fail2ban.service"),
+            Repo::Distro,
+        ),
+        component(
             "dns",
             "DNS sunucusu",
             "PowerDNS. Alan adlarının DNS kayıtlarını bu sunucuda barındırır.",

@@ -10,15 +10,18 @@ mod dbtools;
 mod deploy;
 mod dns;
 mod error;
+mod fail2ban;
 mod firewall;
 mod fsop;
 mod hosting;
 mod jobs;
 mod mail;
 mod notify;
+mod panelcert;
 mod state;
 mod sys;
 mod tasks;
+mod totp;
 mod web;
 
 use std::net::SocketAddr;
@@ -57,6 +60,8 @@ enum Command {
     },
     /// Bir kullanıcının parolasını sıfırlar ve yeni parolayı yazdırır
     ResetPassword { username: String },
+    /// Bir kullanıcının iki adımlı doğrulamasını kapatır (telefonunu kaybedenler için)
+    DisableTwoFactor { username: String },
     /// Dosya yöneticisinin yardımcı süreci; panel tarafından başlatılır
     #[command(hide = true)]
     FsHelper,
@@ -72,6 +77,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     tracing_subscriber::fmt()
+        // Günlükler systemd'ye gider; renk kodları satırları kirletir ve fail2ban süzgecini bozar.
+        .with_ansi(false)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "pixpanel=info,tower_http=warn".into()),
@@ -85,6 +92,14 @@ fn main() -> anyhow::Result<()> {
         Command::Serve => tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(serve(cfg, db)),
         Command::CreateAdmin { username, password } => create_admin(&db, &username, password),
         Command::ResetPassword { username } => reset_password(&db, &username),
+        Command::DisableTwoFactor { username } => {
+            let changed = db
+                .call(|conn| conn.execute("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE username = ?1", params![username]))
+                .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            anyhow::ensure!(changed > 0, "kullanıcı bulunamadı: {username}");
+            println!("{username} için iki adımlı doğrulama kapatıldı.");
+            Ok(())
+        }
         Command::FsHelper => unreachable!("yardımcı süreç yukarıda ele alındı"),
     }
 }
@@ -92,6 +107,15 @@ fn main() -> anyhow::Result<()> {
 async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     let metrics = sys::metrics::Metrics::default();
     metrics.spawn_sampler();
+
+    // TLS kullanan her şey (panel, ACME, bildirimler) aynı şifreleme sağlayıcısını kullanır.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let tls = if cfg.tls {
+        let (cert, key) = ensure_panel_certificate(&cfg.tls_dir())?;
+        Some(axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key).await.context("panel sertifikası yüklenemedi")?)
+    } else {
+        None
+    };
 
     let state = AppState {
         jobs: jobs::JobManager::new(db.clone()).map_err(|err| anyhow::anyhow!(err.to_string()))?,
@@ -101,10 +125,9 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
         throttle: Arc::default(),
         sys_lock: Arc::default(),
         apt_lock: Arc::default(),
+        tls: tls.clone(),
     };
 
-    // TLS kullanan her şey (panel, ACME, bildirimler) aynı şifreleme sağlayıcısını kullanır.
-    let _ = rustls::crypto::ring::default_provider().install_default();
     deploy::mark_interrupted(&state.db).map_err(|err| anyhow::anyhow!(err.to_string()))?;
     tasks::spawn_certificate_renewal(state.clone());
     tasks::spawn_db_tool_cleanup(state.clone());
@@ -116,11 +139,7 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();
     let addr = SocketAddr::new(cfg.listen_addr, cfg.listen_port);
 
-    if cfg.tls {
-        let (cert, key) = ensure_panel_certificate(&cfg.tls_dir())?;
-        let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
-            .await
-            .context("panel sertifikası yüklenemedi")?;
+    if let Some(tls) = tls {
         tracing::info!("panel https://{addr} adresinde dinliyor");
         axum_server::bind_rustls(addr, tls).serve(app).await?;
     } else {

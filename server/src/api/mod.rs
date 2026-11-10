@@ -10,6 +10,7 @@ mod cron;
 mod databases;
 mod dns;
 mod docker;
+mod fail2ban;
 mod files;
 mod firewall;
 mod ftp;
@@ -18,6 +19,7 @@ mod jobs;
 mod logs;
 mod mail;
 mod notify;
+mod panelcert;
 mod php;
 mod redis;
 mod sites;
@@ -30,7 +32,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
         .nest("/users", users::router())
-        .nest("/system", system::router())
+        .nest("/system", system::router().nest("/certificate", panelcert::router()))
         .nest("/jobs", jobs::router())
         .nest("/components", components::router())
         .nest("/databases", databases::router())
@@ -42,6 +44,7 @@ pub fn router() -> Router<AppState> {
         .nest("/mail", mail::router())
         .nest("/dns", dns::router())
         .nest("/firewall", firewall::router())
+        .nest("/fail2ban", fail2ban::router())
         .nest("/redis", redis::router())
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())

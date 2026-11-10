@@ -22,6 +22,11 @@ pub fn router() -> Router<AppState> {
         .route("/logout", post(logout))
         .route("/me", get(me))
         .route("/password", post(change_password))
+        .route("/2fa", get(two_factor_status))
+        .route("/2fa/setup", post(two_factor_setup))
+        .route("/2fa/enable", post(two_factor_enable))
+        .route("/2fa/disable", post(two_factor_disable))
+        .route("/2fa/recovery-codes", post(two_factor_recovery_codes))
         .route("/sessions", get(list_sessions))
         .route("/sessions/{id}", delete(revoke_session))
         .route("/tokens", get(list_tokens).post(create_token))
@@ -32,6 +37,9 @@ pub fn router() -> Router<AppState> {
 struct LoginBody {
     username: String,
     password: String,
+    /// İki adımlı doğrulama açıksa: uygulamadaki 6 haneli kod ya da bir kurtarma kodu.
+    #[serde(default)]
+    code: String,
 }
 
 /// Var olmayan kullanıcıda da aynı süreyi harcamak için kullanılan sahte özet;
@@ -74,7 +82,52 @@ async fn login(
             return Err(AppError::bad("Kullanıcı adı ya da parola hatalı"));
         }
     };
+    // Parola doğru; iki adımlı doğrulama açıksa ikinci adım da istenir.
+    let (totp_enabled, secret, last_step, recovery): (bool, Option<String>, i64, String) = state.db.call(|conn| {
+        conn.query_row("SELECT totp_enabled, totp_secret, totp_last_step, recovery_codes FROM users WHERE id = ?1", params![user_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+    })?;
+    if totp_enabled {
+        let code = body.code.trim();
+        if code.is_empty() {
+            // Parola doğru olduğu için bu bir başarısız deneme sayılmaz.
+            return Err(AppError::TwoFactorRequired);
+        }
+        let mut codes: Vec<String> = serde_json::from_str(&recovery).unwrap_or_default();
+        let recovery_hash = auth::hash_token(&code.to_ascii_lowercase());
+        if let Some(step) = secret.as_deref().and_then(|secret| crate::totp::verify(secret, code, now(), last_step)) {
+            // Aynı kod ikinci kez kullanılamasın diye son adım saklanır.
+            state.db.call(|conn| conn.execute("UPDATE users SET totp_last_step = ?1 WHERE id = ?2", params![step, user_id]))?;
+        } else if let Some(position) = codes.iter().position(|saved| *saved == recovery_hash) {
+            // Kurtarma kodu tek kullanımlıktır.
+            codes.remove(position);
+            let remaining = serde_json::to_string(&codes).map_err(|err| AppError::internal(err.to_string()))?;
+            state.db.call(|conn| conn.execute("UPDATE users SET recovery_codes = ?1 WHERE id = ?2", params![remaining, user_id]))?;
+        } else {
+            state.throttle.record_failure(&ip);
+            tracing::warn!(%ip, %username, "başarısız giriş denemesi");
+            return Err(AppError::bad("Doğrulama kodu hatalı ya da süresi dolmuş"));
+        }
+    }
     state.throttle.clear(&ip);
+
+    // Daha önce giriş yapılmamış bir adresse hesap sahibine haber verilir.
+    let (known_ip, first_login): (bool, bool) = state.db.call(|conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM audit_log WHERE user_id = ?1 AND action = 'auth.login' AND ip = ?2),
+                    NOT EXISTS(SELECT 1 FROM audit_log WHERE user_id = ?1 AND action = 'auth.login')",
+            params![user_id, ip],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+    })?;
+    if !known_ip && !first_login {
+        let (notify_state, notify_ip, notify_name) = (state.clone(), ip.clone(), username.clone());
+        tokio::spawn(async move {
+            let body = format!("Hesap: {notify_name}\nAdres: {notify_ip}\n\nBu giriş size ait değilse parolanızı değiştirin ve açık oturumları kapatın.");
+            crate::notify::send_event(&notify_state, user_id, "login_new_ip", "PixPanel hesabınıza yeni bir adresten giriş yapıldı", &body).await;
+        });
+    }
 
     let user_agent = headers.get(USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
     let ttl = state.cfg.session_ttl_secs;
@@ -101,6 +154,103 @@ async fn logout(State(state): State<AppState>, user: AuthUser) -> AppResult<Resp
 
 async fn me(user: AuthUser) -> Json<AuthUser> {
     Json(user)
+}
+
+// ---- İki adımlı doğrulama ----
+
+/// İki adımlı doğrulama ayarları yalnızca tarayıcı oturumundan değiştirilebilir;
+/// ele geçirilmiş bir API anahtarı hesabın korumasını kapatamaz.
+fn require_session(user: &AuthUser) -> AppResult<()> {
+    if user.via_token { Err(AppError::Forbidden) } else { Ok(()) }
+}
+
+fn check_password(state: &AppState, user: &AuthUser, password: &str) -> AppResult<()> {
+    let hash: String = state.db.call(|conn| conn.query_row("SELECT password_hash FROM users WHERE id = ?1", params![user.id], |row| row.get(0)))?;
+    if auth::verify_password(password, &hash) { Ok(()) } else { Err(AppError::bad("Parola hatalı")) }
+}
+
+async fn two_factor_status(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<serde_json::Value>> {
+    let (enabled, recovery): (bool, String) = state.db.call(|conn| {
+        conn.query_row("SELECT totp_enabled, recovery_codes FROM users WHERE id = ?1", params![user.id], |row| Ok((row.get(0)?, row.get(1)?)))
+    })?;
+    let codes: Vec<String> = serde_json::from_str(&recovery).unwrap_or_default();
+    Ok(Json(json!({ "enabled": enabled, "recovery_codes_left": codes.len() })))
+}
+
+#[derive(Deserialize)]
+struct PasswordOnly {
+    password: String,
+}
+
+/// Yeni bir gizli anahtar üretir. Kullanıcı uygulamasından bir kod girip
+/// `enable` ile doğrulayana kadar iki adımlı doğrulama açılmaz.
+async fn two_factor_setup(State(state): State<AppState>, user: AuthUser, Json(body): Json<PasswordOnly>) -> AppResult<Json<serde_json::Value>> {
+    require_session(&user)?;
+    check_password(&state, &user, &body.password)?;
+    let enabled: bool = state.db.call(|conn| conn.query_row("SELECT totp_enabled FROM users WHERE id = ?1", params![user.id], |row| row.get(0)))?;
+    if enabled {
+        return Err(AppError::conflict("İki adımlı doğrulama zaten açık"));
+    }
+    let secret = crate::totp::generate_secret();
+    state.db.call(|conn| conn.execute("UPDATE users SET totp_secret = ?1, totp_last_step = 0 WHERE id = ?2", params![secret, user.id]))?;
+    let uri = crate::totp::provisioning_uri(&secret, &user.username, "PixPanel");
+    let qr = qrcode::QrCode::new(uri.as_bytes())
+        .map(|code| code.render::<qrcode::render::svg::Color>().min_dimensions(220, 220).quiet_zone(true).build())
+        .map_err(|err| AppError::internal(err.to_string()))?;
+    Ok(Json(json!({ "secret": secret, "uri": uri, "qr_svg": qr })))
+}
+
+fn new_recovery_codes() -> (Vec<String>, String) {
+    let codes: Vec<String> = (0..10).map(|_| crate::totp::generate_recovery_code()).collect();
+    let hashes: Vec<String> = codes.iter().map(|code| auth::hash_token(code)).collect();
+    (codes, serde_json::to_string(&hashes).unwrap_or_else(|_| "[]".into()))
+}
+
+#[derive(Deserialize)]
+struct CodeBody {
+    code: String,
+}
+
+async fn two_factor_enable(State(state): State<AppState>, user: AuthUser, Json(body): Json<CodeBody>) -> AppResult<Json<serde_json::Value>> {
+    require_session(&user)?;
+    let (enabled, secret): (bool, Option<String>) = state.db.call(|conn| {
+        conn.query_row("SELECT totp_enabled, totp_secret FROM users WHERE id = ?1", params![user.id], |row| Ok((row.get(0)?, row.get(1)?)))
+    })?;
+    if enabled {
+        return Err(AppError::conflict("İki adımlı doğrulama zaten açık"));
+    }
+    let secret = secret.ok_or_else(|| AppError::bad("Önce kurulumu başlatın"))?;
+    let step = crate::totp::verify(&secret, &body.code, now(), 0).ok_or_else(|| AppError::bad("Kod hatalı. Uygulamadaki güncel kodu girin; telefonunuzun saatinin doğru olduğundan emin olun."))?;
+    let (codes, hashes) = new_recovery_codes();
+    // Açılınca diğer oturumlar kapatılır; onlar ikinci adımı geçmemiştir.
+    let keep = user.session_id.unwrap_or(-1);
+    state.db.call(|conn| {
+        conn.execute("UPDATE users SET totp_enabled = 1, totp_last_step = ?1, recovery_codes = ?2 WHERE id = ?3", params![step, hashes, user.id])?;
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1 AND id != ?2", params![user.id, keep])
+    })?;
+    auth::audit(&state.db, &user, "auth.2fa.enable", &user.username, "");
+    Ok(Json(json!({ "recovery_codes": codes })))
+}
+
+async fn two_factor_disable(State(state): State<AppState>, user: AuthUser, Json(body): Json<PasswordOnly>) -> AppResult<Json<serde_json::Value>> {
+    require_session(&user)?;
+    check_password(&state, &user, &body.password)?;
+    state.db.call(|conn| conn.execute("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE id = ?1", params![user.id]))?;
+    auth::audit(&state.db, &user, "auth.2fa.disable", &user.username, "");
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn two_factor_recovery_codes(State(state): State<AppState>, user: AuthUser, Json(body): Json<PasswordOnly>) -> AppResult<Json<serde_json::Value>> {
+    require_session(&user)?;
+    check_password(&state, &user, &body.password)?;
+    let enabled: bool = state.db.call(|conn| conn.query_row("SELECT totp_enabled FROM users WHERE id = ?1", params![user.id], |row| row.get(0)))?;
+    if !enabled {
+        return Err(AppError::bad("İki adımlı doğrulama açık değil"));
+    }
+    let (codes, hashes) = new_recovery_codes();
+    state.db.call(|conn| conn.execute("UPDATE users SET recovery_codes = ?1 WHERE id = ?2", params![hashes, user.id]))?;
+    auth::audit(&state.db, &user, "auth.2fa.recovery_codes", &user.username, "");
+    Ok(Json(json!({ "recovery_codes": codes })))
 }
 
 #[derive(Deserialize)]

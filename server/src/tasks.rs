@@ -21,6 +21,9 @@ pub fn spawn_certificate_renewal(state: AppState) {
             if let Err(err) = renew_due_certificates(&state).await {
                 tracing::error!(error = %err, "sertifika yenileme denetimi başarısız");
             }
+            if let Err(err) = crate::panelcert::renew_if_due(&state, RENEW_BEFORE_SECS).await {
+                tracing::error!(error = %err, "panel sertifikası yenilenemedi");
+            }
             tokio::time::sleep(CHECK_INTERVAL).await;
         }
     });

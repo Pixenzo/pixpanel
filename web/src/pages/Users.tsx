@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Pause, Play, Plus, Trash2 } from "lucide-react";
+import { KeyRound, Pause, Play, Plus, ShieldOff, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
@@ -27,6 +27,9 @@ import { api, errorMessage } from "../lib/api";
 import { formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+
+/** Liste uçunun döndürdüğü, iki adımlı doğrulama durumunu da içeren hesap kaydı. */
+type ManagedUser = UserInfo & { two_factor: boolean };
 
 export const roleLabels: Record<Role, string> = {
   admin: "Yönetici",
@@ -222,8 +225,27 @@ export function UsersPage() {
   const [editing, setEditing] = useState<UserInfo | null>(null);
   const roles = creatableRoles(me.role);
 
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.get<UserInfo[]>("/users") });
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api.get<ManagedUser[]>("/users") });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["users"] });
+
+  const resetTwoFactor = useMutation({
+    mutationFn: (user: ManagedUser) => api.post(`/users/${user.id}/2fa/reset`),
+    onSuccess: (_, user) => feedback.success(t("{name} hesabının iki adımlı doğrulaması sıfırlandı", { name: user.username })),
+    onError: (error) => feedback.error(error),
+    onSettled: invalidate,
+  });
+
+  async function confirmResetTwoFactor(user: ManagedUser) {
+    const confirmed = await feedback.confirm({
+      title: t("{name} için iki adımlı doğrulama sıfırlansın mı?", { name: user.username }),
+      description: t(
+        "Hesap yalnızca parolasıyla girebilir hâle gelir ve bütün oturumları kapatılır. Kullanıcı telefonunu kaybettiyse kullanın.",
+      ),
+      confirmLabel: t("Doğrulamayı sıfırla"),
+      danger: true,
+    });
+    if (confirmed) resetTwoFactor.mutate(user);
+  }
 
   const setStatus = useMutation({
     mutationFn: ({ user, status }: { user: UserInfo; status: string }) => api.patch(`/users/${user.id}`, { status }),
@@ -304,6 +326,11 @@ export function UsersPage() {
                       <Td>
                         <Mono className="font-medium">{user.username}</Mono>
                         {self && <span className="ml-2 text-[12.5px] text-ink-3">{t("(siz)")}</span>}
+                        {user.two_factor && (
+                          <span className="ml-2">
+                            <Badge tone="ok">{t("2 adımlı")}</Badge>
+                          </span>
+                        )}
                         {user.email && <p className="text-[12.5px] text-ink-3">{user.email}</p>}
                       </Td>
                       <Td>
@@ -321,6 +348,11 @@ export function UsersPage() {
                           <IconButton label={t("Düzenle ve parola değiştir")} onClick={() => setEditing(user)}>
                             <KeyRound className="size-4" />
                           </IconButton>
+                          {user.two_factor && (
+                            <IconButton label={t("İki adımlı doğrulamayı sıfırla")} onClick={() => void confirmResetTwoFactor(user)}>
+                              <ShieldOff className="size-4" />
+                            </IconButton>
+                          )}
                           {user.status === "active" ? (
                             <IconButton label={t("Askıya al")} disabled={self} onClick={() => setStatus.mutate({ user, status: "suspended" })}>
                               <Pause className="size-4" />

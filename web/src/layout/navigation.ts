@@ -19,6 +19,7 @@ import {
   Network,
   ScrollText,
   Settings,
+  ShieldBan,
   ShieldCheck,
   SquareTerminal,
   Users,
@@ -59,6 +60,7 @@ export const navigation: NavGroup[] = [
     items: [
       { to: "/server", label: "Sunucu durumu", icon: Gauge, visible: isAdmin },
       { to: "/firewall", label: "Güvenlik duvarı", icon: ShieldCheck, visible: isAdmin },
+      { to: "/fail2ban", label: "Saldırı engelleme", icon: ShieldBan, visible: isAdmin },
       { to: "/docker", label: "Docker", icon: Container, visible: isAdmin },
       { to: "/php", label: "PHP", icon: FileCode2, visible: isAdmin },
       { to: "/redis", label: "Redis", icon: DatabaseZap, visible: isAdmin },

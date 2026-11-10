@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/{id}", patch(update).delete(remove))
+        .route("/{id}/2fa/reset", axum::routing::post(reset_two_factor))
 }
 
 #[derive(Serialize)]
@@ -34,6 +35,8 @@ struct UserInfo {
     language: String,
     created_at: i64,
     last_login_at: Option<i64>,
+    /// İki adımlı doğrulama açık mı?
+    two_factor: bool,
 }
 
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<UserInfo>>> {
@@ -45,7 +48,7 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
     let users = state.db.call(|conn| {
         let mut stmt = conn.prepare(
             "SELECT u.id, u.username, u.email, u.role, u.parent_id, p.username, u.permissions,
-                    u.status, u.language, u.created_at, u.last_login_at
+                    u.status, u.language, u.created_at, u.last_login_at, u.totp_enabled
              FROM users u LEFT JOIN users p ON p.id = u.parent_id
              WHERE ?1 IS NULL OR u.parent_id = ?1
              ORDER BY u.username",
@@ -64,6 +67,7 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
                 language: row.get(8)?,
                 created_at: row.get(9)?,
                 last_login_at: row.get(10)?,
+                two_factor: row.get(11)?,
             })
         })?;
         rows.collect()
@@ -155,6 +159,20 @@ fn load_manageable(state: &AppState, user: &AuthUser, id: i64) -> AppResult<Targ
         // Başkasının hesabının varlığı da sızdırılmaz.
         Err(AppError::NotFound)
     }
+}
+
+/// Telefonunu kaybeden bir hesabın iki adımlı doğrulamasını kapatır ve oturumlarını sonlandırır.
+async fn reset_two_factor(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<serde_json::Value>> {
+    if user.via_token {
+        return Err(AppError::Forbidden);
+    }
+    let target = load_manageable(&state, &user, id)?;
+    state.db.call(|conn| {
+        conn.execute("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE id = ?1", params![id])?;
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![id])
+    })?;
+    auth::audit(&state.db, &user, "user.2fa.reset", &target.username, "");
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]

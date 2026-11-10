@@ -159,12 +159,22 @@ pub async fn setup(cfg: &Config) -> AppResult<()> {
     }
     exec::run_ok("pure-pw", &["mkdb"]).await?;
 
-    // TLS için panelin sertifikası kullanılır (sertifika ve anahtar tek dosyada).
+    write_certificate(cfg)?;
+    exec::run_ok("systemctl", &["enable", "--quiet", "--", SERVICE]).await?;
+    exec::run_ok("systemctl", &["restart", "--", SERVICE]).await?;
+    Ok(())
+}
+
+/// TLS için panelin sertifikası kullanılır (pure-ftpd sertifika ve anahtarı tek dosyada ister).
+fn write_certificate(cfg: &Config) -> AppResult<()> {
     let mut pem = std::fs::read(cfg.tls_dir().join("panel.crt"))?;
     pem.extend(std::fs::read(cfg.tls_dir().join("panel.key"))?);
-    atomic_write(Path::new(CERT_PATH), &pem, 0o600)?;
+    atomic_write(Path::new(CERT_PATH), &pem, 0o600)
+}
 
-    exec::run_ok("systemctl", &["enable", "--quiet", "--", SERVICE]).await?;
+/// Panelin sertifikası değiştiğinde FTP sunucusunu yeni sertifikaya geçirir.
+pub async fn install_certificate(cfg: &Config) -> AppResult<()> {
+    write_certificate(cfg)?;
     exec::run_ok("systemctl", &["restart", "--", SERVICE]).await?;
     Ok(())
 }

@@ -55,6 +55,10 @@ postfix postfix/mailname string {}
             let _sys = job_state.sys_lock.lock().await;
             crate::dbtools::ensure_runtime(&job_state.cfg).await?;
         }
+        if component.id == "fail2ban" {
+            ctx.log("fail2ban yapılandırılıyor");
+            crate::fail2ban::apply(&job_state.db, &crate::fail2ban::load(&job_state.db)).await?;
+        }
         if component.id == "dns" {
             ctx.log("DNS sunucusu yapılandırılıyor");
             crate::dns::local::setup().await?;
@@ -68,6 +72,12 @@ postfix postfix/mailname string {}
             let _sys = job_state.sys_lock.lock().await;
             crate::mail::setup(&job_state.db, &job_state.cfg).await?;
             ctx.log("Posta sunucusu hazır");
+        }
+        // Yeni bileşen için bir hapis varsa (ör. FTP, posta) fail2ban onu izlemeye başlar.
+        if component.id != "fail2ban" && crate::fail2ban::is_installed() {
+            if let Err(err) = crate::fail2ban::apply(&job_state.db, &crate::fail2ban::load(&job_state.db)).await {
+                ctx.log(format!("Uyarı: fail2ban yapılandırması güncellenemedi: {err}"));
+            }
         }
         // Yeni bileşenin portları güvenlik duvarında kendiliğinden açılır.
         if let Err(err) = crate::firewall::reapply(&job_state).await {

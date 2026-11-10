@@ -11,6 +11,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("Oturum açmanız gerekiyor")]
     Unauthorized,
+    #[error("Doğrulama uygulamanızdaki 6 haneli kodu girin")]
+    TwoFactorRequired,
     #[error("Bu işlem için yetkiniz yok")]
     Forbidden,
     #[error("Kayıt bulunamadı")]
@@ -42,6 +44,7 @@ impl AppError {
         match self {
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            Self::TwoFactorRequired => (StatusCode::UNAUTHORIZED, "two_factor_required"),
             Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "conflict"),

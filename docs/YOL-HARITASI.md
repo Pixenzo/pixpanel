@@ -30,7 +30,7 @@ Bu kurallar her paketin brifine eklenir.
 
 ## P0 — Canlıya çıkmadan gerekli
 
-### 1. Güvenlik duvarı (nftables) — O, sistem katmanı
+### 1. Güvenlik duvarı (nftables) — TAMAMLANDI (10.11.2026)
 
 - **Amaç:** sunucuya yalnızca gereken portlardan erişilsin; kurallar panelden yönetilsin.
 - **Kapsam:**
@@ -44,14 +44,14 @@ Bu kurallar her paketin brifine eklenir.
 - **Kabul:** dışarıdan kapalı porta bağlantı reddedilir; onaylanmayan kural seti 60 saniyede geri alınır; Docker konteynerinin yayınladığı port çalışmaya devam eder; LXC içinde çalışır.
 - **Risk:** yetkisiz LXC'de nftables davranışı; önce elle doğrulanmalı.
 
-### 2. fail2ban — O, sistem katmanı + arayüz
+### 2. fail2ban — TAMAMLANDI (10.11.2026)
 
 - **Amaç:** parola deneme saldırıları kendiliğinden engellensin.
 - **Kapsam:** hapisler: sshd, panel girişi, dovecot, postfix-sasl, pure-ftpd, roundcube, phpMyAdmin. Panel başarısız girişleri fail2ban'in okuyabileceği sabit biçimde günlüğe yazar. Arayüz: engelli adresler, engeli kaldırma, beyaz liste, hapis başına deneme sayısı ve süre.
 - **Bağımlılık:** 1 (engeller `pixpanel` tablosundaki bir kümeye yazılır).
 - **Kabul:** N yanlış parola denemesinden sonra adres engellenir (SSH, panel, IMAP, FTP için ayrı ayrı); panelden kaldırılır; beyaz listedeki adres engellenmez.
 
-### 3. Giriş güvenliği — O, arka uç + arayüz (devre uygun)
+### 3. Giriş güvenliği — TAMAMLANDI (10.11.2026; panele adres kısıtı güvenlik duvarındaki panel kümesiyle yapılıyor, parola ilkesi ve oturumları toplu kapatma kaldı)
 
 - **Kapsam:**
   - İki adımlı doğrulama (TOTP; `users.totp_secret` sütunu hazır), kurtarma kodları, yöneticinin başkasının iki adımını sıfırlaması.
@@ -59,7 +59,7 @@ Bu kurallar her paketin brifine eklenir.
   - Parola ilkesi, oturumları toplu kapatma, giriş bildirimi (yeni adresten giriş).
 - **Kabul:** kod olmadan giriş reddedilir; kurtarma kodu bir kez çalışır; API anahtarları iki adımdan etkilenmez; adres listesi dışından 403.
 
-### 4. Panelin ve postanın sertifikası — O, arka uç
+### 4. Panelin ve postanın sertifikası — TAMAMLANDI (10.11.2026)
 
 - **Kapsam:** panelin kendi alan adı için Let's Encrypt (HTTP-01 nginx üzerinden ya da DNS-01); sertifika değişince panel yeniden başlamadan yeni sertifikayı kullanır; posta servisleri (Postfix, Dovecot) ve FTP aynı sertifikayı alır ve yeniden yüklenir; kendiliğinden yenileme.
 - **Örnek al:** `api/ssl.rs`, `hosting/acme.rs`, `mail::tls_paths`.

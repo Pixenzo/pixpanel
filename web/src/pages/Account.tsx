@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { NotificationSettings } from "../components/NotificationSettings";
+import { TwoFactorPanel } from "../components/TwoFactorPanel";
 import {
   Badge,
   Button,
@@ -323,9 +324,10 @@ function TokensPanel() {
 export function AccountPage() {
   return (
     <>
-      <PageHeader title={t("Hesabım")} description={t("Parolanız, bildirim tercihleriniz, açık oturumlarınız ve API anahtarlarınız.")} />
+      <PageHeader title={t("Hesabım")} description={t("Parolanız, iki adımlı doğrulamanız, bildirim tercihleriniz, açık oturumlarınız ve API anahtarlarınız.")} />
       <div className="flex flex-col gap-4">
         <PasswordPanel />
+        <TwoFactorPanel />
         <NotificationSettings />
         <SessionsPanel />
         <TokensPanel />

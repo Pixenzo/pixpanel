@@ -1,6 +1,6 @@
 # Durum
 
-Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.js, vekil kuralları, FTP, DNS ve Cloudflare eklendi)
+Son güncelleme: 10.11.2026 (güvenlik duvarı, fail2ban ve iki adımlı doğrulama eklendi)
 
 ## Kararlar
 
@@ -58,6 +58,10 @@ Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.j
   - Site eklenince A kaydı, posta açılınca MX/SPF/DKIM/DMARC kayıtları kendiliğinden eklenir (farklı değerdeki var olan kayıtlara dokunulmaz).
   - Let's Encrypt için DNS doğrulaması (DNS-01) ve joker sertifika: `_acme-challenge` kaydı eklenir, iş bitince silinir.
   - Cloudflare: API anahtarıyla bağlanma, kayıtlarda vekil (turuncu bulut) seçeneği, SSL kipi, geliştirme kipi, önbellek temizleme; nginx'te gerçek ziyaretçi adresi (yalnızca Cloudflare aralıklarına güvenilir).
+- Güvenlik duvarı: nftables üzerinde panelin kendi tablosu (`inet pixpanel`); kurulu bileşenlere göre hazır kümeler, özel kurallar, engelli adresler, dinleyen portların durumu. İsteği yapanın panel erişimini kesen kurallar uygulanmaz; uygulanan kurallar 60 saniyede onaylanmazsa kendiliğinden geri alınır. Docker'ın yayınladığı portlar bu kurallardan etkilenmez (ayrı zincirden geçer).
+- fail2ban: SSH, panel girişi, IMAP, SMTP kimlik doğrulaması, FTP ve web postası için hapisler; engelli adresler, engel kaldırma, beyaz liste, hapis başına deneme sayısı ve süreler. Engeller fail2ban'in kendi nftables tablosunda, bütün portlar için. Süzgeçler, kullanıcı adına gömülen sahte adresin başkasını engelletmesine izin vermeyecek biçimde yazıldı.
+- İki adımlı doğrulama (TOTP): kurulum (QR), kurtarma kodları, parola ile kapatma, yöneticinin sıfırlaması, komut satırından kapatma (`pixpanel disable-two-factor <kullanıcı>`); API anahtarları etkilenmez ama korumayı da kapatamaz. Yeni adresten girişte bildirim.
+- Panel sertifikası: panele alan adı verip Let's Encrypt (web ya da DNS doğrulamasıyla) alma, kendi sertifikasını yükleme, kendinden imzalıya dönme. Yeni sertifika panel yeniden başlamadan devreye girer; posta (SMTP, IMAP) ve FTP aynı sertifikaya geçirilir; kendiliğinden yenilenir.
 - Arayüz düzeni (Plesk "power user" görünümünden esinle): ana sayfa siteler; her site, araçlarını ve o anki durumlarını gösteren bir kart. Site çalışma alanında sol bölüm menüsü. Ctrl+K ile site/araç/sayfa araması. Koyu yan menü.
 - Arayüz: giriş, genel bakış, siteler ve site ayrıntısı (genel, PHP, vekil, SSL, gelişmiş), veritabanları, dosyalar, zamanlı görevler, günlükler, bileşenler, servisler, süreçler, terminal, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
 
@@ -80,6 +84,10 @@ Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.j
 - Node.js ve vekil kuralları (`node.sh`): sürüm kurulumu, örnek uygulamanın yayına girmesi, ortam değişkenlerinin bozulmadan ulaşması, npm betiği, başlat/durdur, önekli iletim; satır sonu ve birim dosyasına sızma denemelerinin reddedildiği.
 - FTP (`ftp.sh`): bileşenin panelden sıfırdan kurulumu, FTPS ile oturum, hapis, yüklenen dosyanın sahipliği ve web'den sunulması, alt klasör hesabı; sistem kullanıcısının giremediği; kök dışını gösteren sembolik bağın reddedildiği.
 - DNS (`dns.sh`): yerel bölgede kayıtların gerçekten yayınlandığı (`dig` ile), otomatik site ve posta kayıtları, kayıt ekleme/güncelleme/silme, uzun DKIM kaydının parçalı yayını, joker sertifikanın DNS doğrulamasıyla Pebble'dan alındığı, gerçek ziyaretçi adresi ayarı. Cloudflare bölümü `mock_cloudflare.py` sahte API'sine karşı sınandı.
+- Güvenlik duvarı (`firewall.sh`, dışarıdan bağlantı denemeleriyle): kuralı olmayan portun kapandığı, SSH/panel/web'in açık kaldığı, Docker portunun etkilenmediği, onaylanmayan kuralların 60 saniyede geri alındığı, kuralların panel yeniden başlayınca yerinde durduğu, kendini kilitleyen kuralların reddedildiği.
+- fail2ban (`fail2ban.sh`, dışarıdan hatalı girişlerle): panel, FTP, IMAP ve web postasında adresin engellendiği ve süre dolunca açıldığı; kullanıcı adına gömülen sahte adresin engellenmediği; beyaz listenin çalıştığı. SSH ve SMTP hapisleri etkin ama ayrıca sınanmadı (hazır fail2ban süzgeçlerini kullanıyorlar).
+- İki adımlı doğrulama (`twofactor.sh`): RFC 6238 sınama değerleri (birim testi), kodsuz girişin reddi, aynı kodun ikinci kez kullanılamadığı, kurtarma kodlarının tek kullanımlık olduğu, sıfırlama yolları.
+- Panel sertifikası (`panelcert.sh`): Pebble'dan alınan sertifikanın panel yeniden başlamadan sunulduğu, IMAP/SMTP/FTP'nin aynı sertifikaya geçtiği, anahtarı uyuşmayan ya da alan adını kapsamayan sertifikanın reddedildiği.
 - Müşteri hesabının başka hesabın sitesini, veritabanını ve bileşen sayfasını göremediği.
 - Dosya yöneticisinde `..`, gerçek sistem yolu ve `/etc/passwd` dosyasına verilen sembolik bağın "bulunamadı" döndüğü (hapis çalışıyor).
 - Kullanıcının ev klasörünün üst düzeyini (`sites` dahil) değiştiremediği.
@@ -89,6 +97,8 @@ Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.j
 ## Test ortamı notları
 
 - Uçtan uca sınamalar: `scripts/e2e/features.sh` (PHP genel ayarları, bildirimler, Git yayınlama, Docker). Test makinesine kopyalanıp `PX_USER=… PX_PASS=… bash features.sh [php git docker]` ile çalışır; `mocks.py` sahte Telegram (9911) ve SMTP (2525) sunucusudur, `/etc/pixpanel/config.toml` içindeki `telegram_api` ona bakar.
+- Bütün sınamalar tek komutla: `scripts/e2e/run-all.sh` (ad verilirse yalnızca o betikler).
+- Test makinesinde güvenlik duvarı ve fail2ban açık bırakıldı; geliştirme makinesinin adresi fail2ban beyaz listesinde. Engellenirsen: `ssh proxmox pct exec 105 -- fail2ban-client unban --all`.
 - `/etc/pixpanel/config.toml` içinde sınama adresleri tanımlı: `telegram_api` (9911) ve `cloudflare_api` (9912, `scripts/e2e/mock_cloudflare.py`); canlıda bu satırlar olmamalı.
 - DNS sınaması Pebble'ı geçici olarak yerel DNS sunucusuna yöneltir (`-dnsserver 127.0.0.1:53`) ve iş bitince geri alır; `deneme.test` yerel bölgesi ve joker sertifikası yerinde duruyor.
 - Posta sınaması `scripts/e2e/mail.sh` + `mailflow.py`; test makinesinde `deneme.test` için örnek kutular (bilgi, destek) duruyor. Makinenin gerçek bir alan adı ve açık 25. portu olmadığından dış sunucularla alışveriş (gerçek teslim, SPF/DKIM doğrulaması) denenmedi.
@@ -99,8 +109,11 @@ Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.j
 
 ## Sıradaki (öncelik sırasıyla)
 
-1. Güvenlik duvarı (nftables), fail2ban. FTP'nin pasif portları (30000–30099), posta ve DNS portları için kurallar buraya bağlanacak.
-2. Yedekleme (siteler, veritabanları, posta; uzak hedefler).
+Ayrıntılı ve önceliklendirilmiş liste: `docs/YOL-HARITASI.md`. P0'dan kalanlar:
+
+1. Yedekleme ve geri yükleme (restic; siteler, veritabanları, posta; uzak hedefler).
+   Kurulum betiği ve panelin kendini güncellemesi (GitHub sürümleri).
+   Temiz makinede bileşen kurulumlarının sınanması.
 3. Posta eksikleri: posta sunucusu adı için kendiliğinden Let's Encrypt, karantina (şu an şüpheli iletiler Junk klasörüne gider), kutu sahibinin kendi kurallarını ve parolasını web postasından yönetebilmesi, hesap başına kutu sınırı.
 4. DNS eksikleri: DNSSEC, ikincil ad sunucusu (AXFR), bölge içe aktarma, Cloudflare'de SRV/CAA yazma, "yalnızca Cloudflare" kipi.
 5. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
@@ -117,7 +130,6 @@ Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.j
 - Docker, PHP, Ayarlar ve Posta sayfalarının arayüzü tarayıcıda açılıp gözle denetlendi ama her düğmesi tek tek tıklanarak sınanmadı; arka uçları `scripts/e2e` ile sınandı.
 - Web kancası yalnızca adresteki gizli anahtarla korunuyor; GitHub imza başlığı (`X-Hub-Signature-256`) doğrulanmıyor.
 
-- Panel sertifikası kendinden imzalı; panelin kendi alan adına Let's Encrypt alması SSL aşamasında gelecek.
 - Birim testleri az (7 test: alan adı, sertifika, SQL kaçışlama, cron doğrulama) ve `scripts/test.sh` ile test makinesinde çalışıyor; kod Linux'a özgü olduğundan Windows'ta derlenmiyor.
 - Uçtan uca doğrulama test makinesinde elle (betiklerle) yapılıyor; otomatik bir test takımı yok.
 - Hosting hesapları terminal kullanamıyor (yalnızca yönetici); hesap başına kabuk/SFTP izni eklenecek.
