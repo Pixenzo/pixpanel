@@ -310,6 +310,26 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX backup_plans_target ON backup_plans(target_id);
     "#,
+    // 13: kendi kendine bakım. Süren bulgular ve yapılan düzeltmelerin günlüğü.
+    r#"
+    CREATE TABLE health_findings (
+        key          TEXT PRIMARY KEY,
+        rule         TEXT NOT NULL,
+        first_seen   INTEGER NOT NULL,
+        fix_attempts INTEGER NOT NULL DEFAULT 0,
+        last_fix_at  INTEGER
+    );
+    CREATE TABLE health_actions (
+        id         INTEGER PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        rule       TEXT NOT NULL,
+        target     TEXT NOT NULL DEFAULT '',
+        summary    TEXT NOT NULL,
+        automatic  INTEGER NOT NULL DEFAULT 0,
+        success    INTEGER NOT NULL DEFAULT 1,
+        detail     TEXT NOT NULL DEFAULT ''
+    );
+    "#,
 ];
 
 #[derive(Clone)]

@@ -17,6 +17,7 @@ mod files;
 mod firewall;
 mod ftp;
 mod git;
+mod health;
 mod jobs;
 mod logs;
 mod mail;
@@ -38,6 +39,7 @@ pub fn router() -> Router<AppState> {
         .nest("/system", system::router().nest("/certificate", panelcert::router()).nest("/update", update::router()))
         .nest("/jobs", jobs::router())
         .nest("/events", events::router())
+        .nest("/health", health::router())
         .nest("/components", components::router())
         .nest("/databases", databases::router())
         .nest("/files", files::router())

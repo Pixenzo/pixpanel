@@ -54,6 +54,18 @@ pub fn spawn_update_check(state: AppState) {
     });
 }
 
+/// Kendi kendine bakım denetimlerini düzenli çalıştırır (bkz. `health`).
+pub fn spawn_health_monitor(state: AppState) {
+    tokio::spawn(async move {
+        // Açılışta servislerin ayağa kalkması beklenir; yoksa hepsi "çalışmıyor" görünür.
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        loop {
+            crate::health::run_checks(&state).await;
+            tokio::time::sleep(crate::health::CHECK_INTERVAL).await;
+        }
+    });
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {

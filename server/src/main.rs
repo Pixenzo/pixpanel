@@ -15,6 +15,7 @@ mod events;
 mod fail2ban;
 mod firewall;
 mod fsop;
+mod health;
 mod hosting;
 mod jobs;
 mod mail;
@@ -136,6 +137,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
         throttle: Arc::default(),
         sys_lock: Arc::default(),
         apt_lock: Arc::default(),
+        health: health::Monitor::default(),
         tls: tls.clone(),
     };
 
@@ -144,6 +146,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_db_tool_cleanup(state.clone());
     tasks::spawn_backup_scheduler(state.clone());
     tasks::spawn_update_check(state.clone());
+    tasks::spawn_health_monitor(state.clone());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");
