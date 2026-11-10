@@ -93,7 +93,12 @@ pub async fn issue(ctx: &JobCtx, db: &Db, cfg: &Config, names: &[String]) -> App
         }
 
         ctx.log("Sağlayıcının alan adlarını doğrulaması bekleniyor");
-        let status = order.poll_ready(&RetryPolicy::default()).await.map_err(acme_error)?;
+        let status = order.poll_ready(&RetryPolicy::default()).await.map_err(|err| {
+            AppError::bad(format!(
+                "Alan adı doğrulanamadı. Alan adının DNS kaydının bu sunucuyu gösterdiğinden ve 80. portun \
+                 dışarıdan erişilebilir olduğundan emin olun. Sağlayıcının yanıtı: {err}"
+            ))
+        })?;
         if status != OrderStatus::Ready {
             return Err(AppError::bad(
                 "Alan adı doğrulanamadı. Alan adının DNS kaydının bu sunucuyu gösterdiğinden ve 80. portun dışarıdan erişilebilir olduğundan emin olun.",

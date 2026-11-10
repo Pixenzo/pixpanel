@@ -7,6 +7,7 @@ import {
   Boxes,
   ChevronDown,
   Cog,
+  Database,
   Globe,
   LayoutDashboard,
   ListChecks,
@@ -42,6 +43,8 @@ interface NavGroup {
 }
 
 const isAdmin = (me: Me) => me.role === "admin";
+/** Alt hesaplar yalnızca kendilerine verilen alanları görür. */
+const can = (area: string) => (me: Me) => me.role !== "member" || me.permissions.includes(area);
 
 const navigation: NavGroup[] = [
   {
@@ -50,7 +53,10 @@ const navigation: NavGroup[] = [
   },
   {
     title: "Hosting",
-    items: [{ to: "/sites", label: "Siteler", icon: Globe, visible: (me) => me.role !== "member" || me.permissions.includes("sites") }],
+    items: [
+      { to: "/sites", label: "Siteler", icon: Globe, visible: can("sites") },
+      { to: "/databases", label: "Veritabanları", icon: Database, visible: can("databases") },
+    ],
   },
   {
     title: "Sunucu",

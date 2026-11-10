@@ -112,6 +112,36 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX site_aliases_site ON site_aliases(site_id);
     "#,
+    // 3: veritabanları
+    r#"
+    CREATE TABLE databases (
+        id         INTEGER PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        engine     TEXT NOT NULL CHECK (engine IN ('mariadb', 'postgresql')),
+        name       TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE (engine, name)
+    );
+    CREATE INDEX databases_user ON databases(user_id);
+
+    CREATE TABLE database_users (
+        id         INTEGER PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        engine     TEXT NOT NULL CHECK (engine IN ('mariadb', 'postgresql')),
+        name       TEXT NOT NULL,
+        host       TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        UNIQUE (engine, name, host)
+    );
+    CREATE INDEX database_users_user ON database_users(user_id);
+
+    CREATE TABLE database_grants (
+        database_id INTEGER NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
+        db_user_id  INTEGER NOT NULL REFERENCES database_users(id) ON DELETE CASCADE,
+        access      TEXT NOT NULL CHECK (access IN ('full', 'readwrite', 'readonly')),
+        PRIMARY KEY (database_id, db_user_id)
+    );
+    "#,
 ];
 
 #[derive(Clone)]

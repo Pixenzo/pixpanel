@@ -5,6 +5,7 @@ mod auth;
 mod components;
 mod config;
 mod db;
+mod dbms;
 mod error;
 mod hosting;
 mod jobs;

@@ -17,7 +17,9 @@ export const UNAUTHORIZED_EVENT = "capsule:unauthorized";
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "x-capsule-csrf": "1" };
-  if (body !== undefined) headers["content-type"] = "application/json";
+  // Dosya yüklemelerinde içerik türünü (sınır değeriyle birlikte) tarayıcı belirler.
+  const isForm = body instanceof FormData;
+  if (body !== undefined && !isForm) headers["content-type"] = "application/json";
 
   let response: Response;
   try {
@@ -25,7 +27,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       method,
       headers,
       credentials: "same-origin",
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(0, "network", "Panele ulaşılamıyor. Bağlantınızı ve sunucunun çalıştığını denetleyin.");
@@ -55,6 +57,7 @@ export const api = {
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   delete: <T>(path: string) => request<T>("DELETE", path),
+  upload: <T>(path: string, form: FormData) => request<T>("POST", path, form),
 };
 
 export function errorMessage(error: unknown): string {
@@ -240,6 +243,35 @@ export interface Site {
   nginx_custom: string;
   status: "active" | "suspended";
   created_at: number;
+}
+
+export type DbEngine = "mariadb" | "postgresql";
+export type DbAccess = "full" | "readwrite" | "readonly";
+
+export interface DatabaseInfo {
+  id: number;
+  engine: DbEngine;
+  name: string;
+  owner: string;
+  size: number | null;
+  grants: { db_user_id: number; name: string; host: string; access: DbAccess }[];
+  created_at: number;
+}
+
+export interface DbUserInfo {
+  id: number;
+  engine: DbEngine;
+  name: string;
+  host: string;
+  owner: string;
+  created_at: number;
+}
+
+export interface DatabaseOverview {
+  engines: { id: DbEngine; label: string; installed: boolean; running: boolean }[];
+  databases: DatabaseInfo[];
+  users: DbUserInfo[];
+  name_prefix: string;
 }
 
 export interface CertInfo {

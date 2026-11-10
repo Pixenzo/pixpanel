@@ -26,6 +26,15 @@ const actionLabels: Record<string, string> = {
   "ssl.letsencrypt": "Let's Encrypt sertifikası istedi",
   "ssl.disable": "Sertifikayı kaldırdı",
   "process.signal": "Sürece sinyal gönderdi",
+  "database.create": "Veritabanı oluşturdu",
+  "database.delete": "Veritabanını sildi",
+  "database.export": "Veritabanını dışa aktardı",
+  "database.import": "Veritabanına içe aktardı",
+  "database.grant": "Veritabanı erişimi verdi",
+  "database.revoke": "Veritabanı erişimini kaldırdı",
+  "database.user_create": "Veritabanı kullanıcısı oluşturdu",
+  "database.user_password": "Veritabanı kullanıcısının parolasını değiştirdi",
+  "database.user_delete": "Veritabanı kullanıcısını sildi",
 };
 
 export function AuditPage() {

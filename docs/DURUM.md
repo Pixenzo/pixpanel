@@ -24,22 +24,42 @@ Son güncelleme: 10.11.2026
 - Kullanıcılar: yönetici / bayi / müşteri / alt hesap hiyerarşisi, alt hesaplara alan bazlı yetki.
 - Görev sistemi: arka plan görevleri, canlı çıktı akışı (SSE).
 - Sunucu: canlı ölçümler (işlemci, bellek, ağ, disk), süreç listesi ve sonlandırma, systemd servis yönetimi.
-- Arayüz: giriş, genel bakış, servisler, süreçler, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
-- Test makinesinde uçtan uca denendi (API + tarayıcı).
+- Bileşen kurucu: nginx, PHP 7.4–8.5 (sury), MariaDB, PostgreSQL, Redis, Docker panelden kurulur.
+- Siteler: PHP / statik / ters vekil; takma adlar, yayın klasörü, askıya alma, silme; yöneticiye özel nginx yönergeleri.
+  - Her hesap kendi Linux kullanıcısıyla çalışır; site klasörleri diğer hesaplara kapalıdır.
+  - Site başına PHP sürümü ve ayarları (bellek, yükleme, süre, open_basedir, exec, ek yönergeler); sürüm geçişi kesintisiz.
+  - nginx ve PHP-FPM yapılandırması uygulanmadan önce sınanır, hata hâlinde geri alınır.
+- SSL: Let's Encrypt (HTTP-01), özel sertifika yükleme, kendinden imzalı; HTTPS zorlama, HSTS; 30 gün kala otomatik yenileme.
+- Veritabanları: MariaDB ve PostgreSQL; veritabanı, kullanıcı, üç düzeyli yetki (tam / okuma-yazma / salt okunur), dışa ve içe aktarma (.sql, .sql.gz).
+- Arayüz: giriş, genel bakış, siteler ve site ayrıntısı (genel, PHP, vekil, SSL, gelişmiş), veritabanları, bileşenler, servisler, süreçler, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
+
+## Test makinesinde doğrulananlar
+
+- PHP sitenin kendi kullanıcısıyla çalıştığı; başka hesabın dosyalarını ve `/etc/passwd` dosyasını okuyamadığı.
+- `.git`, `.env`, `*.sql` gibi dosyaların dışarıya kapalı olduğu; tanımsız alan adına bağlantının kapatıldığı.
+- Sürekli istek altında 6 PHP sürüm geçişinde 400 isteğin 400'ünün başarılı olduğu.
+- Alan adı, PHP yönergesi, vekil hedefi, yayın klasörü ve parola alanlarına enjeksiyon denemelerinin reddedildiği.
+- Bozuk nginx yönergesi ve anahtarı uyuşmayan sertifikanın uygulanmadığı, sitenin çalışmaya devam ettiği.
+- Let's Encrypt akışının Pebble (resmî sınama sunucusu) ile uçtan uca çalıştığı; doğrulanamayan alan adında sitenin etkilenmediği.
+- Tırnak, ters eğik çizgi ve kabuk karakterleri içeren veritabanı parolasının iki motorda da çalıştığı.
+- Müşteri hesabının başka hesabın sitesini, veritabanını ve bileşen sayfasını göremediği.
+
+## Test ortamı notları
+
+- Test makinesinde `/etc/capsule/config.toml` paneli Pebble'a yönlendirir (`acme_directory`, `acme_root_ca`); gerçek Let's Encrypt için bu dosya silinmelidir.
+- Pebble `/opt/pebble` altında, `pebble-test.service` olarak çalışır; `/etc/hosts` içinde `*.test` adları 127.0.0.1'e yönlenir.
 
 ## Sıradaki (öncelik sırasıyla)
 
-1. Paket/bileşen kurucu (nginx, PHP sürümleri, MariaDB, PostgreSQL, Redis, Docker… panelden kurulum).
-2. Siteler: alan adı, alt alan adı, takma ad; nginx vhost üretimi; site başına PHP sürümü ve ayarları; ters vekil; Node.js uygulamaları.
-3. SSL: Let's Encrypt, özel sertifika, kendinden imzalı.
-4. Dosya yöneticisi ve web terminali.
-5. Veritabanları: MariaDB + PostgreSQL (veritabanı, kullanıcı, yetki, içe/dışa aktarma, phpMyAdmin).
-6. DNS, FTP, zamanlanmış görevler.
-7. Güvenlik duvarı (nftables), fail2ban, günlük tarayıcı.
-8. Docker yönetimi.
-9. Yedekleme.
-10. Posta.
-11. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
+1. Dosya yöneticisi ve web terminali.
+2. Zamanlanmış görevler, günlük tarayıcı.
+3. Güvenlik duvarı (nftables), fail2ban.
+4. DNS (PowerDNS), FTP (pure-ftpd).
+5. Docker yönetimi.
+6. Node.js uygulamaları, phpMyAdmin.
+7. Yedekleme.
+8. Posta.
+9. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
 
 ## Bilinen eksikler
 

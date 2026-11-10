@@ -11,6 +11,7 @@ import { AccountPage } from "./pages/Account";
 import { AuditPage } from "./pages/Audit";
 import { ComponentsPage } from "./pages/Components";
 import { DashboardPage } from "./pages/Dashboard";
+import { DatabasesPage } from "./pages/Databases";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
 import { ProcessesPage } from "./pages/Processes";
@@ -36,7 +37,8 @@ function App() {
   if (me === null) return <LoginPage />;
 
   const isAdmin = me.role === "admin";
-  const canSites = me.role !== "member" || me.permissions.includes("sites");
+  const can = (area: string) => me.role !== "member" || me.permissions.includes(area);
+  const canSites = can("sites");
   return (
     <AppShell>
       <Routes>
@@ -52,6 +54,7 @@ function App() {
         {me.role !== "member" && <Route path="/users" element={<UsersPage />} />}
         {canSites && <Route path="/sites" element={<SitesPage />} />}
         {canSites && <Route path="/sites/:id" element={<SiteDetailPage />} />}
+        {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
