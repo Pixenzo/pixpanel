@@ -378,16 +378,19 @@ async fn check_disks(batch: &mut Batch) {
         }
         let severity = if percent >= DISK_CRITICAL_PERCENT { Severity::Critical } else { Severity::Warning };
         let free_gb = disk.available as f64 / 1_073_741_824.0;
-        batch.push(
-            Finding::new(
-                "disk.full",
-                &disk.mount,
-                severity,
-                format!("Disk dolmak üzere: {}", disk.mount),
-                format!("%{percent:.0} dolu, {free_gb:.1} GB boş yer kaldı. Disk dolarsa siteler ve veritabanları yazamaz."),
-            )
-            .link("/server"),
-        );
+        let mut finding = Finding::new(
+            "disk.full",
+            &disk.mount,
+            severity,
+            format!("Disk dolmak üzere: {}", disk.mount),
+            format!("%{percent:.0} dolu, {free_gb:.1} GB boş yer kaldı. Disk dolarsa siteler ve veritabanları yazamaz."),
+        )
+        .link("/server");
+        // Paket önbelleği ve eski günlükler kök diskte durur; yalnızca orada yer açılabilir.
+        if disk.mount == "/" {
+            finding = finding.fix("Yer aç");
+        }
+        batch.push(finding);
     }
     // Çok sayıda küçük dosya, yer varken de diski kullanılmaz kılabilir.
     if let Ok(output) = exec::run("df", &["--output=target,ipcent", "-x", "tmpfs", "-x", "devtmpfs", "-x", "overlay", "-x", "squashfs"]).await {
@@ -1184,12 +1187,40 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
             crate::wordpress::start_update_job(state, user_id, site, "all".into())?;
             Ok(format!("{domain} güncelleniyor; önce yedeği alınacak."))
         }
+        "disk.full" => {
+            if target != "/" {
+                return Err(AppError::bad("Yalnızca kök diskte kendiliğinden yer açılabilir"));
+            }
+            let freed = free_disk_space().await;
+            Ok(if freed >= 1_048_576 {
+                format!("{:.0} MB yer açıldı (paket önbelleği, eski sistem günlükleri).", freed as f64 / 1_048_576.0)
+            } else {
+                "Silinebilecek önbellek ya da eski günlük kalmamış; büyük dosyaları Dosyalar sayfasından inceleyin.".to_string()
+            })
+        }
         "updates.pending" => {
             start_upgrade_job(state, user_id)?;
             Ok("Güncellemelerin kurulumu başlatıldı.".into())
         }
         _ => Err(AppError::bad("Bu bulgu tek tıkla düzeltilemiyor")),
     }
+}
+
+/// Kök diskte güvenle silinebilecek şeyleri siler ve açılan yeri (bayt) döner: indirilmiş
+/// paket dosyaları, sistem günlüğünün eski bölümü ve iki haftadan eski döndürülmüş günlükler.
+/// Sitelerin dosyalarına ve veritabanlarına dokunulmaz.
+async fn free_disk_space() -> u64 {
+    let available = || async { crate::sys::metrics::disks().await.into_iter().find(|disk| disk.mount == "/").map(|disk| disk.available).unwrap_or(0) };
+    let before = available().await;
+    let _ = exec::run_with_timeout("apt-get", &["clean"], Duration::from_secs(60)).await;
+    let _ = exec::run_with_timeout("journalctl", &["--vacuum-size=200M"], Duration::from_secs(60)).await;
+    let _ = exec::run_with_timeout(
+        "find",
+        &["/var/log", "-xdev", "-type", "f", "(", "-name", "*.gz", "-o", "-name", "*.[0-9]", "-o", "-name", "*.old", ")", "-mtime", "+14", "-delete"],
+        Duration::from_secs(60),
+    )
+    .await;
+    available().await.saturating_sub(before)
 }
 
 /// İlk yedek yerine, her şeyi kapsayan günlük bir plan ekler ve adını döner.

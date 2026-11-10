@@ -67,7 +67,14 @@ export function ComponentsPage() {
                         <>
                           <Mono className="text-ink-2">{component.version}</Mono>
                           <div className="w-28">
-                            {component.running ? <Status tone="ok">{t("Çalışıyor")}</Status> : <Status tone="warn">{t("Durdu")}</Status>}
+                            {/* Servisi olmayan bileşen (araç, kitaplık) "durmuş" değildir; yalnızca kuruludur. */}
+                            {component.running ? (
+                              <Status tone="ok">{t("Çalışıyor")}</Status>
+                            ) : component.service ? (
+                              <Status tone="warn">{t("Durdu")}</Status>
+                            ) : (
+                              <Status tone="ok">{t("Kurulu")}</Status>
+                            )}
                           </div>
                         </>
                       ) : (
