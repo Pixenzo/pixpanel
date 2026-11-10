@@ -159,9 +159,9 @@ function LiveIndicator() {
 }
 
 /** Telefonda alt çubukta duran sayfalar (görünür olan ilk dördü); geri kalanı "Menü"den açılır. */
-const QUICK_ROUTES = ["/sites", "/server", "/databases", "/mail", "/jobs"];
+const QUICK_ROUTES = ["/overview", "/sites", "/server", "/databases", "/mail", "/jobs"];
 /** Alt çubuğa sığması için kısaltılan adlar. */
-const QUICK_LABELS: Record<string, string> = { "/server": "Sunucu", "/databases": "Veritabanı" };
+const QUICK_LABELS: Record<string, string> = { "/overview": "Durum", "/server": "Sunucu", "/databases": "Veritabanı" };
 
 function BottomBar({ onOpenMenu, menuOpen }: { onOpenMenu: () => void; menuOpen: boolean }) {
   const me = useMe();

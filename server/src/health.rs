@@ -110,6 +110,9 @@ pub struct Finding {
     pub auto: bool,
     /// Sorunun ilk görüldüğü an.
     pub since: i64,
+    /// Bulgunun ilgili olduğu şeyin adı (alan adı gibi); benzer bulgular birleştirilirken kullanılır.
+    #[serde(skip)]
+    subject: String,
 }
 
 impl Finding {
@@ -124,7 +127,13 @@ impl Finding {
             fix: None,
             auto: false,
             since: 0,
+            subject: String::new(),
         }
+    }
+
+    fn subject(mut self, subject: impl Into<String>) -> Self {
+        self.subject = subject.into();
+        self
     }
 
     fn link(mut self, link: impl Into<String>) -> Self {
@@ -352,6 +361,7 @@ async fn check_certificates(state: &AppState, batch: &mut Batch, settings: &Sett
                         format!("{} sertifikasız", site.domain),
                         format!("Alan adı henüz bu sunucuyu ({server_ip}) göstermiyor; DNS kaydı yönlendirildiğinde sertifika alınabilir."),
                     )
+                    .subject(&site.domain)
                     .link(link),
                 );
             }
@@ -398,6 +408,7 @@ fn check_php_versions(batch: &mut Batch, sites: &[Site]) {
                     format!("{} desteği bitmiş PHP {version} kullanıyor", site.domain),
                     "Bu sürüm artık güvenlik güncellemesi almıyor. Uygulamanız destekliyorsa daha yeni bir sürüme geçin.",
                 )
+                .subject(&site.domain)
                 .link(format!("/sites/{}/php", site.id)),
             );
         }
@@ -655,6 +666,23 @@ fn check_updates(state: &AppState, batch: &mut Batch) {
     }
 }
 
+/// Aynı kuraldan çok sayıda öneri varsa tek bulguda toplar; onlarca sitesi olan
+/// sunucuda liste aynı cümlenin tekrarıyla dolmasın diye.
+fn collapse(findings: &mut Vec<Finding>, rule: &'static str, title: impl Fn(usize) -> String, detail: &str) {
+    const KEEP_SEPARATE: usize = 3;
+    const NAMED: usize = 5;
+    let subjects: Vec<String> = findings.iter().filter(|finding| finding.rule == rule).map(|finding| finding.subject.clone()).collect();
+    if subjects.len() <= KEEP_SEPARATE {
+        return;
+    }
+    findings.retain(|finding| finding.rule != rule);
+    let mut names = subjects.iter().take(NAMED).cloned().collect::<Vec<_>>().join(", ");
+    if subjects.len() > NAMED {
+        names.push_str(&format!(" ve {} site daha", subjects.len() - NAMED));
+    }
+    findings.push(Finding::new(rule, "many", Severity::Info, title(subjects.len()), format!("{detail} ({names})")).link("/sites"));
+}
+
 // ---- Tur ----
 
 /// Bütün denetimleri çalıştırır, sonucu saklar, kendiliğinden düzeltilebilenleri düzeltir.
@@ -680,6 +708,19 @@ pub async fn run_checks(state: &AppState) -> Report {
     check_mail_queue(&mut batch).await;
     refresh_updates(&monitor).await;
     check_updates(state, &mut batch);
+
+    collapse(
+        &mut batch.findings,
+        "ssl.unreachable",
+        |count| format!("{count} site sertifikasız"),
+        "Alan adları henüz bu sunucuyu göstermiyor; DNS kayıtları yönlendirildiğinde sertifikaları alınabilir.",
+    );
+    collapse(
+        &mut batch.findings,
+        "php.eol",
+        |count| format!("{count} site desteği bitmiş PHP sürümü kullanıyor"),
+        "Bu sürümler artık güvenlik güncellemesi almıyor; uygulamalar destekliyorsa daha yeni bir sürüme geçin.",
+    );
 
     // En önemli bulgu en üstte; aynı önemdekiler en eskiden yeniye.
     let (fresh, records) = remember(state, &mut batch.findings).unwrap_or_default();
@@ -949,6 +990,24 @@ mod tests {
         assert_eq!(finding.key, "ssl.missing:12");
         assert_eq!(finding.fix, Some("Sertifika al"));
         assert!(finding.auto);
+    }
+
+    #[test]
+    fn many_similar_suggestions_collapse_into_one() {
+        let make = |id: i64| Finding::new("php.eol", id, Severity::Info, "başlık", "ayrıntı").subject(format!("site{id}.test"));
+        let mut few: Vec<Finding> = (1..=3).map(make).collect();
+        collapse(&mut few, "php.eol", |count| format!("{count} site"), "Açıklama.");
+        assert_eq!(few.len(), 3, "üç bulguya kadar ayrı ayrı gösterilir");
+
+        let mut many: Vec<Finding> = (1..=8).map(make).collect();
+        many.push(Finding::new("disk.full", "/", Severity::Critical, "disk", "dolu"));
+        collapse(&mut many, "php.eol", |count| format!("{count} site"), "Açıklama.");
+        assert_eq!(many.len(), 2);
+        let merged = many.iter().find(|finding| finding.rule == "php.eol").unwrap();
+        assert_eq!(merged.key, "php.eol:many");
+        assert_eq!(merged.title, "8 site");
+        assert!(merged.detail.contains("site1.test") && merged.detail.contains("ve 3 site daha"));
+        assert!(many.iter().any(|finding| finding.rule == "disk.full"), "öteki kurallara dokunulmaz");
     }
 
     #[test]

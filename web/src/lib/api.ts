@@ -382,3 +382,47 @@ export interface GitView {
   deployments: Deployment[];
   running: boolean;
 }
+
+// ---- Sağlık merkezi ----
+
+export type HealthSeverity = "info" | "warning" | "critical";
+
+export interface HealthFinding {
+  /** `kural:hedef` biçiminde kalıcı anahtar. */
+  key: string;
+  rule: string;
+  severity: HealthSeverity;
+  title: string;
+  detail: string;
+  link: string | null;
+  /** Tek tıkla düzeltilebiliyorsa düğmenin adı. */
+  fix: string | null;
+  /** Panel bunu kendiliğinden düzeltmeyi deniyor. */
+  auto: boolean;
+  since: number;
+}
+
+export interface HealthSettings {
+  restart_services: boolean;
+  issue_certificates: boolean;
+  check_sites: boolean;
+  notify: boolean;
+}
+
+export interface HealthAction {
+  id: number;
+  created_at: number;
+  rule: string;
+  target: string;
+  summary: string;
+  automatic: boolean;
+  success: boolean;
+  detail: string;
+}
+
+export interface HealthView {
+  report: { checked_at: number; checks: number; findings: HealthFinding[] };
+  settings: HealthSettings;
+  actions: HealthAction[];
+  interval_secs: number;
+}

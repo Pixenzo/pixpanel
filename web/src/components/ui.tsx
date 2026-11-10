@@ -162,6 +162,43 @@ export function SearchInput({ className, ...rest }: InputHTMLAttributes<HTMLInpu
   return <input type="search" className={classNames(controlClass, "h-8 sm:max-w-64", className)} {...rest} />;
 }
 
+/** Aç/kapa düğmesi; `label` ekran okuyucular içindir, görünen metni çağıran yazar. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={classNames(
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors max-sm:h-6 max-sm:w-11",
+        "disabled:cursor-not-allowed disabled:opacity-55",
+        checked ? "bg-accent" : "bg-line-strong",
+      )}
+    >
+      <span
+        aria-hidden
+        className={classNames(
+          "size-4 rounded-full bg-white shadow-sm transition-transform max-sm:size-5",
+          checked ? "translate-x-[1.125rem] max-sm:translate-x-[1.375rem]" : "translate-x-0.5",
+        )}
+      />
+    </button>
+  );
+}
+
 // ---- Durum göstergeleri ----
 
 export type Tone = "ok" | "warn" | "bad" | "idle" | "accent";

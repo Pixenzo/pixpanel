@@ -103,14 +103,14 @@ Bu kurallar her paketin brifine eklenir.
 
 Kullanıcının sözü: "profesyonel şık ve premium duran, profesyonel bir web yönetim paneli istiyorum. Webcilerin normalde sürekli yapması gereken şeyleri otomatik yapıp halledecek bir sistem olmalı" ve "kaliteli, mobil uyumlu, anlaşılır, kullanılabilirliği yüksek, realtime özellikleri olan bir panel". Bu iki iş P1'in önüne alındı.
 
-### Ö1. Arayüzün elden geçirilmesi — B, ana oturum (sayfa sayfa uyarlama devre uygun)
+### Ö1. Arayüzün elden geçirilmesi — TEMELİ TAMAMLANDI (11.11.2026; kalan: sayfaların tek tek inceltilmesi, giriş sayfası, müşteriye başkasının yaptığı değişikliklerin de akması)
 
 - **Canlı olay akışı:** tek bir SSE bağlantısı (`GET /api/v1/events`). Sunucu yükü (2 sn), görevlerin başlaması/bitmesi ve "şu kaynak değişti" bildirimleri akar; arayüz ilgili sorguları kendiliğinden yeniler. Başka sekmede ya da başka hesabın yaptığı değişiklik ekrana yansır, biten görev her sayfada bildirim verir, üst çubukta bağlantı göstergesi durur. Sayfalardaki sabit aralıklı yoklamalar kaldırılır ya da yedek olarak seyreltilir. Olaylar hesabın görebildiği kaynaklarla sınırlanır.
 - **Telefon düzeni:** tablolar dar ekranda kart satırlarına döner; altta sabit gezinme çubuğu; pencereler alttan açılan sayfa olur; dokunma hedefleri en az 40 px; yatay kaydırma kalmaz.
 - **Görsel dil:** var olan kimlik (IBM Plex, koyu yan gezinme, petrol mavisi vurgu) korunur ve inceltilir: tutarlı boşluk ve köşe ölçeği, sayfa başlıkları, boş durumlar, yükleme iskeletleri, klavye odağı.
 - **Kabul:** her sayfa 390 px genişlikte yatay kaydırma olmadan kullanılabilir; iki sekmeden biri bir kaynağı değiştirince öteki 2 sn içinde güncellenir; bağlantı kopunca arayüz bunu gösterir ve kendiliğinden yeniden bağlanır.
 
-### Ö2. Kendi kendine bakım ("Sağlık merkezi") — B, arka uç + arayüz
+### Ö2. Kendi kendine bakım ("Sağlık merkezi") — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: güvenlik güncellemelerinin kendiliğinden kurulması, haftalık özet, riskli işlemden önce yedek, yeni siteye varsayılan yedek planı, kara liste denetimi, müşteriye kendi sitesinin durumu)
 
 Panelin ayırt edici özelliği: yöneticinin düzenli olarak elle yaptığı denetimleri panel sürekli yapar, güvenli olanları kendisi düzeltir, kalanını tek tıkla düzeltilecek biçimde sunar.
 

@@ -25,6 +25,7 @@ import { LoginPage } from "./pages/Login";
 import { LogsPage } from "./pages/Logs";
 import { MailPage } from "./pages/Mail";
 import { MailDomainPage } from "./pages/MailDomain";
+import { OverviewPage } from "./pages/Overview";
 import { PhpPage } from "./pages/Php";
 import { ProcessesPage } from "./pages/Processes";
 import { RedisPage } from "./pages/Redis";
@@ -59,9 +60,10 @@ function App() {
     <LiveProvider>
     <AppShell>
       <Routes>
-        <Route path="/" element={<Navigate to={canSites ? "/sites" : "/account"} replace />} />
+        <Route path="/" element={<Navigate to={isAdmin ? "/overview" : canSites ? "/sites" : "/account"} replace />} />
         {isAdmin && (
           <>
+            <Route path="/overview" element={<OverviewPage />} />
             <Route path="/server" element={<DashboardPage />} />
             <Route path="/firewall" element={<FirewallPage />} />
             <Route path="/fail2ban" element={<Fail2banPage />} />

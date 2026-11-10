@@ -14,6 +14,7 @@ import {
   FileText,
   FolderOpen,
   Gauge,
+  HeartPulse,
   Globe,
   ListChecks,
   Mail,
@@ -47,6 +48,7 @@ export const navigation: NavGroup[] = [
   {
     title: null,
     items: [
+      { to: "/overview", label: "Genel bakış", icon: HeartPulse, visible: isAdmin },
       { to: "/sites", label: "Siteler", icon: Globe, visible: can("sites") },
       { to: "/mail", label: "Posta", icon: Mail, visible: can("mail") },
       { to: "/dns", label: "DNS", icon: Network, visible: can("dns") },

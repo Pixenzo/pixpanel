@@ -20,6 +20,9 @@ except Exception as e: print('(alan yok: %s %s)' % (e, raw[:200]))"; }
 recheck() { api POST /health/check; }
 # finding <rapor> <anahtar> <alan>: bulgunun bir alanı; bulgu yoksa "yok".
 finding() { jget "next((f['$3'] for f in d['report']['findings'] if f['key']=='$2'), 'yok')" <<<"$1"; }
+# unreachable <rapor> <site no> <alan adı> <alan>: sertifikasız site bulgusu; çok sayıda site varsa
+# bulgular tek satırda toplandığı için alan adı ayrıntıda aranır.
+unreachable() { jget "next((f['$4'] for f in d['report']['findings'] if f['key']=='ssl.unreachable:$2' or (f['rule']=='ssl.unreachable' and '$3' in f['detail'])), 'yok')" <<<"$1"; }
 SETTINGS_ON='{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":false}'
 
 rm -f $J
@@ -88,8 +91,8 @@ OLD=$(api GET /sites | jget 'next((s["id"] for s in d if s["domain"]=="saglik-e2
 S=$(api POST /sites -d '{"domain":"saglik-e2e.test","kind":"proxy","proxy_target":"http://127.0.0.1:9"}' | jget 'd["id"]')
 R=$(recheck)
 check "tek başarısız yoklama bulgu sayılmaz" "$(finding "$R" site.down:$S severity)" yok
-check "sertifikasız site bildirilir" "$(finding "$R" ssl.unreachable:$S severity)" info
-check "DNS'i bu sunucuyu göstermeyen siteye sertifika alınmaz" "$(finding "$R" ssl.unreachable:$S auto)" False
+check "sertifikasız site bildirilir" "$(unreachable "$R" $S saglik-e2e.test severity)" info
+check "DNS'i bu sunucuyu göstermeyen siteye sertifika alınmaz" "$(unreachable "$R" $S saglik-e2e.test auto)" False
 R=$(recheck)
 check "ikinci başarısız yoklamada kritik bulgu" "$(finding "$R" site.down:$S severity)" critical
 has "nedeni başlıkta" "$(finding "$R" site.down:$S title)" "HTTP 502"
@@ -99,7 +102,7 @@ check "site yoklaması kapatılabilir" "$(finding "$R" site.down:$S severity)" y
 api PUT /health/settings -d "$SETTINGS_ON" >/dev/null
 check "site sil" "$(code DELETE "/sites/$S?delete_files=true")" 200
 R=$(recheck)
-check "silinen sitenin bulguları kalkar" "$(finding "$R" ssl.unreachable:$S severity)" yok
+check "silinen sitenin bulguları kalkar" "$(unreachable "$R" $S saglik-e2e.test severity)" yok
 
 say "Kalıcılık"
 SINCE=$(jget 'd["report"]["findings"][0]["since"] if d["report"]["findings"] else 0' <<<"$R")
@@ -107,4 +110,5 @@ sleep 1
 R=$(recheck)
 check "süren bulgunun ilk görülme anı değişmez" "$(jget 'd["report"]["findings"][0]["since"] if d["report"]["findings"] else 0' <<<"$R")" "$SINCE"
 check "bulgu kayıtları güncel bulgularla aynı sayıda" "$(sqlite3 /var/lib/pixpanel/pixpanel.db 'SELECT COUNT(*) FROM health_findings' 2>/dev/null || python3 -c 'import sqlite3; print(sqlite3.connect("/var/lib/pixpanel/pixpanel.db").execute("SELECT COUNT(*) FROM health_findings").fetchone()[0])')" "$(jget 'len(d["report"]["findings"])' <<<"$R")"
+api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":true,"notify":true}' >/dev/null
 echo "bitti"
