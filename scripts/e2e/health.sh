@@ -110,6 +110,8 @@ check "DNS'i bu sunucuyu göstermeyen siteye sertifika alınmaz" "$(unreachable 
 R=$(recheck)
 check "ikinci başarısız yoklamada kritik bulgu" "$(finding "$R" site.down:$S severity)" critical
 has "nedeni başlıkta" "$(finding "$R" site.down:$S title)" "HTTP 502"
+check "site kartında sorun görünür" "$(api GET /sites/summary | jget "[(i['severity'], i['label']) for i in next(x for x in d if x['site_id']==$S)['issues']]")" "[('critical', 'Yanıt vermiyor')]"
+check "sorunsuz sitenin kartı temiz" "$(api GET /sites/summary | jget "[i['label'] for i in next(x for x in d if x['site_id']==1)['issues'] if i['severity']=='critical']")" "[]"
 api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":false,"notify":false,"security_updates":false,"update_wordpress":false}' >/dev/null
 R=$(recheck)
 check "site yoklaması kapatılabilir" "$(finding "$R" site.down:$S severity)" yok

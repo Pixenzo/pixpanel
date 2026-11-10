@@ -203,13 +203,55 @@ pub struct Monitor {
     port_failures: Arc<Mutex<HashMap<String, u32>>>,
     dns_cache: Arc<Mutex<HashMap<String, (bool, i64)>>>,
     updates: Arc<RwLock<PendingUpdates>>,
+    /// Site kartlarında gösterilen, siteye özgü sorunlar (site kimliğine göre).
+    site_issues: Arc<RwLock<HashMap<i64, Vec<SiteIssue>>>>,
     /// WordPress sitelerinin bekleyen güncellemeleri (site kimliğine göre).
     wordpress: Arc<RwLock<HashMap<i64, crate::wordpress::Pending>>>,
     /// Aynı anda tek denetim turu yürür.
     running: Arc<tokio::sync::Mutex<()>>,
 }
 
+/// Bir sitenin kartında gösterilen kısa sorun satırı. Sitenin sahibi de görür; bu yüzden
+/// yalnızca o siteye ait, sunucu hakkında bilgi vermeyen bulgular buraya girer.
+#[derive(Debug, Clone, Serialize)]
+pub struct SiteIssue {
+    pub severity: Severity,
+    pub label: &'static str,
+}
+
+/// Siteye özgü kuralların kartta gösterilen kısa adları. Listede olmayan kural kartta görünmez.
+fn site_issue_label(rule: &str) -> Option<&'static str> {
+    Some(match rule {
+        "site.down" => "Yanıt vermiyor",
+        "ssl.expired" => "Sertifikanın süresi doldu",
+        "ssl.expiring" => "Sertifika bitmek üzere",
+        "ssl.missing" => "Sertifika alınabilir",
+        "php.eol" => "Desteği bitmiş PHP sürümü",
+        "wordpress.updates" => "WordPress güncellemesi var",
+        _ => return None,
+    })
+}
+
+/// Bulgulardan site başına sorun listesini çıkarır (en önemlisi başta).
+fn site_issues_from(findings: &[Finding]) -> HashMap<i64, Vec<SiteIssue>> {
+    let mut issues: HashMap<i64, Vec<SiteIssue>> = HashMap::new();
+    for finding in findings {
+        let Some(label) = site_issue_label(finding.rule) else { continue };
+        let Some(site_id) = finding.key.split_once(':').and_then(|(_, target)| target.parse::<i64>().ok()) else { continue };
+        issues.entry(site_id).or_default().push(SiteIssue { severity: finding.severity, label });
+    }
+    for list in issues.values_mut() {
+        list.sort_by(|a, b| b.severity.cmp(&a.severity));
+    }
+    issues
+}
+
 impl Monitor {
+    /// Bir sitenin kartında gösterilecek sorunlar.
+    pub fn site_issues(&self, site_id: i64) -> Vec<SiteIssue> {
+        self.site_issues.read().unwrap_or_else(|p| p.into_inner()).get(&site_id).cloned().unwrap_or_default()
+    }
+
     pub fn report(&self) -> Report {
         self.report.read().unwrap_or_else(|p| p.into_inner()).clone()
     }
@@ -889,6 +931,8 @@ pub async fn run_checks(state: &AppState) -> Report {
     check_updates(state, &mut batch);
     check_wordpress(state, &mut batch, &sites);
 
+    // Site kartları için sorunlar, benzer öneriler birleştirilmeden önce ayrılır.
+    *monitor.site_issues.write().unwrap_or_else(|p| p.into_inner()) = site_issues_from(&batch.findings);
     collapse(
         &mut batch.findings,
         "ssl.unreachable",
@@ -912,6 +956,11 @@ pub async fn run_checks(state: &AppState) -> Report {
     *monitor.report.write().unwrap_or_else(|p| p.into_inner()) = report.clone();
     if previous != current {
         crate::events::publish(crate::events::Event::Changed { area: "health".into() }, None);
+        // Site kartlarındaki durum da değişmiş olabilir; sahiplerinin ekranı da tazelensin.
+        let owners: HashSet<i64> = sites.iter().map(|site| site.user_id).collect();
+        for owner in owners {
+            crate::events::publish(crate::events::Event::Changed { area: "site".into() }, Some(owner));
+        }
     }
 
     if settings.notify {
@@ -1294,6 +1343,23 @@ mod tests {
         // Aynı yerel gün içinde gün numarası değişmez; ertesi gece değişir.
         assert_eq!(local_day(night, UTC3), local_day(night + 3600, UTC3));
         assert_eq!(local_day(night + 86400, UTC3), local_day(night, UTC3) + 1);
+    }
+
+    #[test]
+    fn site_issues_keep_only_site_scoped_rules() {
+        let findings = vec![
+            Finding::new("wordpress.updates", 7, Severity::Info, "a", "b"),
+            Finding::new("site.down", 7, Severity::Critical, "a", "b"),
+            Finding::new("ssl.unreachable", 7, Severity::Info, "a", "b"),
+            Finding::new("disk.full", "/", Severity::Critical, "a", "b"),
+            Finding::new("security.two-factor", "admin", Severity::Info, "a", "b"),
+            Finding::new("php.eol", 9, Severity::Info, "a", "b"),
+        ];
+        let issues = site_issues_from(&findings);
+        assert_eq!(issues.len(), 2);
+        let seven: Vec<&str> = issues[&7].iter().map(|issue| issue.label).collect();
+        assert_eq!(seven, vec!["Yanıt vermiyor", "WordPress güncellemesi var"], "en önemlisi başta; DNS önerisi kartta görünmez");
+        assert_eq!(issues[&9][0].label, "Desteği bitmiş PHP sürümü");
     }
 
     #[test]

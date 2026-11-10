@@ -334,6 +334,11 @@ function SiteCard({
 }) {
   const scheme = site.ssl_mode === "none" ? "http" : "https";
   const panelId = `site-tools-${site.id}`;
+  // Panelin fark ettiği sorunlar: en önemlisi durum ışığının rengini belirler.
+  const issues = site.status === "active" ? (summary?.issues ?? []) : [];
+  const worst = issues[0]?.severity;
+  const lamp = site.status !== "active" ? "bg-warn" : worst === "critical" ? "bg-bad" : worst === "warning" ? "bg-warn" : "bg-ok";
+  const lampTitle = site.status !== "active" ? t("Askıda") : issues.length > 0 ? issues.map((issue) => t(issue.label)).join(", ") : t("Yayında");
   return (
     <li className={classNames("overflow-hidden rounded-lg border border-line bg-surface", nested && "ml-4 sm:ml-9")}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:gap-x-4">
@@ -349,8 +354,8 @@ function SiteCard({
         </button>
         <span
           aria-hidden
-          title={site.status === "active" ? t("Yayında") : t("Askıda")}
-          className={classNames("size-2 shrink-0 rounded-full", site.status === "active" ? "bg-ok" : "bg-warn")}
+          title={lampTitle}
+          className={classNames("size-2 shrink-0 rounded-full", lamp)}
         />
         <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-5rem)]">
           <div className="flex items-center gap-2">
@@ -370,6 +375,11 @@ function SiteCard({
             {site.status !== "active" && <Badge tone="warn">{t("Askıda")}</Badge>}
           </div>
           {site.aliases.length > 0 && <p className="truncate font-mono text-[12px] text-ink-3">{site.aliases.join(", ")}</p>}
+          {issues.length > 0 && (
+            <p className={classNames("truncate text-[12.5px] font-medium", worst === "critical" ? "text-bad" : worst === "warning" ? "text-warn" : "text-ink-2")}>
+              {issues.map((issue) => t(issue.label)).join(" · ")}
+            </p>
+          )}
         </div>
         <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] max-sm:min-w-0 max-sm:flex-1 max-sm:pl-1 sm:gap-x-5">
           <div>

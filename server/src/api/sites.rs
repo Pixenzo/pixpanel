@@ -59,6 +59,8 @@ struct SiteSummary {
     /// Sitenin sahibi olan hesabın veritabanı ve zamanlanmış görev sayıları.
     databases: i64,
     cron_jobs: i64,
+    /// Panelin bu sitede fark ettiği sorunlar (en önemlisi başta).
+    issues: Vec<crate::health::SiteIssue>,
 }
 
 async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<SiteSummary>>> {
@@ -85,7 +87,7 @@ async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
                 conn.query_row("SELECT COUNT(*) FROM cron_jobs WHERE run_as = ?1", params![site.owner], |row| row.get(0))?,
             ))
         })?;
-        list.push(SiteSummary { site_id: site.id, ssl_expires_at, git, databases, cron_jobs });
+        list.push(SiteSummary { site_id: site.id, ssl_expires_at, git, databases, cron_jobs, issues: state.health.site_issues(site.id) });
     }
     Ok(Json(list))
 }

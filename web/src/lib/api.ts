@@ -350,6 +350,8 @@ export interface SiteSummary {
   } | null;
   databases: number;
   cron_jobs: number;
+  /** Panelin bu sitede fark ettiği sorunlar (en önemlisi başta). */
+  issues: { severity: "info" | "warning" | "critical"; label: string }[];
 }
 
 export interface GitConfig {
