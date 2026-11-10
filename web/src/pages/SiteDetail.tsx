@@ -29,6 +29,7 @@ import { GitSection } from "./SiteGit";
 import { NodeSection } from "./SiteNode";
 import { ProxyRulesSection } from "./SiteProxyRules";
 import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
+import { UptimePanel } from "../components/UptimePanel";
 import { WordPressSection } from "./SiteWordPress";
 import { SslTab } from "./SiteSsl";
 
@@ -409,6 +410,7 @@ function OverviewSection({ site, options }: { site: Site; options: SiteOptions }
       <section aria-label={t("Site araçları")} className="overflow-hidden rounded-lg border border-line bg-surface">
         <SiteToolGrid site={site} summary={summary} options={options} />
       </section>
+      <UptimePanel siteId={site.id} />
       <Panel title={t("Özet")}>
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
           <dt className="text-ink-2">{t("Tür")}</dt>

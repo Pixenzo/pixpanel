@@ -110,6 +110,10 @@ check "DNS'i bu sunucuyu göstermeyen siteye sertifika alınmaz" "$(unreachable 
 R=$(recheck)
 check "ikinci başarısız yoklamada kritik bulgu" "$(finding "$R" site.down:$S severity)" critical
 has "nedeni başlıkta" "$(finding "$R" site.down:$S title)" "HTTP 502"
+U=$(api GET /sites/$S/uptime)
+check "yoklamalar erişilebilirlik geçmişine işlendi" "$(jget '(d["uptime_day"], d["last_status"], sum(b["checks"] for b in d["buckets"]), sum(b["failures"] for b in d["buckets"]), len(d["buckets"]))' <<<"$U")" "(0.0, 502, 2, 2, 288)"
+check "sorunsuz sitenin geçmişi temiz" "$(api GET /sites/1/uptime | jget '(d["uptime_day"] is not None and d["uptime_day"] > 0, d["last_status"] < 500, d["average_millis"] is not None)')" "(True, True, True)"
+check "özet erişilebilirliği taşır" "$(api GET /sites/summary | jget "next(x for x in d if x['site_id']==$S)['uptime_day']")" 0.0
 check "site kartında sorun görünür" "$(api GET /sites/summary | jget "[(i['severity'], i['label']) for i in next(x for x in d if x['site_id']==$S)['issues']]")" "[('critical', 'Yanıt vermiyor')]"
 check "sorunsuz sitenin kartı temiz" "$(api GET /sites/summary | jget "[i['label'] for i in next(x for x in d if x['site_id']==1)['issues'] if i['severity']=='critical']")" "[]"
 api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":false,"notify":false,"security_updates":false,"update_wordpress":false}' >/dev/null

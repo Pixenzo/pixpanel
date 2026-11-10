@@ -352,6 +352,27 @@ export interface SiteSummary {
   cron_jobs: number;
   /** Panelin bu sitede fark ettiği sorunlar (en önemlisi başta). */
   issues: { severity: "info" | "warning" | "critical"; label: string }[];
+  /** Son 24 saatin erişilebilirlik yüzdesi; site yoklanmıyorsa `null`. */
+  uptime_day: number | null;
+  /** Son başarılı yoklamanın yanıt süresi (ms). */
+  response_millis: number | null;
+}
+
+export interface UptimeBucket {
+  at: number;
+  checks: number;
+  failures: number;
+  millis: number;
+}
+
+export interface SiteUptime {
+  uptime_day: number | null;
+  uptime_week: number | null;
+  average_millis: number | null;
+  /** Son yoklamanın HTTP durum kodu; yanıt alınamadıysa 0. */
+  last_status: number | null;
+  last_checked_at: number | null;
+  buckets: UptimeBucket[];
 }
 
 export interface GitConfig {

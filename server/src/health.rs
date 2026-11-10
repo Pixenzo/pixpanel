@@ -526,26 +526,33 @@ async fn check_site_responses(state: &AppState, batch: &mut Batch, sites: &[Site
         return;
     };
     let targets: Vec<(i64, String)> = sites.iter().map(|site| (site.id, site.domain.clone())).collect();
-    let results: Vec<(i64, Option<String>)> = stream::iter(targets.into_iter().map(|(id, domain)| {
+    let results: Vec<(i64, Option<String>, crate::uptime::Check)> = stream::iter(targets.into_iter().map(|(id, domain)| {
         let client = client.clone();
         async move {
+            let started = std::time::Instant::now();
             let outcome = client.get("http://127.0.0.1/").header("Host", domain).send().await;
-            let problem = match outcome {
-                Ok(response) if response.status().is_server_error() => Some(format!("HTTP {}", response.status().as_u16())),
-                Ok(_) => None,
-                Err(err) if err.is_timeout() => Some("yanıt süresi aşıldı".to_string()),
-                Err(_) => Some("bağlantı kurulamadı".to_string()),
+            let millis = started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32;
+            let (problem, status) = match outcome {
+                Ok(response) if response.status().is_server_error() => (Some(format!("HTTP {}", response.status().as_u16())), response.status().as_u16()),
+                Ok(response) => (None, response.status().as_u16()),
+                Err(err) if err.is_timeout() => (Some("yanıt süresi aşıldı".to_string()), 0),
+                Err(_) => (Some("bağlantı kurulamadı".to_string()), 0),
             };
-            (id, problem)
+            (id, problem, crate::uptime::Check { site_id: id, status, millis })
         }
     }))
     .buffer_unordered(8)
     .collect()
     .await;
+    // Yoklamalar erişilebilirlik geçmişine de işlenir.
+    let checks: Vec<crate::uptime::Check> = results.iter().map(|(_, _, check)| *check).collect();
+    if let Err(err) = crate::uptime::record(&state.db, &checks) {
+        tracing::warn!(error = %err, "site yoklamaları kaydedilemedi");
+    }
 
     let mut failures = state.health.site_failures.lock().unwrap_or_else(|p| p.into_inner());
     failures.retain(|id, _| sites.iter().any(|site| site.id == *id));
-    for (id, problem) in results {
+    for (id, problem, _) in results {
         batch.checks += 1;
         let Some(problem) = problem else {
             failures.remove(&id);
@@ -565,7 +572,7 @@ async fn check_site_responses(state: &AppState, batch: &mut Batch, sites: &[Site
         };
         batch.push(
             Finding::new("site.down", id, Severity::Critical, format!("{} yanıt vermiyor ({problem})", site.domain), hint)
-                .link(format!("/sites/{id}/logs")),
+                .link(format!("/logs?kaynak=site:{id}:error")),
         );
     }
 }

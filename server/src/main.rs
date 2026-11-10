@@ -26,6 +26,7 @@ mod sys;
 mod tasks;
 mod totp;
 mod update;
+mod uptime;
 mod web;
 mod wordpress;
 

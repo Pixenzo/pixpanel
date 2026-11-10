@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/options", get(options))
         .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
+        .route("/{id}/uptime", get(uptime))
         .route("/{id}/node", get(node_status))
         .route("/{id}/node/run", axum::routing::post(node_run))
         .route("/{id}/node/{action}", axum::routing::post(node_action))
@@ -34,6 +35,13 @@ pub fn router() -> Router<AppState> {
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<Site>>> {
     user.require(AREA)?;
     Ok(Json(sites::list(&state.db, &user)?))
+}
+
+/// Sitenin son 24 saatlik erişilebilirlik geçmişi.
+async fn uptime(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<crate::uptime::History>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    Ok(Json(crate::uptime::history(&state.db, site.id)?))
 }
 
 async fn detail(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Site>> {
@@ -61,6 +69,10 @@ struct SiteSummary {
     cron_jobs: i64,
     /// Panelin bu sitede fark ettiği sorunlar (en önemlisi başta).
     issues: Vec<crate::health::SiteIssue>,
+    /// Son 24 saatin erişilebilirlik yüzdesi; site yoklanmıyorsa `None`.
+    uptime_day: Option<f64>,
+    /// Son başarılı yoklamanın yanıt süresi (ms).
+    response_millis: Option<u32>,
 }
 
 async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<SiteSummary>>> {
@@ -87,7 +99,8 @@ async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
                 conn.query_row("SELECT COUNT(*) FROM cron_jobs WHERE run_as = ?1", params![site.owner], |row| row.get(0))?,
             ))
         })?;
-        list.push(SiteSummary { site_id: site.id, ssl_expires_at, git, databases, cron_jobs, issues: state.health.site_issues(site.id) });
+        let (uptime_day, response_millis) = crate::uptime::glance(&state.db, site.id)?;
+        list.push(SiteSummary { site_id: site.id, ssl_expires_at, git, databases, cron_jobs, issues: state.health.site_issues(site.id), uptime_day, response_millis });
     }
     Ok(Json(list))
 }

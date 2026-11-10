@@ -395,6 +395,18 @@ function SiteCard({
               {site.ssl_mode === "none" ? t("SSL yok") : "SSL"}
             </dd>
           </div>
+          {summary?.uptime_day != null && (
+            <div className="max-sm:hidden">
+              <dt className="sr-only">{t("Son 24 saatte erişilebilirlik")}</dt>
+              <dd
+                className={classNames("tabular font-mono text-[12.5px]", summary.uptime_day >= 99.9 ? "text-ink-3" : summary.uptime_day >= 99 ? "text-warn" : "text-bad")}
+                title={t("Son 24 saatte erişilebilirlik; son yanıt {millis} ms", { millis: summary.response_millis ?? 0 })}
+              >
+                %{summary.uptime_day.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}
+                {summary.response_millis != null && <span className="text-ink-3"> · {summary.response_millis === 0 ? "<1" : summary.response_millis} ms</span>}
+              </dd>
+            </div>
+          )}
           {showOwner && (
             <div className="flex items-center gap-1.5">
               <dt className="sr-only">{t("Sahibi")}</dt>

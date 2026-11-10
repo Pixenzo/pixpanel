@@ -330,6 +330,17 @@ const MIGRATIONS: &[&str] = &[
         detail     TEXT NOT NULL DEFAULT ''
     );
     "#,
+    // 14: site erişilebilirlik geçmişi (dakikalık yoklamalar, yedi gün saklanır).
+    r#"
+    CREATE TABLE site_checks (
+        site_id    INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        checked_at INTEGER NOT NULL,
+        status     INTEGER NOT NULL,
+        millis     INTEGER NOT NULL
+    );
+    CREATE INDEX site_checks_site ON site_checks(site_id, checked_at);
+    CREATE INDEX site_checks_time ON site_checks(checked_at);
+    "#,
 ];
 
 #[derive(Clone)]
