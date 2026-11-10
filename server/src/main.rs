@@ -10,6 +10,7 @@ mod dbtools;
 mod deploy;
 mod dns;
 mod error;
+mod firewall;
 mod fsop;
 mod hosting;
 mod jobs;
@@ -107,6 +108,10 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     deploy::mark_interrupted(&state.db).map_err(|err| anyhow::anyhow!(err.to_string()))?;
     tasks::spawn_certificate_renewal(state.clone());
     tasks::spawn_db_tool_cleanup(state.clone());
+    // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
+    if let Err(err) = firewall::reapply(&state).await {
+        tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");
+    }
 
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();
     let addr = SocketAddr::new(cfg.listen_addr, cfg.listen_port);

@@ -17,6 +17,7 @@ import { DnsZonePage } from "./pages/DnsZone";
 import { DockerPage } from "./pages/Docker";
 import { DatabasesPage } from "./pages/Databases";
 import { FilesPage } from "./pages/Files";
+import { FirewallPage } from "./pages/Firewall";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
 import { LogsPage } from "./pages/Logs";
@@ -58,6 +59,7 @@ function App() {
         {isAdmin && (
           <>
             <Route path="/server" element={<DashboardPage />} />
+            <Route path="/firewall" element={<FirewallPage />} />
             <Route path="/docker" element={<DockerPage />} />
             <Route path="/php" element={<PhpPage />} />
             <Route path="/redis" element={<RedisPage />} />

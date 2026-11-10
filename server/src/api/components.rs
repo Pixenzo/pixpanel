@@ -69,6 +69,10 @@ postfix postfix/mailname string {}
             crate::mail::setup(&job_state.db, &job_state.cfg).await?;
             ctx.log("Posta sunucusu hazır");
         }
+        // Yeni bileşenin portları güvenlik duvarında kendiliğinden açılır.
+        if let Err(err) = crate::firewall::reapply(&job_state).await {
+            ctx.log(format!("Uyarı: güvenlik duvarı kuralları güncellenemedi: {err}"));
+        }
         Ok(())
     })?;
     auth::audit(&state.db, &user, "component.install", &id, "");

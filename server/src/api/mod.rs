@@ -11,6 +11,7 @@ mod databases;
 mod dns;
 mod docker;
 mod files;
+mod firewall;
 mod ftp;
 mod git;
 mod jobs;
@@ -40,6 +41,7 @@ pub fn router() -> Router<AppState> {
         .nest("/php", php::router())
         .nest("/mail", mail::router())
         .nest("/dns", dns::router())
+        .nest("/firewall", firewall::router())
         .nest("/redis", redis::router())
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())

@@ -195,14 +195,15 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 
 ---
 
-## Kararlar (senden beklenen)
+## Kararlar
 
-Bunlar planın sırasını ve kapsamını değiştirir; yanıt gelene kadar önerilen seçenekle ilerlenir.
+10.11.2026'da kullanıcıyla netleşti:
 
-1. **Hedef kitle:** panel yalnızca kendi sunucularında mı kullanılacak, müşteriye de açılacak mı? Yalnızca kendi kullanımınsa P1'in büyük bölümü (paketler, kotalar, marka) ertelenir ve WordPress araçları öne gelir. *Varsayım: müşteriye de açılacak.*
-2. **Apache ve `.htaccess`:** Plesk Apache'yi nginx'in arkasında çalıştırır. *Öneri: eklenmesin.* İki web sunucusu yapılandırmayı ve hata yüzeyini ikiye katlar; yerine yaygın uygulamalar (WordPress, Laravel) için hazır nginx kuralları ve yönlendirme arayüzü (13) yeter.
-3. **Sürümlerin yayın yeri:** kurulum betiği ve güncelleme için ikililerin duracağı yer (GitHub sürümleri ya da kendi sunucun). Depo açık mı kapalı mı olacak? Bu, 6 başlamadan netleşmeli.
-4. **Antivirüs:** ClamAV küçük sunucularda belleğin önemli bir kısmını alır. *Öneri: isteğe bağlı bileşen.*
+1. **Hedef kitle:** panel müşteriye de açılacak ama acelesi yok. Önce P0 ve kendi kullanım için gerekenler; P1'in müşteriye dönük kısmı (paketler, kotalar, marka) sonraya kalır.
+2. **Apache ve `.htaccess`:** eklenmeyecek. Yaygın uygulamalar için hazır nginx kuralları ve yönlendirme arayüzü (13) yeterli.
+3. **Sürümler:** GitHub sürümleri üzerinden yayınlanacak (6. paket). Deponun açık mı kapalı mı olacağı ve push için kullanılacak kimlik, ilk push'tan önce ayrıca sorulacak.
+4. **Antivirüs:** ClamAV isteğe bağlı bileşen olacak.
+5. **İş bölümü:** önemli işleri (güvenlik, yedekleme, kurulum, sistem katmanı) ana oturum yazar; önemsiz ve arayüz ağırlıklı işler Sonnet alt ajanlarına verilir.
 
 ---
 
