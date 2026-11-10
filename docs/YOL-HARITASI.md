@@ -76,6 +76,15 @@ Bu kurallar her paketin brifine eklenir.
   - 5e. Felaket kurtarma: boş sunucuya panelin kendisini geri yükleme (belge + komut).
   - 5f. Arayüz: hedefler, planlar, yedek listesi, geri yükleme sihirbazı, canlı günlük.
 - **Kabul:** site silinir, yedekten geri gelir (dosya sahipliği, veritabanı içeriği, posta dahil); bozuk hedefte görev başarısız olur ve bildirim gider; saklama ilkesi eski kopyaları siler.
+- **Tasarım (10.11.2026, kod henüz yazılmadı):**
+  - İlk sürüm yalnız yönetici; restic ≥ 0.17 (Debian 13'te 0.18; Ubuntu 24.04'teki 0.16 yetmez). Bileşen kataloğuna `restic` eklenir.
+  - Modüller: `backup/mod.rs` (türler, doğrulama, zamanlama), `backup/restic.rs` (restic çağrıları; parola ve anahtarlar yalnız ortam değişkeniyle), `backup/run.rs` (yedek ve geri yükleme görevleri), `api/backup.rs`; göç 12: `backup_targets`, `backup_plans`.
+  - Hedef başına tek depo ve panelin ürettiği depo parolası (var olan depoyu bağlamak için parola verilebilir). SFTP için hedefe özel ed25519 anahtarı (`/etc/pixpanel/backup/target-<id>.key`), S3 için `AWS_*` ortam değişkenleri.
+  - Her birim ayrı anlık görüntü, etiketlerle: `kind:site|db|mail|panel`, `name:…`, `engine:…`, `owner:…`, `plan:<id>` ya da `manual`. Site: site klasörü + sertifika klasörü + `site.json` bildirimi. Veritabanı: `--stdin-from-command` ile döküm akışı (`/databases/<motor>/<ad>.sql`). Posta: `/var/vmail/<alan>`. Panel: `VACUUM INTO` kopyası + `/etc/pixpanel`.
+  - Saklama: `restic forget --tag plan:<id> --group-by tags --keep-daily/weekly/monthly --prune`. Elle alınan yedekler kendiliğinden silinmez.
+  - Zamanlama: günlük/haftalık/aylık + saat; `tasks.rs` içinde dakikalık döngü, `next_run_at` sütunu. Başarısızlıkta `backup_failed` bildirimi.
+  - Geri yükleme: site yerinde (tümü ya da seçilen yollar, isteğe bağlı fazlalıkları silme), başka siteye (klon), silinmiş siteyi bildirimden yeniden kurma; veritabanı aynı ya da başka veritabanına (PostgreSQL dökümü `--clean --if-exists` ile); posta yerinde. Posta alanını yeniden oluşturma ve panelin kendisini geri yükleme ilk sürümde belge + komut.
+  - Uçlar: `GET /backup`, hedefler (`POST/PUT/DELETE`, `/check`, `/password`, `/snapshots`, `/snapshots/{id}/files`), planlar (`POST/PUT/DELETE`, `/run`), `POST /backup/run`, `POST /backup/restore`.
 
 ### 6. Kurulum betiği ve güncelleme — O, sistem katmanı
 
