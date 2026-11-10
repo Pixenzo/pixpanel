@@ -103,9 +103,18 @@ fn shell_command(target: &Target) -> CommandBuilder {
             command
         }
         Some(user) => {
-            // Hesapların oturum kabuğu `nologin` olduğundan kabuk açıkça belirtilir.
-            let mut command = CommandBuilder::new("runuser");
-            command.args(["-u", &user.name, "--", "/bin/bash", "-l"]);
+            // `setpriv` kimliği değiştirip doğrudan kabuğa dönüşür; arada üst süreç
+            // kalmadığından oturum kapanırken gönderilen sinyal kabuğa ulaşır.
+            // (`runuser` arada bekleyen bir süreç bırakır ve SIGHUP'ı engeller.)
+            let mut command = CommandBuilder::new("setpriv");
+            command.args([
+                &format!("--reuid={}", user.uid),
+                &format!("--regid={}", user.gid),
+                "--init-groups",
+                "--",
+                "/bin/bash",
+                "-l",
+            ]);
             command.cwd(&user.home);
             command.env("HOME", &user.home);
             command.env("USER", &user.name);
@@ -190,9 +199,17 @@ async fn session(socket: WebSocket, target: Target) -> anyhow::Result<()> {
         }
     }
 
-    // Sekme kapanınca kabuk ve başlattığı süreçler arkada kalmasın.
+    // Sekme kapanınca kabuk ve başlattığı süreçler arkada kalmasın: önce
+    // nazikçe (SIGHUP), kısa sürede kapanmazsa zorla (SIGKILL) sonlandırılır.
+    let pid = child.process_id();
     let _ = killer.kill();
-    let _ = tokio::task::spawn_blocking(move || child.wait()).await;
+    let mut waiter = tokio::task::spawn_blocking(move || child.wait());
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut waiter).await.is_err() {
+        if let Some(pid) = pid {
+            let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), nix::sys::signal::Signal::SIGKILL);
+        }
+        let _ = waiter.await;
+    }
     let _ = sink.close().await;
     Ok(())
 }

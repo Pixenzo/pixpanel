@@ -39,7 +39,7 @@ rcgen = "0.14"
 instant-acme = { version = "0.8", default-features = false, features = ["ring", "hyper-rustls", "rcgen"] }
 x509-parser = "0.18"
 time = "0.3"
-nix = { version = "0.30", features = ["user", "fs"] }
+nix = { version = "0.30", features = ["user", "fs", "signal"] }
 zip = { version = "4", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
