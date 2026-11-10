@@ -2,9 +2,11 @@
 
 mod api;
 mod auth;
+mod components;
 mod config;
 mod db;
 mod error;
+mod hosting;
 mod jobs;
 mod state;
 mod sys;
@@ -78,6 +80,8 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
         db,
         metrics,
         throttle: Arc::default(),
+        sys_lock: Arc::default(),
+        apt_lock: Arc::default(),
     };
 
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();

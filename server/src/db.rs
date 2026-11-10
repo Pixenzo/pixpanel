@@ -85,6 +85,33 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX jobs_created ON jobs(created_at);
     "#,
+    // 2: siteler
+    r#"
+    CREATE TABLE sites (
+        id              INTEGER PRIMARY KEY,
+        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        domain          TEXT NOT NULL UNIQUE,
+        kind            TEXT NOT NULL CHECK (kind IN ('php', 'static', 'proxy', 'node')),
+        public_dir      TEXT NOT NULL DEFAULT 'public',
+        php_version     TEXT,
+        php_settings    TEXT NOT NULL DEFAULT '{}',
+        proxy_target    TEXT,
+        proxy_websocket INTEGER NOT NULL DEFAULT 1,
+        ssl_mode        TEXT NOT NULL DEFAULT 'none',
+        force_https     INTEGER NOT NULL DEFAULT 0,
+        hsts            INTEGER NOT NULL DEFAULT 0,
+        nginx_custom    TEXT NOT NULL DEFAULT '',
+        status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+        created_at      INTEGER NOT NULL
+    );
+    CREATE INDEX sites_user ON sites(user_id);
+
+    CREATE TABLE site_aliases (
+        name    TEXT PRIMARY KEY,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE
+    );
+    CREATE INDEX site_aliases_site ON site_aliases(site_id);
+    "#,
 ];
 
 #[derive(Clone)]

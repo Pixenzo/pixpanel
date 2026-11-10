@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { LoaderCircle, X } from "lucide-react";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { useId } from "react";
 import { classNames } from "../lib/format";
 import { t } from "../lib/i18n";
@@ -391,4 +391,56 @@ export function Modal({
 /** Makine değerleri (yol, IP, komut) için eş aralıklı metin. */
 export function Mono({ children, className }: { children: ReactNode; className?: string }) {
   return <span className={classNames("font-mono text-[12.5px]", className)}>{children}</span>;
+}
+
+// ---- Sekmeler ----
+
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  label,
+}: {
+  tabs: { id: T; label: string }[];
+  value: T;
+  onChange: (next: T) => void;
+  label: string;
+}) {
+  return (
+    <div role="tablist" aria-label={label} className="mb-4 flex gap-1 overflow-x-auto border-b border-line">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={value === tab.id}
+          onClick={() => onChange(tab.id)}
+          className={classNames(
+            "-mb-px h-9 border-b-2 px-3 font-medium whitespace-nowrap transition-colors",
+            value === tab.id ? "border-accent text-accent" : "border-transparent text-ink-2 hover:text-ink",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Textarea({
+  label,
+  hint,
+  className,
+  ...rest
+}: FieldProps & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
+        {label}
+      </label>
+      <textarea id={id} className={classNames(controlClass, "h-auto min-h-28 py-2 font-mono text-[12.5px]", className)} {...rest} />
+      {hint && <p className="text-[12.5px] text-ink-3">{hint}</p>}
+    </div>
+  );
 }

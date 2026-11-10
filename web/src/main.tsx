@@ -9,11 +9,14 @@ import { ApiError } from "./lib/api";
 import { SessionProvider, useSession } from "./lib/session";
 import { AccountPage } from "./pages/Account";
 import { AuditPage } from "./pages/Audit";
+import { ComponentsPage } from "./pages/Components";
 import { DashboardPage } from "./pages/Dashboard";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
 import { ProcessesPage } from "./pages/Processes";
 import { ServicesPage } from "./pages/Services";
+import { SiteDetailPage } from "./pages/SiteDetail";
+import { SitesPage } from "./pages/Sites";
 import { UsersPage } from "./pages/Users";
 import "./styles.css";
 
@@ -33,18 +36,22 @@ function App() {
   if (me === null) return <LoginPage />;
 
   const isAdmin = me.role === "admin";
+  const canSites = me.role !== "member" || me.permissions.includes("sites");
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={isAdmin ? <DashboardPage /> : <Navigate to="/account" replace />} />
+        <Route path="/" element={isAdmin ? <DashboardPage /> : <Navigate to={canSites ? "/sites" : "/account"} replace />} />
         {isAdmin && (
           <>
+            <Route path="/components" element={<ComponentsPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/processes" element={<ProcessesPage />} />
             <Route path="/audit" element={<AuditPage />} />
           </>
         )}
         {me.role !== "member" && <Route path="/users" element={<UsersPage />} />}
+        {canSites && <Route path="/sites" element={<SitesPage />} />}
+        {canSites && <Route path="/sites/:id" element={<SiteDetailPage />} />}
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

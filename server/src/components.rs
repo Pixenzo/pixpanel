@@ -1,0 +1,288 @@
+//! Sunucu bileşenleri (nginx, PHP sürümleri, veritabanları, Docker...) kataloğu
+//! ve bunların panelden kurulması.
+
+use serde::Serialize;
+
+use crate::error::{AppError, AppResult};
+use crate::hosting;
+use crate::jobs::JobCtx;
+use crate::sys::{exec, services};
+
+/// Panelden kurulabilen PHP sürümleri (yeniden eskiye).
+pub const PHP_VERSIONS: &[&str] = &["8.5", "8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
+
+/// Her PHP sürümüyle birlikte kurulmaya çalışılan eklentiler. Bir sürümde
+/// bulunmayan eklenti (ör. 8.5'te yerleşik gelen opcache) sessizce atlanır.
+const PHP_EXTENSIONS: &[&str] = &[
+    "mysql", "pgsql", "sqlite3", "curl", "gd", "mbstring", "xml", "zip", "intl", "bcmath", "opcache",
+    "soap", "readline", "redis", "imagick",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Repo {
+    /// Dağıtımın kendi deposu yeterli.
+    Distro,
+    /// packages.sury.org (Debian) ya da ppa:ondrej/php (Ubuntu).
+    Php,
+    /// download.docker.com
+    Docker,
+}
+
+#[derive(Debug, Clone)]
+pub struct Component {
+    pub id: String,
+    pub name: String,
+    pub description: &'static str,
+    pub category: &'static str,
+    /// Kurulması zorunlu paketler; ilki sürüm bilgisinin okunduğu ana pakettir.
+    packages: Vec<String>,
+    /// Depoda varsa kurulan, yoksa atlanan paketler.
+    optional_packages: Vec<String>,
+    pub service: Option<String>,
+    repo: Repo,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ComponentStatus {
+    pub id: String,
+    pub name: String,
+    pub description: &'static str,
+    pub category: &'static str,
+    pub installed: bool,
+    pub version: Option<String>,
+    pub service: Option<String>,
+    pub running: bool,
+}
+
+fn component(
+    id: &str,
+    name: &str,
+    description: &'static str,
+    category: &'static str,
+    packages: &[&str],
+    service: Option<&str>,
+    repo: Repo,
+) -> Component {
+    Component {
+        id: id.to_string(),
+        name: name.to_string(),
+        description,
+        category,
+        packages: packages.iter().map(|p| p.to_string()).collect(),
+        optional_packages: Vec::new(),
+        service: service.map(str::to_string),
+        repo,
+    }
+}
+
+pub fn catalog() -> Vec<Component> {
+    let mut list = vec![component(
+        "nginx",
+        "nginx",
+        "Web sunucusu ve ters vekil. Siteleri yayınlamak için gereklidir.",
+        "web",
+        &["nginx"],
+        Some("nginx.service"),
+        Repo::Distro,
+    )];
+    for version in PHP_VERSIONS {
+        list.push(Component {
+            id: format!("php-{version}"),
+            name: format!("PHP {version}"),
+            description: "PHP-FPM ve yaygın eklentiler.",
+            category: "php",
+            packages: ["fpm", "cli", "common"].iter().map(|part| format!("php{version}-{part}")).collect(),
+            optional_packages: PHP_EXTENSIONS.iter().map(|ext| format!("php{version}-{ext}")).collect(),
+            service: Some(format!("php{version}-fpm.service")),
+            repo: Repo::Php,
+        });
+    }
+    list.extend([
+        component(
+            "mariadb",
+            "MariaDB",
+            "MySQL uyumlu veritabanı sunucusu.",
+            "database",
+            &["mariadb-server", "mariadb-client"],
+            Some("mariadb.service"),
+            Repo::Distro,
+        ),
+        component(
+            "postgresql",
+            "PostgreSQL",
+            "Gelişmiş ilişkisel veritabanı sunucusu.",
+            "database",
+            &["postgresql", "postgresql-client"],
+            Some("postgresql.service"),
+            Repo::Distro,
+        ),
+        component(
+            "redis",
+            "Redis",
+            "Bellek içi önbellek ve kuyruk sunucusu.",
+            "database",
+            &["redis-server"],
+            Some("redis-server.service"),
+            Repo::Distro,
+        ),
+        component(
+            "docker",
+            "Docker",
+            "Konteyner çalıştırma ortamı ve Compose eklentisi.",
+            "container",
+            &["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"],
+            Some("docker.service"),
+            Repo::Docker,
+        ),
+    ]);
+    list
+}
+
+pub fn find(id: &str) -> AppResult<Component> {
+    catalog().into_iter().find(|c| c.id == id).ok_or(AppError::NotFound)
+}
+
+/// Paket kuruluysa sürümünü döner.
+async fn installed_version(package: &str) -> Option<String> {
+    let output = exec::run("dpkg-query", &["-W", "-f=${db:Status-Abbrev}\t${Version}", "--", package]).await.ok()?;
+    let (status, version) = output.stdout.split_once('\t')?;
+    status.starts_with("ii").then(|| version.trim().to_string())
+}
+
+pub async fn status(component: &Component) -> ComponentStatus {
+    let version = installed_version(&component.packages[0]).await;
+    let running = match (&version, &component.service) {
+        (Some(_), Some(service)) => services::is_active(service).await,
+        _ => false,
+    };
+    ComponentStatus {
+        id: component.id.clone(),
+        name: component.name.clone(),
+        description: component.description,
+        category: component.category,
+        installed: version.is_some(),
+        version,
+        service: component.service.clone(),
+        running,
+    }
+}
+
+pub async fn status_all() -> Vec<ComponentStatus> {
+    let catalog = catalog();
+    let mut list = Vec::with_capacity(catalog.len());
+    for component in &catalog {
+        list.push(status(component).await);
+    }
+    list
+}
+
+/// Dağıtım kimliği ve kod adı (ör. `debian`, `trixie`).
+fn os_release() -> AppResult<(String, String)> {
+    let raw = std::fs::read_to_string("/etc/os-release")?;
+    let field = |key: &str| {
+        raw.lines()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+            .map(|value| value.trim_matches('"').to_string())
+    };
+    let id = field("ID").ok_or_else(|| AppError::internal("işletim sistemi tanınamadı"))?;
+    let codename = field("VERSION_CODENAME").ok_or_else(|| AppError::internal("dağıtım kod adı bulunamadı"))?;
+    if id != "debian" && id != "ubuntu" {
+        return Err(AppError::bad("Yalnızca Debian ve Ubuntu destekleniyor"));
+    }
+    Ok((id, codename))
+}
+
+/// `Dpkg::Use-Pty=0`, ilerleme çubuğunun günlüğü tek satırlık gürültüye çevirmesini önler.
+const APT_OPTIONS: &[&str] = &[
+    "-y", "-o", "DPkg::Lock::Timeout=180", "-o", "Dpkg::Use-Pty=0", "-o", "Dpkg::Options::=--force-confold",
+];
+
+async fn apt_install(ctx: &JobCtx, packages: &[String]) -> AppResult<()> {
+    let mut args: Vec<&str> = vec!["install", "--no-install-recommends"];
+    args.extend_from_slice(APT_OPTIONS);
+    args.push("--");
+    args.extend(packages.iter().map(String::as_str));
+    ctx.exec("apt-get", &args).await
+}
+
+async fn ensure_repo(ctx: &JobCtx, repo: Repo) -> AppResult<()> {
+    if repo == Repo::Distro {
+        return Ok(());
+    }
+    let (os_id, codename) = os_release()?;
+    apt_install(ctx, &["curl".into(), "ca-certificates".into(), "gnupg".into()]).await?;
+
+    match (repo, os_id.as_str()) {
+        (Repo::Php, "debian") => {
+            let list_path = "/etc/apt/sources.list.d/capsule-php.list";
+            if !std::path::Path::new(list_path).exists() {
+                let keyring = "/var/lib/capsule/debsuryorg-archive-keyring.deb";
+                ctx.exec("curl", &["-fsSLo", keyring, "https://packages.sury.org/debsuryorg-archive-keyring.deb"]).await?;
+                ctx.exec("dpkg", &["-i", keyring]).await?;
+                std::fs::write(
+                    list_path,
+                    format!(
+                        "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ {codename} main\n"
+                    ),
+                )?;
+            }
+        }
+        (Repo::Php, _) => {
+            apt_install(ctx, &["software-properties-common".into()]).await?;
+            ctx.exec("add-apt-repository", &["-y", "ppa:ondrej/php"]).await?;
+        }
+        (Repo::Docker, _) => {
+            let list_path = "/etc/apt/sources.list.d/capsule-docker.list";
+            if !std::path::Path::new(list_path).exists() {
+                std::fs::create_dir_all("/etc/apt/keyrings")?;
+                let key = "/etc/apt/keyrings/capsule-docker.asc";
+                ctx.exec("curl", &["-fsSLo", key, &format!("https://download.docker.com/linux/{os_id}/gpg")]).await?;
+                let arch = exec::run_ok("dpkg", &["--print-architecture"]).await?;
+                std::fs::write(
+                    list_path,
+                    format!(
+                        "deb [arch={} signed-by={key}] https://download.docker.com/linux/{os_id} {codename} stable\n",
+                        arch.trim()
+                    ),
+                )?;
+            }
+        }
+        (Repo::Distro, _) => {}
+    }
+    Ok(())
+}
+
+/// Paketin depoda kurulabilir bir adayı var mı?
+async fn package_available(package: &str) -> bool {
+    exec::run("apt-cache", &["policy", "--", package])
+        .await
+        .map(|out| out.stdout.lines().any(|line| line.trim_start().starts_with("Candidate:") && !line.contains("(none)")))
+        .unwrap_or(false)
+}
+
+/// Bileşeni kurar; görev günlüğüne ilerleme yazar.
+pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
+    ctx.log(format!("{} kuruluyor", component.name));
+    ensure_repo(ctx, component.repo).await?;
+    ctx.exec("apt-get", &["update", "-o", "DPkg::Lock::Timeout=180"]).await?;
+
+    let mut packages = component.packages.clone();
+    for package in &component.optional_packages {
+        if package_available(package).await {
+            packages.push(package.clone());
+        } else {
+            ctx.log(format!("{package} bu sürüm için depoda yok, atlanıyor"));
+        }
+    }
+    apt_install(ctx, &packages).await?;
+
+    if component.id == "nginx" {
+        ctx.log("nginx temel yapılandırması yazılıyor");
+        hosting::nginx::ensure_base().await?;
+    }
+    if let Some(service) = &component.service {
+        ctx.exec("systemctl", &["enable", "--now", "--", service]).await?;
+    }
+    ctx.log(format!("{} kuruldu", component.name));
+    Ok(())
+}

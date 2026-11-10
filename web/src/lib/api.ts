@@ -190,3 +190,60 @@ export interface TokenInfo {
   expires_at: number | null;
   created_at: number;
 }
+
+export interface ComponentStatus {
+  id: string;
+  name: string;
+  description: string;
+  category: "web" | "php" | "database" | "container";
+  installed: boolean;
+  version: string | null;
+  service: string | null;
+  running: boolean;
+}
+
+export type SiteKind = "php" | "static" | "proxy";
+
+export interface PhpDirective {
+  key: string;
+  value: string;
+}
+
+export interface PhpSettings {
+  memory_limit: string;
+  upload_max_filesize: string;
+  post_max_size: string;
+  max_execution_time: number;
+  max_input_vars: number;
+  display_errors: boolean;
+  max_children: number;
+  allow_exec: boolean;
+  open_basedir: boolean;
+  custom: PhpDirective[];
+}
+
+export interface Site {
+  id: number;
+  user_id: number;
+  owner: string;
+  domain: string;
+  aliases: string[];
+  kind: SiteKind;
+  public_dir: string;
+  php_version: string | null;
+  php_settings: PhpSettings;
+  proxy_target: string | null;
+  proxy_websocket: boolean;
+  ssl_mode: string;
+  force_https: boolean;
+  hsts: boolean;
+  nginx_custom: string;
+  status: "active" | "suspended";
+  created_at: number;
+}
+
+export interface SiteOptions {
+  nginx_installed: boolean;
+  php_versions: string[];
+  owners: { id: number; username: string }[];
+}

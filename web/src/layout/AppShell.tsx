@@ -4,8 +4,10 @@ import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  Boxes,
   ChevronDown,
   Cog,
+  Globe,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -47,8 +49,13 @@ const navigation: NavGroup[] = [
     items: [{ to: "/", label: "Genel bakış", icon: LayoutDashboard, visible: isAdmin }],
   },
   {
+    title: "Hosting",
+    items: [{ to: "/sites", label: "Siteler", icon: Globe, visible: (me) => me.role !== "member" || me.permissions.includes("sites") }],
+  },
+  {
     title: "Sunucu",
     items: [
+      { to: "/components", label: "Bileşenler", icon: Boxes, visible: isAdmin },
       { to: "/services", label: "Servisler", icon: Cog, visible: isAdmin },
       { to: "/processes", label: "Süreçler", icon: Activity, visible: isAdmin },
       { to: "/jobs", label: "Görevler", icon: ListChecks, visible: () => true },

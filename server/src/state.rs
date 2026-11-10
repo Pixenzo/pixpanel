@@ -15,4 +15,8 @@ pub struct AppState {
     pub jobs: JobManager,
     pub metrics: Metrics,
     pub throttle: Arc<LoginThrottle>,
+    /// Sistem yapılandırmasına (nginx, PHP havuzları...) dokunan işlemleri sıraya sokar.
+    pub sys_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Aynı anda yalnızca bir paket kurulumu yürüsün diye.
+    pub apt_lock: Arc<tokio::sync::Mutex<()>>,
 }
