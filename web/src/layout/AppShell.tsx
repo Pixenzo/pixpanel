@@ -27,6 +27,7 @@ import {
 import type { ComponentType, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { IconButton, Spinner } from "../components/ui";
 import type { JobInfo, Me, Overview } from "../lib/api";
 import { api } from "../lib/api";
@@ -287,7 +288,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main id="content" className="mx-auto w-full max-w-[1320px] px-4 py-6 lg:px-6">
-        {children}
+        <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>
       </main>
     </div>
   );

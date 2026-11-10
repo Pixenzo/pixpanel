@@ -76,5 +76,5 @@ Son güncelleme: 10.11.2026
 - Hosting hesapları terminal kullanamıyor (yalnızca yönetici); hesap başına kabuk/SFTP izni eklenecek.
 - PostgreSQL'e uzaktan bağlantı ayarı (pg_hba) panelden yapılamıyor.
 - Dosya yöneticisinde arşiv açarken boyut sınırı yok; disk kotası da henüz yok.
-- Arayüzde hata sınırı (error boundary) yok; yüklenemeyen bir parça bütün sayfayı düşürür.
+
 - Test makinesinde `allowed_origins` içinde geliştirme sunucusu tanımlı; canlıda boş olmalı.
