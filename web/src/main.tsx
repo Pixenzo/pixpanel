@@ -10,11 +10,13 @@ import { SessionProvider, useSession } from "./lib/session";
 import { AccountPage } from "./pages/Account";
 import { AuditPage } from "./pages/Audit";
 import { ComponentsPage } from "./pages/Components";
+import { CronPage } from "./pages/Cron";
 import { DashboardPage } from "./pages/Dashboard";
 import { DatabasesPage } from "./pages/Databases";
 import { FilesPage } from "./pages/Files";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
+import { LogsPage } from "./pages/Logs";
 import { ProcessesPage } from "./pages/Processes";
 import { ServicesPage } from "./pages/Services";
 import { SiteDetailPage } from "./pages/SiteDetail";
@@ -59,6 +61,8 @@ function App() {
         {canSites && <Route path="/sites/:id" element={<SiteDetailPage />} />}
         {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
         {can("files") && <Route path="/files" element={<FilesPage />} />}
+        {can("cron") && <Route path="/cron" element={<CronPage />} />}
+        {can("logs") && <Route path="/logs" element={<LogsPage />} />}
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

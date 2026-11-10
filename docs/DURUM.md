@@ -31,7 +31,12 @@ Son güncelleme: 10.11.2026
   - nginx ve PHP-FPM yapılandırması uygulanmadan önce sınanır, hata hâlinde geri alınır.
 - SSL: Let's Encrypt (HTTP-01), özel sertifika yükleme, kendinden imzalı; HTTPS zorlama, HSTS; 30 gün kala otomatik yenileme.
 - Veritabanları: MariaDB ve PostgreSQL; veritabanı, kullanıcı, üç düzeyli yetki (tam / okuma-yazma / salt okunur), dışa ve içe aktarma (.sql, .sql.gz).
-- Arayüz: giriş, genel bakış, siteler ve site ayrıntısı (genel, PHP, vekil, SSL, gelişmiş), veritabanları, bileşenler, servisler, süreçler, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
+- Dosya yöneticisi: gezinme, yükleme (ilerleme çubuğu, sürükle-bırak), indirme (klasör tar.gz olarak), kes/kopyala/yapıştır, yeniden adlandırma, izinler, zip ve tar.gz sıkıştırma/açma, sözdizimi renklendirmeli düzenleyici.
+  - İşlemler hesabın klasörüne `chroot` yapıp hesabın kimliğine düşen ayrı bir süreçte yürür (`server/src/fsop.rs`).
+- Web terminali: root ya da seçilen hesap adına kabuk (yalnızca yönetici).
+- Zamanlanmış görevler: hesap başına cron, hazır zamanlamalar, "şimdi çalıştır".
+- Günlükler: site erişim/hata günlükleri ve servis günlükleri; arama ve canlı izleme.
+- Arayüz: giriş, genel bakış, siteler ve site ayrıntısı (genel, PHP, vekil, SSL, gelişmiş), veritabanları, dosyalar, zamanlı görevler, günlükler, bileşenler, servisler, süreçler, terminal, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
 
 ## Test makinesinde doğrulananlar
 
@@ -43,6 +48,10 @@ Son güncelleme: 10.11.2026
 - Let's Encrypt akışının Pebble (resmî sınama sunucusu) ile uçtan uca çalıştığı; doğrulanamayan alan adında sitenin etkilenmediği.
 - Tırnak, ters eğik çizgi ve kabuk karakterleri içeren veritabanı parolasının iki motorda da çalıştığı.
 - Müşteri hesabının başka hesabın sitesini, veritabanını ve bileşen sayfasını göremediği.
+- Dosya yöneticisinde `..`, gerçek sistem yolu ve `/etc/passwd` dosyasına verilen sembolik bağın "bulunamadı" döndüğü (hapis çalışıyor).
+- Kullanıcının ev klasörünün üst düzeyini (`sites` dahil) değiştiremediği.
+- Terminalde bağlantı kopunca kabuk sürecinin arkada kalmadığı; yabancı kaynaktan gelen WebSocket isteğinin reddedildiği.
+- Cron komutuna satır sonu ekleyerek root adına satır yazma denemesinin reddedildiği.
 
 ## Test ortamı notları
 
@@ -51,17 +60,21 @@ Son güncelleme: 10.11.2026
 
 ## Sıradaki (öncelik sırasıyla)
 
-1. Dosya yöneticisi ve web terminali.
-2. Zamanlanmış görevler, günlük tarayıcı.
-3. Güvenlik duvarı (nftables), fail2ban.
-4. DNS (PowerDNS), FTP (pure-ftpd).
-5. Docker yönetimi.
-6. Node.js uygulamaları, phpMyAdmin.
-7. Yedekleme.
-8. Posta.
-9. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
+1. Güvenlik duvarı (nftables), fail2ban.
+2. DNS (PowerDNS), FTP (pure-ftpd).
+3. Docker yönetimi.
+4. Node.js uygulamaları, phpMyAdmin.
+5. Yedekleme.
+6. Posta.
+7. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
 
 ## Bilinen eksikler
 
 - Panel sertifikası kendinden imzalı; panelin kendi alan adına Let's Encrypt alması SSL aşamasında gelecek.
-- Otomatik test yok; doğrulama şimdilik test makinesinde elle yapılıyor.
+- Birim testleri yazıldı ama henüz çalıştırılmadı: kod yalnızca Linux hedefi için derleniyor, `cargo test` Windows'ta çalışmıyor. Test makinesinde ya da CI'da çalıştırılmalı.
+- Uçtan uca doğrulama test makinesinde elle (betiklerle) yapılıyor; otomatik bir test takımı yok.
+- Hosting hesapları terminal kullanamıyor (yalnızca yönetici); hesap başına kabuk/SFTP izni eklenecek.
+- PostgreSQL'e uzaktan bağlantı ayarı (pg_hba) panelden yapılamıyor.
+- Dosya yöneticisinde arşiv açarken boyut sınırı yok; disk kotası da henüz yok.
+- Arayüzde hata sınırı (error boundary) yok; yüklenemeyen bir parça bütün sayfayı düşürür.
+- Test makinesinde `allowed_origins` içinde geliştirme sunucusu tanımlı; canlıda boş olmalı.

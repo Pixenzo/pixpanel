@@ -6,9 +6,11 @@ use crate::state::AppState;
 
 mod auth;
 mod components;
+mod cron;
 mod databases;
 mod files;
 mod jobs;
+mod logs;
 mod sites;
 pub mod ssl;
 mod system;
@@ -25,5 +27,7 @@ pub fn router() -> Router<AppState> {
         .nest("/databases", databases::router())
         .nest("/files", files::router())
         .nest("/terminal", terminal::router())
+        .nest("/cron", cron::router())
+        .nest("/logs", logs::router())
         .nest("/sites", sites::router().merge(ssl::router()))
 }

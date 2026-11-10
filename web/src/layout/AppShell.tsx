@@ -5,9 +5,11 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   Boxes,
+  CalendarClock,
   ChevronDown,
   Cog,
   Database,
+  FileText,
   FolderOpen,
   Globe,
   LayoutDashboard,
@@ -59,6 +61,8 @@ const navigation: NavGroup[] = [
       { to: "/sites", label: "Siteler", icon: Globe, visible: can("sites") },
       { to: "/databases", label: "Veritabanları", icon: Database, visible: can("databases") },
       { to: "/files", label: "Dosyalar", icon: FolderOpen, visible: can("files") },
+      { to: "/cron", label: "Zamanlı görevler", icon: CalendarClock, visible: can("cron") },
+      { to: "/logs", label: "Günlükler", icon: FileText, visible: can("logs") },
     ],
   },
   {

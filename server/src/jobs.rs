@@ -65,8 +65,17 @@ impl JobCtx {
     /// Komutu çalıştırır ve çıktısını canlı olarak görev günlüğüne aktarır.
     pub async fn exec(&self, program: &str, args: &[&str]) -> AppResult<()> {
         self.log(format!("$ {program} {}", args.join(" ")));
-        let mut child = base_command(program)
-            .args(args)
+        self.run_streaming(base_command(program).args(args), program).await
+    }
+
+    /// `exec` gibi, ama komutu verilen klasörde çalıştırır ve komut satırını günlüğe yazmaz
+    /// (çağıran, çalıştırılan şeyi kendi sözleriyle günlüğe yazar).
+    pub async fn exec_in(&self, dir: &str, program: &str, args: &[&str]) -> AppResult<()> {
+        self.run_streaming(base_command(program).args(args).current_dir(dir), program).await
+    }
+
+    async fn run_streaming(&self, command: &mut tokio::process::Command, program: &str) -> AppResult<()> {
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

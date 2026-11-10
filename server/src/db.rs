@@ -142,6 +142,19 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (database_id, db_user_id)
     );
     "#,
+    // 4: zamanlanmış görevler
+    r#"
+    CREATE TABLE cron_jobs (
+        id         INTEGER PRIMARY KEY,
+        run_as     TEXT NOT NULL,
+        schedule   TEXT NOT NULL,
+        command    TEXT NOT NULL,
+        comment    TEXT NOT NULL DEFAULT '',
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX cron_jobs_run_as ON cron_jobs(run_as);
+    "#,
 ];
 
 #[derive(Clone)]
