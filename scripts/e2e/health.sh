@@ -85,6 +85,20 @@ else
   echo "  (nginx çalışmıyor; bölüm atlandı)"
 fi
 
+say "Çalışır görünüp yanıt vermeyen servis"
+# pure-ftpd SysV kökenlidir: süreci ölse de systemd onu çalışıyor sanar; panel portu yoklayarak anlar.
+if ss -ltn | grep -q ':21 ' && [ "$(systemctl is-active pure-ftpd)" = active ]; then
+  pkill -KILL -x pure-ftpd; sleep 1
+  check "süreç öldü ama systemd fark etmedi" "$(ss -ltn | grep -c ':21 ') $(systemctl is-active pure-ftpd)" "0 active"
+  R=$(recheck)
+  check "tek yoklama bulgu sayılmaz" "$(finding "$R" service.unresponsive:pure-ftpd.service severity)" yok
+  R=$(recheck); sleep 2
+  check "ikinci yoklamada kritik bulgu ve kendiliğinden düzeltme" "$(finding "$R" service.unresponsive:pure-ftpd.service severity) $(finding "$R" service.unresponsive:pure-ftpd.service auto)" "critical True"
+  check "FTP yeniden bağlantı kabul ediyor" "$(ss -ltn | grep -c ':21 ' | sed 's/[1-9]/var/')" var
+else
+  echo "  (FTP sunucusu çalışmıyor; bölüm atlandı)"
+fi
+
 say "Yanıt vermeyen site"
 OLD=$(api GET /sites | jget 'next((s["id"] for s in d if s["domain"]=="saglik-e2e.test"), "")')
 [ -n "$OLD" ] && api DELETE "/sites/$OLD?delete_files=true" >/dev/null

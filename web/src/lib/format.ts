@@ -68,3 +68,10 @@ export function formatRelative(unixSeconds: number | null | undefined): string {
 export function classNames(...values: (string | false | null | undefined)[]): string {
   return values.filter(Boolean).join(" ");
 }
+
+/** Karışabilen karakterler (0/O, 1/l) olmadan rastgele parola üretir. */
+export function generatePassword(length = 20): string {
+  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const values = crypto.getRandomValues(new Uint32Array(length));
+  return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
+}

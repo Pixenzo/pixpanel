@@ -25,7 +25,7 @@ import {
 } from "../components/ui";
 import type { DatabaseInfo, DatabaseOverview, DbAccess, DbEngine, DbUserInfo } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { formatBytes } from "../lib/format";
+import { formatBytes, generatePassword } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { JobLog } from "./Jobs";
@@ -41,13 +41,6 @@ const accessHints: Record<DbAccess, string> = {
   readwrite: "Veri okur ve değiştirir; tabloların yapısına dokunamaz",
   readonly: "Yalnızca veri okur",
 };
-
-/** Karışabilen karakterler (0/O, 1/l) olmadan rastgele parola üretir. */
-function generatePassword(length = 20): string {
-  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const values = crypto.getRandomValues(new Uint32Array(length));
-  return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
-}
 
 function PasswordField({ value, onChange, label }: { value: string; onChange: (next: string) => void; label: string }) {
   return (

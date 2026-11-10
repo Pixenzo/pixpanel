@@ -427,3 +427,33 @@ export interface HealthView {
   actions: HealthAction[];
   interval_secs: number;
 }
+
+// ---- WordPress ----
+
+export interface WordPressExtension {
+  name: string;
+  title: string;
+  /** `active`, `inactive`, `must-use`, `dropin`... */
+  status: string;
+  /** `available` ise güncelleme var. */
+  update: string;
+  version: string;
+  update_version: string | null;
+  /** `on` ise kendiliğinden güncellenir. */
+  auto_update: string;
+}
+
+export interface WordPressStatus {
+  installed: boolean;
+  can_install: boolean;
+  database_ready: boolean;
+  version: string;
+  core_update: string | null;
+  url: string;
+  title: string;
+  maintenance: boolean;
+  auto_core: "minor" | "all" | "off";
+  plugins: WordPressExtension[];
+  themes: WordPressExtension[];
+  problem: string | null;
+}

@@ -27,6 +27,7 @@ mod tasks;
 mod totp;
 mod update;
 mod web;
+mod wordpress;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};

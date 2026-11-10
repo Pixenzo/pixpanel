@@ -31,6 +31,7 @@ mod system;
 mod terminal;
 mod update;
 mod users;
+mod wordpress;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -56,5 +57,5 @@ pub fn router() -> Router<AppState> {
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())
-        .nest("/sites", sites::router().merge(ssl::router()).merge(git::router()).merge(ftp::router()))
+        .nest("/sites", sites::router().merge(ssl::router()).merge(git::router()).merge(ftp::router()).merge(wordpress::router()))
 }

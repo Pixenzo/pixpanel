@@ -15,6 +15,7 @@ import {
   GitBranch,
   Globe,
   Network,
+  PenLine,
   HardDriveUpload,
   Mail,
   ShieldCheck,
@@ -114,6 +115,9 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
   }
   if (can("ssl")) {
     tools.push({ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck, to: `${base}/ssl`, ...sslStatus(site, summary) });
+  }
+  if (site.kind === "php") {
+    tools.push({ id: "wordpress", label: "WordPress", icon: PenLine, to: `${base}/wordpress`, status: t("Tek tıkla kur, güncelle, giriş yap") });
   }
   tools.push({ id: "git", label: t("Git ile yayınlama"), icon: GitBranch, to: `${base}/git`, ...gitStatus(summary) });
   if (can("ftp") && site.kind !== "proxy") {

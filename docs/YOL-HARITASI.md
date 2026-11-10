@@ -169,7 +169,7 @@ Ardından gelecek otomasyonlar P2'deki WordPress araçlarıyla birleşir (tek t�
 
 ## P2 — Plesk'le aradaki fark
 
-### 12. WordPress araçları — B, arka uç + arayüz (devre uygun)
+### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; kalan: var olan kurulumları bulma, klonlama ve hazırlık ortamı, güncelleme öncesi yedek ve geri dönüş, sıkılaştırma)
 
 - **Kapsam:** wp-cli ile tek tıkla kurulum (veritabanını da açar), var olan kurulumları bulma, çekirdek/eklenti/tema güncelleme (toplu ve kendiliğinden), parolasız yönetici girişi, klonlama ve hazırlık ortamı (alt alan adına kopya, geri aktarma), sıkılaştırma (dosya izinleri, `xmlrpc`, dosya düzenleyici, `wp-config` koruması), bakım kipi.
 - **Örnek al:** `deploy.rs` (kullanıcı adına komut, canlı günlük).

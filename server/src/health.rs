@@ -260,7 +260,9 @@ async fn check_services(state: &AppState, batch: &mut Batch, settings: &Settings
         let Some(id) = block.get("Id").copied() else { continue };
         let Some((unit, label)) = units.iter().find(|(unit, _)| unit == id) else { continue };
         // Kurulu olmayan ya da açılışta başlamayacak biçimde bırakılmış servis izlenmez.
-        if block.get("LoadState").copied() != Some("loaded") || block.get("UnitFileState").copied() != Some("enabled") {
+        // `generated`: SysV betiğinden üretilmiş, açılışta başlayan birim (pure-ftpd gibi).
+        let starts_at_boot = matches!(block.get("UnitFileState").copied(), Some("enabled" | "generated"));
+        if block.get("LoadState").copied() != Some("loaded") || !starts_at_boot {
             continue;
         }
         batch.checks += 1;
