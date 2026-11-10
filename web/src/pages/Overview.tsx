@@ -42,6 +42,11 @@ const automations: { key: keyof HealthSettings; label: string; hint: string }[] 
     hint: "Yanıt vermeyen ya da sunucu hatası döndüren site hemen bildirilir.",
   },
   {
+    key: "security_updates",
+    label: "Güvenlik güncellemelerini kur",
+    hint: "İşletim sisteminin güvenlik yamaları her gün kendiliğinden kurulur; öteki güncellemeler size bırakılır.",
+  },
+  {
     key: "notify",
     label: "Sorunları ve yapılanları bildir",
     hint: "Kritik sorunlar ve panelin yaptığı düzeltmeler e-posta ya da Telegram ile gönderilir (Hesabım → Bildirimler).",

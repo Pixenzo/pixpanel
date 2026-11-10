@@ -72,6 +72,10 @@ async fn fix(State(state): State<AppState>, user: AuthUser, Json(body): Json<Fix
 async fn save_settings(State(state): State<AppState>, user: AuthUser, Json(settings): Json<Settings>) -> AppResult<Json<View>> {
     user.require_admin()?;
     health::save_settings(&state, &settings)?;
+    // Paket kurulumu gerekebilir; isteği bekletmeden arka planda uygulanır.
+    let apply = state.clone();
+    let security_updates = settings.security_updates;
+    tokio::spawn(async move { health::apply_security_updates(&apply, security_updates).await });
     auth::audit(&state.db, &user, "health.settings", "", "");
     Ok(Json(view(&state)?))
 }

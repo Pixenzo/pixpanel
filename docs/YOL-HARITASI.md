@@ -110,7 +110,7 @@ Kullanıcının sözü: "profesyonel şık ve premium duran, profesyonel bir web
 - **Görsel dil:** var olan kimlik (IBM Plex, koyu yan gezinme, petrol mavisi vurgu) korunur ve inceltilir: tutarlı boşluk ve köşe ölçeği, sayfa başlıkları, boş durumlar, yükleme iskeletleri, klavye odağı.
 - **Kabul:** her sayfa 390 px genişlikte yatay kaydırma olmadan kullanılabilir; iki sekmeden biri bir kaynağı değiştirince öteki 2 sn içinde güncellenir; bağlantı kopunca arayüz bunu gösterir ve kendiliğinden yeniden bağlanır.
 
-### Ö2. Kendi kendine bakım ("Sağlık merkezi") — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: güvenlik güncellemelerinin kendiliğinden kurulması, haftalık özet, riskli işlemden önce yedek, yeni siteye varsayılan yedek planı, kara liste denetimi, müşteriye kendi sitesinin durumu)
+### Ö2. Kendi kendine bakım ("Sağlık merkezi") — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: haftalık özet, riskli işlemden önce yedek, yeni siteye varsayılan yedek planı, kara liste denetimi, müşteriye kendi sitesinin durumu)
 
 Panelin ayırt edici özelliği: yöneticinin düzenli olarak elle yaptığı denetimleri panel sürekli yapar, güvenli olanları kendisi düzeltir, kalanını tek tıkla düzeltilecek biçimde sunar.
 

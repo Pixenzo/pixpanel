@@ -40,6 +40,18 @@ const PHP_END_OF_LIFE: &[&str] = &["7.4", "8.0", "8.1"];
 const DISK_WARN_PERCENT: f64 = 85.0;
 const DISK_CRITICAL_PERCENT: f64 = 95.0;
 const MAIL_QUEUE_WARN: usize = 50;
+/// apt'nin günlük işleri bu dosyaya göre güvenlik güncellemelerini kendiliğinden kurar.
+const AUTO_UPGRADES_FILE: &str = "/etc/apt/apt.conf.d/20auto-upgrades";
+
+/// Çalışır görünen servisin gerçekten bağlantı kabul ettiği yerel port. systemd, süreci
+/// kendisi izlemediği (SysV kökenli) ya da takılıp kalmış servislerin öldüğünü fark etmez.
+const SERVICE_PORTS: &[(&str, u16)] = &[
+    ("nginx.service", 80),
+    ("postfix.service", 25),
+    ("dovecot.service", 993),
+    ("pdns.service", 53),
+    ("pure-ftpd.service", 21),
+];
 
 /// Çalışması beklenen servisler: kurulu ve açılışta başlayacak biçimde ayarlıysa izlenir.
 const WATCHED_SERVICES: &[(&str, &str)] = &[
@@ -69,11 +81,13 @@ pub struct Settings {
     pub check_sites: bool,
     /// Yeni kritik bulgular ve kendiliğinden yapılan işlemler yöneticilere bildirilsin.
     pub notify: bool,
+    /// İşletim sisteminin güvenlik güncellemeleri her gün kendiliğinden kurulsun.
+    pub security_updates: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { restart_services: true, issue_certificates: true, check_sites: true, notify: true }
+        Self { restart_services: true, issue_certificates: true, check_sites: true, notify: true, security_updates: true }
     }
 }
 
@@ -184,6 +198,7 @@ struct PendingUpdates {
 pub struct Monitor {
     report: Arc<RwLock<Report>>,
     site_failures: Arc<Mutex<HashMap<i64, u32>>>,
+    port_failures: Arc<Mutex<HashMap<String, u32>>>,
     dns_cache: Arc<Mutex<HashMap<String, (bool, i64)>>>,
     updates: Arc<RwLock<PendingUpdates>>,
     /// Aynı anda tek denetim turu yürür.
@@ -235,11 +250,12 @@ fn watched_units() -> Vec<(String, String)> {
     units
 }
 
-async fn check_services(batch: &mut Batch, settings: &Settings) {
+async fn check_services(state: &AppState, batch: &mut Batch, settings: &Settings) {
     let units = watched_units();
     let mut args = vec!["show", "--no-pager", "-p", "Id,LoadState,ActiveState,UnitFileState,Result", "--"];
     args.extend(units.iter().map(|(unit, _)| unit.as_str()));
     let Ok(output) = exec::run("systemctl", &args).await else { return };
+    let mut active: Vec<(String, String)> = Vec::new();
     for block in parse_unit_blocks(&output.stdout) {
         let Some(id) = block.get("Id").copied() else { continue };
         let Some((unit, label)) = units.iter().find(|(unit, _)| unit == id) else { continue };
@@ -266,8 +282,42 @@ async fn check_services(batch: &mut Batch, settings: &Settings) {
                 .link("/services")
                 .fix("Başlat"),
             ),
+            "active" => active.push((unit.clone(), label.clone())),
             _ => {}
         }
+    }
+
+    // Çalışır görünen servis portunu dinlemiyorsa yanıt vermiyordur.
+    let mut silent: Vec<(String, String, u16)> = Vec::new();
+    for (unit, label) in &active {
+        let Some((_, port)) = SERVICE_PORTS.iter().find(|(name, _)| name == unit) else { continue };
+        let connect = tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(("127.0.0.1", *port))).await;
+        if !matches!(connect, Ok(Ok(_))) {
+            silent.push((unit.clone(), label.clone(), *port));
+        }
+    }
+    let monitor = &state.health;
+    let mut failures = monitor.port_failures.lock().unwrap_or_else(|p| p.into_inner());
+    failures.retain(|unit, _| silent.iter().any(|(name, _, _)| name == unit));
+    for (unit, label, port) in silent {
+        let count = failures.entry(unit.clone()).or_insert(0);
+        *count += 1;
+        // Yeniden başlatılan servisin portu açması birkaç saniye sürebilir; tek yoklama yetmez.
+        if *count < SITE_FAILURES_BEFORE_ALERT {
+            continue;
+        }
+        batch.push(
+            Finding::new(
+                "service.unresponsive",
+                &unit,
+                Severity::Critical,
+                format!("{label} yanıt vermiyor"),
+                format!("{unit} çalışıyor görünüyor ama {port}. portta bağlantı kabul etmiyor."),
+            )
+            .link("/services")
+            .fix("Yeniden başlat")
+            .auto(settings.restart_services),
+        );
     }
 }
 
@@ -495,9 +545,10 @@ fn check_backups(state: &AppState, batch: &mut Batch, has_content: bool) -> AppR
                 "server",
                 Severity::Warning,
                 "Düzenli yedek planı yok",
-                "Yedek yeri tanımlı ama kendiliğinden çalışan bir plan yok; yedekler yalnızca elle alınırsa unutulur.",
+                "Yedek yeri tanımlı ama kendiliğinden çalışan bir plan yok; yedekler yalnızca elle alınırsa unutulur. Tek tıkla her gece 03:00'te bütün siteleri, veritabanlarını, postaları ve panel ayarlarını yedekleyen bir plan oluşturabilirsiniz.",
             )
-            .link("/backups"),
+            .link("/backups")
+            .fix("Günlük plan oluştur"),
         );
     }
     for plan in plans.iter().filter(|plan| plan.enabled && plan.last_status == "failed") {
@@ -693,7 +744,7 @@ pub async fn run_checks(state: &AppState) -> Report {
     let mut batch = Batch::new();
 
     let sites: Vec<Site> = crate::backup::all_sites(&state.db).unwrap_or_default().into_iter().filter(|site| site.status == "active").collect();
-    check_services(&mut batch, &settings).await;
+    check_services(state, &mut batch, &settings).await;
     check_disks(&mut batch).await;
     check_certificates(state, &mut batch, &settings, &sites).await;
     check_php_versions(&mut batch, &sites);
@@ -706,6 +757,7 @@ pub async fn run_checks(state: &AppState) -> Report {
     }
     check_security(state, &mut batch).await;
     check_mail_queue(&mut batch).await;
+    apply_security_updates(state, settings.security_updates).await;
     refresh_updates(&monitor).await;
     check_updates(state, &mut batch);
 
@@ -934,11 +986,91 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
             crate::backup::run::start_plan(state, user_id, plan)?;
             Ok(format!("“{name}” yedek planı yeniden başlatıldı."))
         }
+        "backup.unscheduled" => {
+            let name = create_daily_backup_plan(state, user_id).await?;
+            Ok(format!("“{name}” planı oluşturuldu; ilk yedek bu gece 03:00'te alınacak."))
+        }
+        "service.unresponsive" => {
+            let (unit, label) = watched_units().into_iter().find(|(unit, _)| unit == target).ok_or_else(|| AppError::bad("Bu servis izlenmiyor"))?;
+            crate::sys::services::action(&unit, "restart").await?;
+            Ok(format!("{label} yeniden başlatıldı."))
+        }
         "updates.pending" => {
             start_upgrade_job(state, user_id)?;
             Ok("Güncellemelerin kurulumu başlatıldı.".into())
         }
         _ => Err(AppError::bad("Bu bulgu tek tıkla düzeltilemiyor")),
+    }
+}
+
+/// İlk yedek yerine, her şeyi kapsayan günlük bir plan ekler ve adını döner.
+async fn create_daily_backup_plan(state: &AppState, user_id: Option<i64>) -> AppResult<String> {
+    use crate::backup::{Plan, Scope};
+    let target = crate::backup::list_targets(&state.db)?.into_iter().next().ok_or_else(|| AppError::bad("Önce bir yedek yeri ekleyin"))?;
+    let owner = match user_id {
+        Some(id) => id,
+        None => state.db.call(|conn| conn.query_row("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1", [], |row| row.get(0)))?,
+    };
+    let existing = crate::backup::list_plans(&state.db)?;
+    let mut name = "Günlük tam yedek".to_string();
+    let mut suffix = 2;
+    while existing.iter().any(|plan| plan.name == name) {
+        name = format!("Günlük tam yedek {suffix}");
+        suffix += 1;
+    }
+    let mut plan = Plan {
+        id: 0,
+        user_id: owner,
+        name: name.clone(),
+        target_id: target.id,
+        scope: Scope { all_sites: true, all_databases: true, all_mail: true, panel: true, ..Scope::default() },
+        frequency: "daily".into(),
+        at_minute: 180,
+        weekday: 1,
+        month_day: 1,
+        keep_daily: 7,
+        keep_weekly: 4,
+        keep_monthly: 6,
+        enabled: true,
+        next_run_at: None,
+        last_run_at: None,
+        last_status: String::new(),
+        last_job_id: None,
+        created_at: now(),
+    };
+    plan.validate()?;
+    plan.next_run_at = plan.next_run(now(), crate::backup::local_offset().await);
+    crate::backup::save_plan(&state.db, &plan)?;
+    Ok(name)
+}
+
+/// Güvenlik güncellemelerinin kendiliğinden kurulmasını ayara göre açar ya da kapatır.
+/// Yapılandırma zaten istenen durumdaysa hiçbir şey yapmaz.
+pub async fn apply_security_updates(state: &AppState, enabled: bool) {
+    let wanted = if enabled {
+        "// PixPanel tarafından yazıldı (Genel bakış → Panelin kendiliğinden yaptıkları).\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n"
+    } else {
+        "// PixPanel tarafından yazıldı (Genel bakış → Panelin kendiliğinden yaptıkları).\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"0\";\n"
+    };
+    let installed = exec::binary_exists("unattended-upgrade");
+    if std::fs::read_to_string(AUTO_UPGRADES_FILE).ok().as_deref() == Some(wanted) && (installed || !enabled) {
+        return;
+    }
+    if enabled && !installed {
+        let _guard = state.apt_lock.lock().await;
+        let install = exec::run_with_timeout(
+            "apt-get",
+            &["install", "-y", "--no-install-recommends", "-o", "DPkg::Lock::Timeout=180", "-o", "Dpkg::Options::=--force-confold", "--", "unattended-upgrades"],
+            Duration::from_secs(600),
+        )
+        .await;
+        if !matches!(&install, Ok(output) if output.success()) {
+            tracing::warn!("unattended-upgrades kurulamadı; güvenlik güncellemeleri kendiliğinden kurulmayacak");
+            return;
+        }
+    }
+    if let Err(err) = crate::hosting::atomic_write(std::path::Path::new(AUTO_UPGRADES_FILE), wanted.as_bytes(), 0o644) {
+        tracing::warn!(error = %err, "güvenlik güncellemesi ayarı yazılamadı");
     }
 }
 

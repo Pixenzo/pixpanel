@@ -407,6 +407,7 @@ export interface HealthSettings {
   issue_certificates: boolean;
   check_sites: boolean;
   notify: boolean;
+  security_updates: boolean;
 }
 
 export interface HealthAction {
