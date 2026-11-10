@@ -47,9 +47,16 @@ async fn renew_due_certificates(state: &AppState) -> AppResult<()> {
         let mut names = vec![site.domain.clone()];
         names.extend(site.aliases.iter().cloned());
         match site.ssl_mode.as_str() {
-            "letsencrypt" => {
+            mode @ ("letsencrypt" | "letsencrypt_dns" | "letsencrypt_wildcard") => {
                 tracing::info!(domain = %site.domain, "sertifika yenileniyor");
-                start_issue_job(state, None, site.id, &site.domain, names)?;
+                // Sertifika, ilk alındığı doğrulama yöntemiyle yenilenir.
+                let mode: &'static str = match mode {
+                    "letsencrypt_dns" => "letsencrypt_dns",
+                    "letsencrypt_wildcard" => "letsencrypt_wildcard",
+                    _ => "letsencrypt",
+                };
+                let names = crate::api::ssl::issue_names(&site, mode, true);
+                start_issue_job(state, None, site.id, &site.domain, names, mode)?;
             }
             "selfsigned" => {
                 let _guard = state.sys_lock.lock().await;

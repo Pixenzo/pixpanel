@@ -30,6 +30,8 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     /// Telegram bildirimlerinin gönderildiği API adresi (sınama için değiştirilebilir).
     pub telegram_api: String,
+    /// Cloudflare API'sinin adresi (sınama için değiştirilebilir).
+    pub cloudflare_api: String,
 }
 
 impl Default for Config {
@@ -44,6 +46,7 @@ impl Default for Config {
             acme_root_ca: None,
             allowed_origins: Vec::new(),
             telegram_api: "https://api.telegram.org".into(),
+            cloudflare_api: "https://api.cloudflare.com/client/v4".into(),
         }
     }
 }

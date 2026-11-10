@@ -170,6 +170,15 @@ pub fn catalog() -> Vec<Component> {
             Repo::Distro,
         ),
         component(
+            "dns",
+            "DNS sunucusu",
+            "PowerDNS. Alan adlarının DNS kayıtlarını bu sunucuda barındırır.",
+            "web",
+            &["pdns-server", "pdns-backend-sqlite3", "bind9-dnsutils"],
+            Some("pdns.service"),
+            Repo::Distro,
+        ),
+        component(
             "ftp",
             "FTP sunucusu",
             "pure-ftpd. Site başına, o sitenin klasörüne hapsedilmiş FTP hesapları açılır.",

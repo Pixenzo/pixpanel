@@ -15,6 +15,8 @@ const modeLabels: Record<string, string> = {
   selfsigned: "Kendinden imzalı",
   custom: "Yüklenen sertifika",
   letsencrypt: "Let's Encrypt",
+  letsencrypt_dns: "Let's Encrypt (DNS ile doğrulanmış)",
+  letsencrypt_wildcard: "Let's Encrypt (joker sertifika)",
 };
 
 /** Bitiş tarihine kalan süreye göre durum rengi ve metni. */
@@ -98,7 +100,7 @@ function CurrentCertificate({ site, status }: { site: Site; status: SslStatus })
         <dt className="text-ink-2">{t("Veren kurum")}</dt>
         <dd className="min-w-0 break-words">{certificate.self_signed ? t("Kendinden imzalı") : certificate.issuer}</dd>
       </dl>
-      {status.mode === "letsencrypt" && (
+      {status.mode.startsWith("letsencrypt") && (
         <p className="mt-3 text-[13px] text-ink-3">{t("Bitimine 30 gün kala kendiliğinden yenilenir.")}</p>
       )}
       {status.mode === "selfsigned" && (
@@ -129,10 +131,17 @@ function LetsEncryptPanel({ site, mode }: { site: Site; mode: SslStatus["mode"] 
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [includeAliases, setIncludeAliases] = useState(true);
+  // Doğrulama yöntemi: http (80. port), dns (DNS kaydı) ya da wildcard (joker sertifika, DNS ile).
+  const [method, setMethod] = useState<"http" | "dns" | "wildcard">(mode === "letsencrypt_wildcard" ? "wildcard" : mode === "letsencrypt_dns" ? "dns" : "http");
   const [jobId, setJobId] = useState<number | null>(null);
 
   const issue = useMutation({
-    mutationFn: () => api.post<{ job_id: number }>(`/sites/${site.id}/ssl/letsencrypt`, { include_aliases: includeAliases }),
+    mutationFn: () =>
+      api.post<{ job_id: number }>(`/sites/${site.id}/ssl/letsencrypt`, {
+        include_aliases: includeAliases,
+        dns: method === "dns",
+        wildcard: method === "wildcard",
+      }),
     onSuccess: (result) => setJobId(result.job_id),
     onError: (error) => feedback.error(error),
   });
@@ -146,10 +155,34 @@ function LetsEncryptPanel({ site, mode }: { site: Site; mode: SslStatus["mode"] 
   return (
     <Panel title="Let's Encrypt">
       <div className="flex max-w-[68ch] flex-col gap-3">
-        <p className="text-ink-2">
-          {t("Tarayıcıların güvendiği ücretsiz sertifika. Alan adının DNS kaydı bu sunucuyu göstermeli ve 80. port internetten erişilebilir olmalı.")}
-        </p>
-        {site.aliases.length > 0 && (
+        <p className="text-ink-2">{t("Tarayıcıların güvendiği ücretsiz sertifika. Sağlayıcı, alan adının size ait olduğunu aşağıdaki yollardan biriyle doğrular.")}</p>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="sr-only">{t("Doğrulama yöntemi")}</legend>
+          {(
+            [
+              { id: "http", title: t("Web üzerinden doğrula"), hint: t("Alan adının DNS kaydı bu sunucuyu göstermeli ve 80. port internetten erişilebilir olmalı.") },
+              {
+                id: "dns",
+                title: t("DNS kaydıyla doğrula"),
+                hint: t("Gereken kayıt kendiliğinden eklenir ve silinir. Alan adının DNS'i panelde yönetiliyor olmalı (bu sunucuda ya da Cloudflare'de). Site henüz bu sunucuyu göstermiyorsa da çalışır."),
+              },
+              {
+                id: "wildcard",
+                title: t("Joker sertifika (*.{domain})", { domain: site.domain }),
+                hint: t("Alan adını ve bütün alt alan adlarını kapsar. DNS kaydıyla doğrulanır."),
+              },
+            ] as const
+          ).map((option) => (
+            <label key={option.id} className="flex cursor-pointer items-start gap-2.5">
+              <input type="radio" name="le-method" className="mt-1 accent-(--accent)" checked={method === option.id} onChange={() => setMethod(option.id)} />
+              <span>
+                <span className="font-medium">{option.title}</span>
+                <span className="block text-[12.5px] text-ink-3">{option.hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        {site.aliases.length > 0 && method !== "wildcard" && (
           <Checkbox
             label={t("Takma adları da sertifikaya ekle")}
             hint={site.aliases.join(", ")}
@@ -159,7 +192,7 @@ function LetsEncryptPanel({ site, mode }: { site: Site; mode: SslStatus["mode"] 
         )}
         <div>
           <Button variant="primary" loading={issue.isPending} onClick={() => issue.mutate()}>
-            {mode === "letsencrypt"
+            {mode.startsWith("letsencrypt")
               ? t("Sertifikayı şimdi yenile")
               : mode === "none"
                 ? t("Let's Encrypt sertifikası al")

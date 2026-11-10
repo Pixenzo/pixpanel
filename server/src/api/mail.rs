@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/domains", post(create_domain))
         .route("/domains/{id}", get(domain_detail).patch(update_domain).delete(remove_domain))
         .route("/domains/{id}/dns", get(check_dns))
+        .route("/domains/{id}/dns/apply", post(apply_dns))
         .route("/domains/{id}/mailboxes", post(create_mailbox))
         .route("/domains/{id}/aliases", post(create_alias))
         .route("/mailboxes/{id}", patch(update_mailbox).delete(remove_mailbox))
@@ -147,6 +148,10 @@ async fn create_domain(State(state): State<AppState>, user: AuthUser, Json(body)
     })?;
     let id = inserted.ok_or_else(|| AppError::conflict(format!("{domain} için posta zaten açık")))?;
     mail::sync(&state.db).await?;
+    // Alan adının DNS'i panelde yönetiliyorsa posta kayıtları kendiliğinden eklenir.
+    for line in crate::dns::add_mail_records(&state, owner_id, &domain, &mail::hostname(&state.db), mail::DKIM_SELECTOR, &dkim_record).await {
+        tracing::info!(domain = %domain, "DNS: {line}");
+    }
     auth::audit(&state.db, &user, "mail.domain.create", &domain, "");
     Ok(Json(mail::get_domain(&state.db, &user, id)?))
 }
@@ -158,6 +163,8 @@ struct DomainDetail {
     aliases: Vec<MailAlias>,
     dns: Vec<DnsRecord>,
     hostname: String,
+    /// Alan adının DNS'i panelde yönetiliyor mu? Öyleyse kayıtlar tek tıkla eklenebilir.
+    dns_managed: bool,
 }
 
 async fn domain_detail(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<DomainDetail>> {
@@ -172,6 +179,7 @@ async fn domain_detail(State(state): State<AppState>, user: AuthUser, Path(id): 
     }
     let hostname = mail::hostname(&state.db);
     Ok(Json(DomainDetail {
+        dns_managed: crate::dns::zone_for(&state.db, domain.user_id, &domain.domain)?.is_some(),
         dns: mail::dns_records(&domain, &hostname),
         aliases: mail::list_aliases(&state.db, Some(id))?,
         mailboxes,
@@ -186,6 +194,19 @@ async fn check_dns(State(state): State<AppState>, user: AuthUser, Path(id): Path
     let mut records = mail::dns_records(&domain, &mail::hostname(&state.db));
     mail::check_dns(&mut records).await;
     Ok(Json(records))
+}
+
+/// Posta kayıtlarını (MX, SPF, DKIM, DMARC) alan adının panelde yönetilen DNS bölgesine yazar.
+async fn apply_dns(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    let domain = mail::get_domain(&state.db, &user, id)?;
+    if crate::dns::zone_for(&state.db, domain.user_id, &domain.domain)?.is_none() {
+        return Err(AppError::bad("Bu alan adının DNS'i panelde yönetilmiyor; kayıtları DNS sağlayıcınıza elle ekleyin ya da DNS sayfasından bölgeyi bağlayın"));
+    }
+    let report =
+        crate::dns::add_mail_records(&state, domain.user_id, &domain.domain, &mail::hostname(&state.db), mail::DKIM_SELECTOR, &domain.dkim_record).await;
+    auth::audit(&state.db, &user, "mail.domain.dns", &domain.domain, "");
+    Ok(Json(json!({ "report": report })))
 }
 
 #[derive(Deserialize)]

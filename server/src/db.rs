@@ -250,6 +250,23 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX ftp_accounts_site ON ftp_accounts(site_id);
     "#,
+    // 10: DNS bölgeleri ve Cloudflare anahtarları
+    r#"
+    CREATE TABLE dns_zones (
+        id         INTEGER PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+        domain     TEXT NOT NULL UNIQUE,
+        provider   TEXT NOT NULL CHECK (provider IN ('local', 'cloudflare')),
+        cf_zone_id TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX dns_zones_user ON dns_zones(user_id);
+
+    CREATE TABLE cloudflare_tokens (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        token   TEXT NOT NULL
+    );
+    "#,
 ];
 
 #[derive(Clone)]

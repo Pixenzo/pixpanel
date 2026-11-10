@@ -311,7 +311,7 @@ export interface CertInfo {
 }
 
 export interface SslStatus {
-  mode: "none" | "selfsigned" | "custom" | "letsencrypt";
+  mode: "none" | "selfsigned" | "custom" | "letsencrypt" | "letsencrypt_dns" | "letsencrypt_wildcard";
   force_https: boolean;
   hsts: boolean;
   certificate: CertInfo | null;

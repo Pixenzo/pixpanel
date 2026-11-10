@@ -12,6 +12,8 @@ import { AuditPage } from "./pages/Audit";
 import { ComponentsPage } from "./pages/Components";
 import { CronPage } from "./pages/Cron";
 import { DashboardPage } from "./pages/Dashboard";
+import { DnsPage } from "./pages/Dns";
+import { DnsZonePage } from "./pages/DnsZone";
 import { DockerPage } from "./pages/Docker";
 import { DatabasesPage } from "./pages/Databases";
 import { FilesPage } from "./pages/Files";
@@ -72,6 +74,8 @@ function App() {
         {canSites && <Route path="/sites/:id/:section?" element={<SiteDetailPage />} />}
         {can("mail") && <Route path="/mail" element={<MailPage />} />}
         {can("mail") && <Route path="/mail/:id" element={<MailDomainPage />} />}
+        {can("dns") && <Route path="/dns" element={<DnsPage />} />}
+        {can("dns") && <Route path="/dns/:id" element={<DnsZonePage />} />}
         {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
         {can("files") && <Route path="/files" element={<FilesPage />} />}
         {can("cron") && <Route path="/cron" element={<CronPage />} />}

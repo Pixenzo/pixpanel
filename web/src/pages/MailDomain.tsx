@@ -41,6 +41,8 @@ interface DomainDetail {
   aliases: MailAlias[];
   dns: DnsRecord[];
   hostname: string;
+  /** Alan adının DNS'i panelde yönetiliyor mu? */
+  dns_managed: boolean;
 }
 
 type MailboxChanges = Partial<Pick<Mailbox, "quota_mb" | "enabled" | "forward_to" | "forward_keep" | "auto_reply" | "filters">> & { password?: string };
@@ -1144,6 +1146,17 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
     retry: false,
   });
   const records = dns.data ?? detail.dns;
+  const feedback = useFeedback();
+  const [applied, setApplied] = useState<string[] | null>(null);
+  // Bölge panelde yönetiliyorsa kayıtlar tek tıkla eklenir.
+  const apply = useMutation({
+    mutationFn: () => api.post<{ report: string[] }>(`/mail/domains/${detail.domain.id}/dns/apply`),
+    onSuccess: (result) => {
+      setApplied(result.report);
+      void dns.refetch();
+    },
+    onError: (error) => feedback.error(error),
+  });
 
   return (
     <Panel
@@ -1155,6 +1168,30 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
       }
     >
       <div className="flex flex-col gap-4">
+        {detail.dns_managed ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-accent-soft px-3 py-2.5">
+            <p className="max-w-[60ch] text-[13px] text-accent">
+              {t("Bu alan adının DNS'i panelde yönetiliyor; eksik kayıtları sizin yerinize ekleyebiliriz. Farklı değerdeki var olan kayıtlara dokunulmaz.")}
+            </p>
+            <Button size="sm" variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
+              {t("Kayıtları otomatik ekle")}
+            </Button>
+          </div>
+        ) : (
+          <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13px] text-ink-2">
+            {t("Alan adının DNS bölgesini panele eklerseniz (bu sunucuda ya da Cloudflare'de) bu kayıtlar kendiliğinden yazılır.")}{" "}
+            <Link to="/dns" className="font-medium text-accent hover:underline">
+              {t("DNS sayfasına git")}
+            </Link>
+          </p>
+        )}
+        {applied && (
+          <ul className="rounded-md border border-line px-3 py-2 font-mono text-[12.5px] text-ink-2">
+            {applied.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
         <p className="max-w-[75ch] text-ink-2">
           {t("Aşağıdaki kayıtların {domain} alan adının DNS sağlayıcısında tanımlı olması gerekir; aksi hâlde posta alınamaz ya da gönderilen iletiler istenmeyen posta sayılır. Denetim canlı DNS sorgularıyla yapılır ve birkaç saniye sürebilir.", {
             domain: detail.domain.domain,

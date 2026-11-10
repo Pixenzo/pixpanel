@@ -8,6 +8,7 @@ mod auth;
 mod components;
 mod cron;
 mod databases;
+mod dns;
 mod docker;
 mod files;
 mod ftp;
@@ -38,6 +39,7 @@ pub fn router() -> Router<AppState> {
         .nest("/logs", logs::router())
         .nest("/php", php::router())
         .nest("/mail", mail::router())
+        .nest("/dns", dns::router())
         .nest("/redis", redis::router())
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())

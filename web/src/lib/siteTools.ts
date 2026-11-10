@@ -14,6 +14,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  Network,
   HardDriveUpload,
   Mail,
   ShieldCheck,
@@ -36,6 +37,8 @@ export interface SiteTool {
 
 const sslModeLabels: Record<string, string> = {
   letsencrypt: "Let's Encrypt",
+  letsencrypt_dns: "Let's Encrypt",
+  letsencrypt_wildcard: "Let's Encrypt (joker)",
   custom: "Yüklenen sertifika",
   selfsigned: "Kendinden imzalı",
 };
@@ -105,6 +108,9 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
   }
   if (can("mail")) {
     tools.push({ id: "mail", label: t("Posta"), icon: Mail, to: "/mail", status: t("Kutular, takma adlar, filtreler") });
+  }
+  if (can("dns")) {
+    tools.push({ id: "dns", label: t("DNS kayıtları"), icon: Network, to: "/dns", status: t("Bölgeler ve Cloudflare") });
   }
   if (can("ssl")) {
     tools.push({ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck, to: `${base}/ssl`, ...sslStatus(site, summary) });

@@ -219,6 +219,12 @@ async fn create(
         sites::delete_row(&state.db, id)?;
         return Err(err);
     }
+    // Alan adının DNS'i panelde yönetiliyorsa adres kaydı kendiliğinden eklenir.
+    let mut names = vec![site.domain.clone()];
+    names.extend(site.aliases.iter().cloned());
+    for line in crate::dns::add_site_records(&state, site.user_id, &names).await {
+        tracing::info!(domain = %site.domain, "DNS: {line}");
+    }
     auth::audit(&state.db, &user, "site.create", &domain_name, &site.kind);
     Ok(Json(site))
 }

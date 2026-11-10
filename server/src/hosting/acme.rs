@@ -1,9 +1,11 @@
 //! ACME istemcisi: Let's Encrypt (ya da uyumlu bir sağlayıcı) üzerinden
 //! ücretsiz sertifika alma.
 //!
-//! Doğrulama HTTP-01 ile yapılır: sağlayıcının istediği dosya, bütün
-//! sitelerin nginx yapılandırmasında ortak olan
-//! `/.well-known/acme-challenge/` klasörüne yazılır.
+//! Doğrulama iki yoldan biriyle yapılır:
+//! - HTTP-01: sağlayıcının istediği dosya, bütün sitelerin nginx yapılandırmasında
+//!   ortak olan `/.well-known/acme-challenge/` klasörüne yazılır.
+//! - DNS-01: istenen değer alan adının panelde yönetilen DNS bölgesine TXT kaydı
+//!   olarak yazılır. Joker (`*.alan`) sertifikalar yalnızca bu yolla alınabilir.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +16,7 @@ use instant_acme::{
 
 use crate::config::Config;
 use crate::db::Db;
+use crate::dns::AcmeSolver;
 use crate::error::{AppError, AppResult};
 use crate::hosting::atomic_write;
 use crate::hosting::nginx::ACME_ROOT;
@@ -68,11 +71,22 @@ fn challenge_path(token: &str) -> AppResult<PathBuf> {
 }
 
 /// Verilen alan adları için sertifika alır; (sertifika zinciri, özel anahtar) döner.
-pub async fn issue(ctx: &JobCtx, db: &Db, cfg: &Config, names: &[String]) -> AppResult<(String, String)> {
+///
+/// `dns` verilirse doğrulama DNS üzerinden yapılır; kayıtlar iş bitince silinir.
+pub async fn issue(ctx: &JobCtx, db: &Db, cfg: &Config, names: &[String], mut dns: Option<AcmeSolver>) -> AppResult<(String, String)> {
     ctx.log(format!("Sertifika isteniyor: {}", names.join(", ")));
-    let account = account(db, cfg).await?;
     let identifiers: Vec<Identifier> = names.iter().map(|name| Identifier::Dns(name.clone())).collect();
-    let mut order = account.new_order(&NewOrder::new(&identifiers)).await.map_err(acme_error)?;
+    let mut order = match account(db, cfg).await?.new_order(&NewOrder::new(&identifiers)).await {
+        Ok(order) => order,
+        // Kayıtlı hesap sağlayıcıda artık yoksa (silinmiş ya da sağlayıcı sıfırlanmış)
+        // yeni bir hesap açılıp istek bir kez yinelenir.
+        Err(err) if err.to_string().contains("accountDoesNotExist") => {
+            ctx.log("Kayıtlı sertifika hesabı sağlayıcıda bulunamadı; yeni hesap açılıyor");
+            db.call(|conn| conn.execute("DELETE FROM settings WHERE key = ?1", [format!("acme_account:{}", cfg.acme_directory)]))?;
+            account(db, cfg).await?.new_order(&NewOrder::new(&identifiers)).await.map_err(acme_error)?
+        }
+        Err(err) => return Err(acme_error(err)),
+    };
 
     let mut challenge_files: Vec<PathBuf> = Vec::new();
     let outcome = async {
@@ -80,6 +94,17 @@ pub async fn issue(ctx: &JobCtx, db: &Db, cfg: &Config, names: &[String]) -> App
         while let Some(result) = authorizations.next().await {
             let mut authorization = result.map_err(acme_error)?;
             if authorization.status == AuthorizationStatus::Valid {
+                continue;
+            }
+            if let Some(solver) = dns.as_mut() {
+                let mut challenge = authorization
+                    .challenge(ChallengeType::Dns01)
+                    .ok_or_else(|| AppError::internal("sağlayıcı DNS doğrulaması sunmuyor"))?;
+                let name = challenge.identifier().to_string();
+                solver.publish(&name, &challenge.key_authorization().dns_value()).await?;
+                ctx.log(format!("{name} için DNS doğrulama kaydı eklendi; yayılması bekleniyor"));
+                solver.wait().await;
+                challenge.set_ready().await.map_err(acme_error)?;
                 continue;
             }
             let mut challenge = authorization
@@ -113,6 +138,9 @@ pub async fn issue(ctx: &JobCtx, db: &Db, cfg: &Config, names: &[String]) -> App
 
     for path in challenge_files {
         let _ = std::fs::remove_file(path);
+    }
+    if let Some(solver) = dns.as_mut() {
+        solver.cleanup().await;
     }
     outcome
 }

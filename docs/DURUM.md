@@ -1,6 +1,6 @@
 # Durum
 
-Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, Git yayınlama, Docker, posta)
+Son güncelleme: 10.11.2026 (veritabanı araçları, web postası, Redis, Node.js, vekil kuralları, FTP, DNS ve Cloudflare eklendi)
 
 ## Kararlar
 
@@ -47,6 +47,17 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
   - Hesaplar panelin veritabanında; her değişiklikte `/etc/pixpanel/mail/` altındaki düz eşleme dosyaları (texthash + Dovecot passwd-file) baştan üretilir. Postalar `/var/vmail/<alan>/<kutu>` altında, `vmail` kullanıcısıyla.
   - Yönetici dışındakiler yalnızca kendi sitelerinin alan adına posta açabilir (başkasının adresine giden postayı ele geçirmeyi önler).
   - Kimliği doğrulanan kullanıcı yalnızca kendi adresinden (ve hedefi olduğu takma adlardan) gönderebilir.
+- Veritabanı araçları: MariaDB için phpMyAdmin, PostgreSQL için Adminer. Veritabanı satırından tek tıkla açılır; panel o veritabanına özel, 4 saat sonra silinen geçici bir hesap (`pxt_…`) oluşturur ve kimlik bilgisini tek kullanımlık bir anahtar dosyasıyla araca geçirir. Araçlar yalnızca 127.0.0.1:8446'da dinler; dışarıya panelin `/tools/` yolu üzerinden, panel oturumu denetlenerek açılır.
+- Web postası: Roundcube, panel adresinin `/webmail/` yolunda (kendi SQLite veritabanıyla). Kutu sahipleri panel hesabı olmadan girer.
+- Redis yönetimi (yalnızca yönetici): durum, bellek sınırı ve ilke, parola, AOF, anahtar tarayıcı, boşaltma. Redis ile panelin kendi küçük RESP istemcisi konuşur.
+- Node.js uygulamaları: sürümler nodejs.org'un resmî derlemelerinden (sağlama toplamı doğrulanarak) `/opt/pixpanel/node/<sürüm>` altına kurulur; site başına `pixpanel-node-<kimlik>.service`, başlatma komutu, ortam değişkenleri, bellek sınırı, npm komutları, uygulama günlüğü. Port = 20000 + site kimliği.
+- Yol bazlı vekil kuralları: sitenin bir yolunu başka bir adrese (ör. Docker konteyneri) iletme; önek atma ve WebSocket seçenekleri.
+- Alt alan adı ekleme: site kartından ya da çalışma alanından; listede üst sitenin altında gösterilir.
+- FTP: pure-ftpd, site başına sanal hesaplar; hesap sitenin klasörüne ya da alt klasörüne hapsedilir, dosyalara sitenin kullanıcısıyla erişir. FTPS açık; sistem kullanıcıları FTP ile giremez.
+- DNS: bölgeler bu sunucudaki PowerDNS'te ya da Cloudflare'de durabilir; kayıtlar sağlayıcının API'siyle okunur ve yazılır (A, AAAA, CNAME, MX, TXT, NS, SRV, CAA).
+  - Site eklenince A kaydı, posta açılınca MX/SPF/DKIM/DMARC kayıtları kendiliğinden eklenir (farklı değerdeki var olan kayıtlara dokunulmaz).
+  - Let's Encrypt için DNS doğrulaması (DNS-01) ve joker sertifika: `_acme-challenge` kaydı eklenir, iş bitince silinir.
+  - Cloudflare: API anahtarıyla bağlanma, kayıtlarda vekil (turuncu bulut) seçeneği, SSL kipi, geliştirme kipi, önbellek temizleme; nginx'te gerçek ziyaretçi adresi (yalnızca Cloudflare aralıklarına güvenilir).
 - Arayüz düzeni (Plesk "power user" görünümünden esinle): ana sayfa siteler; her site, araçlarını ve o anki durumlarını gösteren bir kart. Site çalışma alanında sol bölüm menüsü. Ctrl+K ile site/araç/sayfa araması. Koyu yan menü.
 - Arayüz: giriş, genel bakış, siteler ve site ayrıntısı (genel, PHP, vekil, SSL, gelişmiş), veritabanları, dosyalar, zamanlı görevler, günlükler, bileşenler, servisler, süreçler, terminal, görevler, kullanıcılar, denetim günlüğü, hesabım; açık ve koyu tema.
 
@@ -63,6 +74,12 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 - Git: yayın anahtarıyla SSH üzerinden çekme, betiğin site kullanıcısıyla çalışması, web kancasında başka dalın atlanması ve art arda gelen çağrıların sıraya alınması, eski sürüme dönüş, hatalı betikte yayının başarısız sayılıp e-posta ve Telegram bildirimi gitmesi; `ext::`, `--upload-pack`, `file://`, parolalı adres ve seçenek gibi dal adlarının reddedildiği.
 - Docker: konteyner ve compose yığını oluşturma/kaldırma; `--privileged` gibi seçenek enjeksiyonu ve birim kaçışı denemelerinin reddedildiği; ortam değişkeni değerlerinin görev günlüğüne yazılmadığı.
 - Posta (`scripts/e2e/mail.sh`): kimlikli gönderim (587/465), IMAP, takma ad dağıtımı, dışarıdan teslim, açık aktarmanın ve başkası adına gönderimin reddi, filtreyle klasöre taşıma, otomatik yanıt, kopyasız yönlendirme, hepsini yakala, kutuyu kapatınca oturumun hemen reddedilmesi, parola değişimi; tırnak/satır sonu/yol kaçışı içeren kural ve adların reddedildiği ya da zararsız kaldığı.
+- Veritabanı araçları (`scripts/e2e/dbtools.sh`): phpMyAdmin ve Adminer'in parola sormadan açıldığı; panel oturumu olmadan 401, anahtarın ikinci kullanımda 403 verdiği; geçici hesabın yalnızca o veritabanında yetkili olduğu ve süresi dolunca silindiği; araç sunucusunun dışarıdan erişilemediği.
+- Web postası (`webmail.sh`): giriş sayfasının panel oturumu olmadan açıldığı, kutu adresi ve parolasıyla oturum açılıp gelen kutusunun göründüğü, yanlış parolanın reddedildiği.
+- Redis (`dbtools.sh`): ayarların uygulanıp dosyaya yazıldığı, parola koyup kaldırma, anahtar tarayıcı; anahtar adına gömülen komutun çalışmadığı.
+- Node.js ve vekil kuralları (`node.sh`): sürüm kurulumu, örnek uygulamanın yayına girmesi, ortam değişkenlerinin bozulmadan ulaşması, npm betiği, başlat/durdur, önekli iletim; satır sonu ve birim dosyasına sızma denemelerinin reddedildiği.
+- FTP (`ftp.sh`): bileşenin panelden sıfırdan kurulumu, FTPS ile oturum, hapis, yüklenen dosyanın sahipliği ve web'den sunulması, alt klasör hesabı; sistem kullanıcısının giremediği; kök dışını gösteren sembolik bağın reddedildiği.
+- DNS (`dns.sh`): yerel bölgede kayıtların gerçekten yayınlandığı (`dig` ile), otomatik site ve posta kayıtları, kayıt ekleme/güncelleme/silme, uzun DKIM kaydının parçalı yayını, joker sertifikanın DNS doğrulamasıyla Pebble'dan alındığı, gerçek ziyaretçi adresi ayarı. Cloudflare bölümü `mock_cloudflare.py` sahte API'sine karşı sınandı.
 - Müşteri hesabının başka hesabın sitesini, veritabanını ve bileşen sayfasını göremediği.
 - Dosya yöneticisinde `..`, gerçek sistem yolu ve `/etc/passwd` dosyasına verilen sembolik bağın "bulunamadı" döndüğü (hapis çalışıyor).
 - Kullanıcının ev klasörünün üst düzeyini (`sites` dahil) değiştiremediği.
@@ -72,6 +89,8 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 ## Test ortamı notları
 
 - Uçtan uca sınamalar: `scripts/e2e/features.sh` (PHP genel ayarları, bildirimler, Git yayınlama, Docker). Test makinesine kopyalanıp `PX_USER=… PX_PASS=… bash features.sh [php git docker]` ile çalışır; `mocks.py` sahte Telegram (9911) ve SMTP (2525) sunucusudur, `/etc/pixpanel/config.toml` içindeki `telegram_api` ona bakar.
+- `/etc/pixpanel/config.toml` içinde sınama adresleri tanımlı: `telegram_api` (9911) ve `cloudflare_api` (9912, `scripts/e2e/mock_cloudflare.py`); canlıda bu satırlar olmamalı.
+- DNS sınaması Pebble'ı geçici olarak yerel DNS sunucusuna yöneltir (`-dnsserver 127.0.0.1:53`) ve iş bitince geri alır; `deneme.test` yerel bölgesi ve joker sertifikası yerinde duruyor.
 - Posta sınaması `scripts/e2e/mail.sh` + `mailflow.py`; test makinesinde `deneme.test` için örnek kutular (bilgi, destek) duruyor. Makinenin gerçek bir alan adı ve açık 25. portu olmadığından dış sunucularla alışveriş (gerçek teslim, SPF/DKIM doğrulaması) denenmedi.
 - Git sınaması için makinede `gitsrv` kullanıcısı ve `/home/gitsrv/demo.git` deposu var.
 
@@ -80,14 +99,19 @@ Son güncelleme: 10.11.2026 (PixPanel adı, yeni arayüz, PHP genel ayarları, G
 
 ## Sıradaki (öncelik sırasıyla)
 
-1. Posta eksikleri: web postası (Roundcube ya da SnappyMail), posta sunucusu adı için kendiliğinden Let's Encrypt, karantina (şu an şüpheli iletiler Junk klasörüne gider), kutu sahibinin kendi kurallarını yönetebileceği giriş, bayi/hesap başına kutu sınırı.
-2. Güvenlik duvarı (nftables), fail2ban.
-3. DNS (PowerDNS), FTP (pure-ftpd).
-4. Node.js uygulamaları, phpMyAdmin.
-5. Yedekleme.
-6. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
+1. Güvenlik duvarı (nftables), fail2ban. FTP'nin pasif portları (30000–30099), posta ve DNS portları için kurallar buraya bağlanacak.
+2. Yedekleme (siteler, veritabanları, posta; uzak hedefler).
+3. Posta eksikleri: posta sunucusu adı için kendiliğinden Let's Encrypt, karantina (şu an şüpheli iletiler Junk klasörüne gider), kutu sahibinin kendi kurallarını ve parolasını web postasından yönetebilmesi, hesap başına kutu sınırı.
+4. DNS eksikleri: DNSSEC, ikincil ad sunucusu (AXFR), bölge içe aktarma, Cloudflare'de SRV/CAA yazma, "yalnızca Cloudflare" kipi.
+5. İki adımlı doğrulama, İngilizce çeviri, kurulum betiği, OpenAPI belgesi.
 
 ## Bilinen eksikler
+
+- Cloudflare bütünleşmesi gerçek bir Cloudflare hesabıyla denenmedi; yalnızca API'nin belgelenen biçimini taklit eden sahte sunucuya karşı sınandı.
+- Web postası, phpMyAdmin, Adminer ve PowerDNS paketleri test makinesine elle kuruldu; panelden sıfırdan kurulumları (Bileşenler sayfası) ayrıca denenmeli. FTP ve Node.js panelden kurularak sınandı.
+- Redis'te hesaplar arası yalıtım yok; bu yüzden yalnızca yönetici yönetebiliyor. Hesap başına Redis (ACL ya da ayrı örnek) yok.
+- Node.js sürümleri panelden güncellenemiyor (yeniden kurmak en son yamayı getirir); uygulamalar güncelleme sonrası elle yeniden başlatılmalı.
+- Web postasında kullanıcı kendi parolasını ve filtrelerini değiştiremiyor (panelden yapılır).
 
 - Posta bileşeninin sıfırdan kurulumu (Bileşenler sayfasından) denenmedi; test makinesinde paketler elle kuruldu, yapılandırma `POST /mail/setup` ile uygulandı.
 - Docker, PHP, Ayarlar ve Posta sayfalarının arayüzü tarayıcıda açılıp gözle denetlendi ama her düğmesi tek tek tıklanarak sınanmadı; arka uçları `scripts/e2e` ile sınandı.

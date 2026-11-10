@@ -103,6 +103,12 @@ struct LetsEncryptBody {
     /// Takma adlar da sertifikaya eklensin mi?
     #[serde(default = "default_true")]
     include_aliases: bool,
+    /// Doğrulama DNS üzerinden yapılsın mı? (Alan adının DNS'i panelde yönetiliyor olmalı.)
+    #[serde(default)]
+    dns: bool,
+    /// Joker sertifika (`*.alan`); her zaman DNS ile doğrulanır.
+    #[serde(default)]
+    wildcard: bool,
 }
 
 fn default_true() -> bool {
@@ -120,19 +126,39 @@ async fn letsencrypt(
     if !nginx::is_installed() {
         return Err(AppError::bad("nginx kurulu değil"));
     }
-    let names = if body.include_aliases { site_names(&site) } else { vec![site.domain.clone()] };
-    let job_id = start_issue_job(&state, Some(user.id), site.id, &site.domain, names)?;
+    let mode = if body.wildcard {
+        "letsencrypt_wildcard"
+    } else if body.dns {
+        "letsencrypt_dns"
+    } else {
+        "letsencrypt"
+    };
+    if mode != "letsencrypt" && crate::dns::zone_for(&state.db, site.user_id, &site.domain)?.is_none() {
+        return Err(AppError::bad("DNS ile doğrulama için alan adının DNS'i panelde yönetiliyor olmalı (DNS sayfasından bölgeyi ekleyin ya da Cloudflare'e bağlayın)"));
+    }
+    let names = issue_names(&site, mode, body.include_aliases);
+    let job_id = start_issue_job(&state, Some(user.id), site.id, &site.domain, names, mode)?;
     auth::audit(&state.db, &user, "ssl.letsencrypt", &site.domain, "");
     Ok(Json(json!({ "job_id": job_id })))
 }
 
+/// Sertifikaya yazılacak adlar: joker kipinde alan adı ve `*.alan adı`.
+pub fn issue_names(site: &Site, mode: &str, include_aliases: bool) -> Vec<String> {
+    if mode == "letsencrypt_wildcard" {
+        return vec![site.domain.clone(), format!("*.{}", site.domain)];
+    }
+    if include_aliases { site_names(site) } else { vec![site.domain.clone()] }
+}
+
 /// Sertifika alma görevini başlatır. Otomatik yenileme de bunu kullanır.
+/// `mode`: `letsencrypt` (HTTP), `letsencrypt_dns` ya da `letsencrypt_wildcard`.
 pub fn start_issue_job(
     state: &AppState,
     user_id: Option<i64>,
     site_id: i64,
     domain: &str,
     names: Vec<String>,
+    mode: &'static str,
 ) -> AppResult<i64> {
     let title = format!("{domain} için Let's Encrypt sertifikası");
     let state = state.clone();
@@ -140,11 +166,18 @@ pub fn start_issue_job(
     let domain = domain.to_string();
     jobs.start("ssl.letsencrypt", &title, user_id, move |ctx| async move {
         let outcome = async {
-            let (chain, private_key) = acme::issue(&ctx, &state.db, &state.cfg, &names).await?;
+            let solver = match mode {
+                "letsencrypt" => None,
+                _ => {
+                    let owner = sites::load(&state.db, site_id)?.ok_or_else(|| AppError::bad("Site bu sırada silinmiş"))?.user_id;
+                    Some(crate::dns::AcmeSolver::new(state.clone(), owner))
+                }
+            };
+            let (chain, private_key) = acme::issue(&ctx, &state.db, &state.cfg, &names, solver).await?;
             // Sertifika alınırken site değişmiş ya da silinmiş olabilir; güncel kayıt okunur.
             let _guard = state.sys_lock.lock().await;
             let site = sites::load(&state.db, site_id)?.ok_or_else(|| AppError::bad("Site bu sırada silinmiş"))?;
-            sites::activate_ssl(&state.db, &site, "letsencrypt", &chain, &private_key).await?;
+            sites::activate_ssl(&state.db, &site, mode, &chain, &private_key).await?;
             ctx.log("Sertifika kuruldu; site artık HTTPS ile açılıyor");
             Ok(())
         }

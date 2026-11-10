@@ -8,6 +8,7 @@ mod db;
 mod dbms;
 mod dbtools;
 mod deploy;
+mod dns;
 mod error;
 mod fsop;
 mod hosting;
