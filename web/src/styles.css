@@ -221,7 +221,31 @@
     padding-top: 0.25rem;
   }
 
-  .stack-table td:empty {
+  /* Seçim kutusuyla başlayan satırlarda kutu kartın sol kenarında durur, başlık ikinci hücredir. */
+  .stack-table tr:has(> td:first-child > input[type="checkbox"]:only-child) {
+    position: relative;
+    padding-left: 3rem;
+  }
+
+  .stack-table tr > td:first-child:has(> input[type="checkbox"]:only-child) {
+    position: absolute;
+    top: 0.8rem;
+    left: 1rem;
+    padding: 0;
+  }
+
+  .stack-table td:first-child:is([data-blank], :has(> input[type="checkbox"]:only-child)) + td {
+    justify-content: flex-start;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .stack-table td:first-child:is([data-blank], :has(> input[type="checkbox"]:only-child)) + td::before {
+    content: none;
+  }
+
+  .stack-table td:empty,
+  .stack-table td[data-blank] {
     display: none;
   }
 }

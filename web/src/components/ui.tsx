@@ -351,6 +351,9 @@ export function Table({ children, className, scroll }: { children: ReactNode; cl
         Array.from(row.children).forEach((cell, index) => {
           const text = labels[index] ?? "";
           if (cell.getAttribute("data-label") !== text) cell.setAttribute("data-label", text);
+          // İçeriği olmayan hücre kartta boş bir satır bırakmasın.
+          const blank = (cell.textContent ?? "").trim() === "" && !cell.querySelector("button, a, input, select, svg, img, [role]");
+          cell.toggleAttribute("data-blank", blank);
         });
       }
     };

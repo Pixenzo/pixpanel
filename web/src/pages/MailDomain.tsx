@@ -1394,7 +1394,7 @@ export function MailDomainPage() {
       </header>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <nav aria-label={t("Posta bölümleri")} className="-mx-1 flex gap-1 overflow-x-auto px-1 lg:sticky lg:top-18 lg:mx-0 lg:w-52 lg:shrink-0 lg:flex-col lg:gap-px lg:overflow-visible lg:px-0">
+        <nav aria-label={t("Posta bölümleri")} className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 lg:sticky lg:top-18 lg:mx-0 lg:w-52 lg:shrink-0 lg:flex-col lg:gap-px lg:overflow-visible lg:px-0">
           {sections.map((item) => (
             <Link
               key={item.id}

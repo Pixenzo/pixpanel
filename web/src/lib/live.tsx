@@ -1,5 +1,9 @@
 // Canlı olay akışı: sunucudan tek bir kalıcı bağlantıyla gelen olayları sorgu
 // önbelleğine işler. Sayfalar yoklamak yerine bu akışla güncel kalır.
+//
+// Bağlantı sekmeler arasında paylaşılır: yalnızca bir sekme ("önder") sunucuyu dinler
+// ve olayları öteki sekmelere dağıtır. Tarayıcılar HTTP/1.1'de aynı adrese en çok altı
+// bağlantı açtığından, her sekmenin kendi akışı olsaydı yedinci sekme hiç yüklenmezdi.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -21,6 +25,9 @@ type LiveEvent =
   | { type: "job"; job: JobInfo }
   | { type: "changed"; area: string };
 
+/** Sekmeler arası iletiler: önder olayları ve durumunu yayar, yeni açılan sekme durumu sorar. */
+type Wire = { kind: "event"; event: LiveEvent } | { kind: "state"; state: LiveState } | { kind: "ask" };
+
 const LiveContext = createContext<LiveState>("connecting");
 
 /** Akışın kendisinin güncel tuttuğu sorgular; kaynak değişince yeniden istenmezler. */
@@ -29,6 +36,105 @@ const STREAMED_KEYS = new Set(["me", "overview", "metrics"]);
 const REFRESH_DELAY_MS = 250;
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 15000;
+const CHANNEL = "pixpanel-live";
+
+/**
+ * Olay akışını başlatır ve durdurma işlevini döner. Tarayıcı destekliyorsa bağlantı
+ * sekmeler arasında paylaşılır; desteklemiyorsa bu sekme kendi bağlantısını açar.
+ */
+function startTransport(onEvent: (event: LiveEvent) => void, onState: (state: LiveState) => void): () => void {
+  const shared = "locks" in navigator && "BroadcastChannel" in window;
+  const channel = shared ? new BroadcastChannel(CHANNEL) : null;
+  let source: EventSource | null = null;
+  let retryTimer: number | undefined;
+  let retryDelay = RETRY_MIN_MS;
+  let leading = !shared;
+  let current: LiveState = "connecting";
+  let closed = false;
+
+  const setState = (state: LiveState) => {
+    current = state;
+    onState(state);
+    if (leading) channel?.postMessage({ kind: "state", state } satisfies Wire);
+  };
+
+  const connect = () => {
+    if (closed) return;
+    source = new EventSource("/api/v1/events");
+    source.onmessage = (message) => {
+      let event: LiveEvent;
+      try {
+        event = JSON.parse(message.data as string) as LiveEvent;
+      } catch {
+        return;
+      }
+      if (event.type === "hello") {
+        retryDelay = RETRY_MIN_MS;
+        setState("live");
+      }
+      onEvent(event);
+      channel?.postMessage({ kind: "event", event } satisfies Wire);
+    };
+    source.onerror = () => {
+      // Tarayıcının kendi yeniden denemesi hata türünü ayırt edemediği için bağlantı
+      // elle, artan aralıklarla yeniden kurulur.
+      source?.close();
+      setState("offline");
+      window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+    };
+  };
+
+  // Sekme arka plandayken kopan bağlantı, sekmeye dönülünce beklemeden yeniden kurulur.
+  const reconnectNow = () => {
+    if (leading && document.visibilityState === "visible" && source?.readyState === EventSource.CLOSED) {
+      window.clearTimeout(retryTimer);
+      retryDelay = RETRY_MIN_MS;
+      connect();
+    }
+  };
+  document.addEventListener("visibilitychange", reconnectNow);
+  window.addEventListener("online", reconnectNow);
+
+  let release: () => void = () => {};
+  if (channel) {
+    channel.onmessage = (message: MessageEvent<Wire>) => {
+      const wire = message.data;
+      if (leading) {
+        if (wire.kind === "ask") channel.postMessage({ kind: "state", state: current } satisfies Wire);
+      } else if (wire.kind === "event") {
+        onEvent(wire.event);
+      } else if (wire.kind === "state") {
+        current = wire.state;
+        onState(wire.state);
+      }
+    };
+    channel.postMessage({ kind: "ask" } satisfies Wire);
+    // Kilidi alan sekme önder olur; sekme kapanınca kilit düşer ve sıradaki sekme devralır.
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void navigator.locks.request(CHANNEL, () => {
+      if (closed) return;
+      leading = true;
+      connect();
+      return held;
+    });
+  } else {
+    connect();
+  }
+
+  return () => {
+    closed = true;
+    source?.close();
+    window.clearTimeout(retryTimer);
+    document.removeEventListener("visibilitychange", reconnectNow);
+    window.removeEventListener("online", reconnectNow);
+    release();
+    channel?.close();
+  };
+}
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -41,12 +147,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   latest.current = { feedback, navigate, userId: me.id };
 
   useEffect(() => {
-    let source: EventSource | null = null;
-    let retryTimer: number | undefined;
     let refreshTimer: number | undefined;
-    let retryDelay = RETRY_MIN_MS;
     let wasLive = false;
-    let closed = false;
+
+    const refreshAll = () => void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "me" });
 
     const refreshVisible = () => {
       window.clearTimeout(refreshTimer);
@@ -66,7 +170,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       if (job.status === "running") return;
       // Biten görev çoğunlukla bir şeyleri değiştirmiştir (bileşen kuruldu, yedek alındı...).
       refreshVisible();
-      if (job.user_id !== latest.current.userId) return;
+      // Bildirimi yalnızca görevi başlatan kişi, o da baktığı sekmede görür.
+      if (job.user_id !== latest.current.userId || document.visibilityState !== "visible") return;
       if (job.status === "success") latest.current.feedback.success(t("{title}: tamamlandı", { title: job.title }));
       else latest.current.feedback.error(new Error(t("{title}: başarısız oldu. Ayrıntı Görevler sayfasında.", { title: job.title })));
     };
@@ -80,17 +185,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       });
     };
 
-    const handle = (event: LiveEvent) => {
+    const onEvent = (event: LiveEvent) => {
       switch (event.type) {
         case "hello":
           // Kopukluk sırasında kaçan olaylar olabilir; görünen her şey tazelenir.
-          if (wasLive) void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+          if (wasLive) refreshAll();
           wasLive = true;
-          retryDelay = RETRY_MIN_MS;
-          setState("live");
           break;
         case "resync":
-          void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+          refreshAll();
           break;
         case "metrics":
           onMetrics(event.sample);
@@ -104,46 +207,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const connect = () => {
-      if (closed) return;
-      source = new EventSource("/api/v1/events");
-      source.onmessage = (message) => {
-        try {
-          handle(JSON.parse(message.data as string) as LiveEvent);
-        } catch {
-          // Tanınmayan olay yok sayılır; eski arayüz yeni sunucuyla da çalışabilsin.
-        }
-      };
-      source.onerror = () => {
-        // Tarayıcının kendi yeniden denemesi hata türünü ayırt edemediği için bağlantı
-        // elle, artan aralıklarla yeniden kurulur.
-        source?.close();
-        setState("offline");
-        window.clearTimeout(retryTimer);
-        retryTimer = window.setTimeout(connect, retryDelay);
-        retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
-      };
-    };
-
-    // Sekme arka plandayken kopan bağlantı, sekmeye dönülünce beklemeden yeniden kurulur.
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && source?.readyState === EventSource.CLOSED) {
-        window.clearTimeout(retryTimer);
-        retryDelay = RETRY_MIN_MS;
-        connect();
-      }
-    };
-
-    connect();
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", onVisible);
+    const stop = startTransport(onEvent, (next) => {
+      if (next === "live") wasLive = true;
+      setState(next);
+    });
     return () => {
-      closed = true;
-      source?.close();
-      window.clearTimeout(retryTimer);
+      stop();
       window.clearTimeout(refreshTimer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", onVisible);
     };
   }, [queryClient]);
 

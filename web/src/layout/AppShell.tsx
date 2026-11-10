@@ -49,7 +49,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
                   onClick={onNavigate}
                   className={({ isActive }) =>
                     classNames(
-                      "flex h-8.5 items-center gap-2.5 rounded-md px-2.5 font-medium transition-colors outline-offset-[-2px]",
+                      "flex h-8.5 items-center gap-2.5 rounded-md px-2.5 font-medium transition-colors outline-offset-[-2px] max-lg:h-11 max-lg:text-[15px]",
                       isActive ? "bg-rail-raised text-white" : "text-rail-ink-2 hover:bg-rail-raised/60 hover:text-rail-ink",
                     )
                   }

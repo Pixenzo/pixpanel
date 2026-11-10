@@ -93,7 +93,7 @@ export function ProcessesPage() {
           }
           actions={<span className="tabular text-[13px] text-ink-3">{t("{count} süreç", { count: rows.length })}</span>}
         >
-          <Table>
+          <Table scroll>
             <thead>
               <tr>
                 <Th align="right">{sortButton("pid")}</Th>

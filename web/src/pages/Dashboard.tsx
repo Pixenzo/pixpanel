@@ -147,7 +147,7 @@ function HostFacts({ overview }: { overview: Overview }) {
 }
 
 function TopProcesses() {
-  const { data } = useQuery({
+  const { data, isPending } = useQuery({
     queryKey: ["processes"],
     queryFn: () => api.get<Process[]>("/system/processes"),
     refetchInterval: 5000,
@@ -163,7 +163,8 @@ function TopProcesses() {
         </Link>
       }
     >
-      <Table>
+      {isPending && <LoadingBlock />}
+      <Table className={isPending ? "hidden" : undefined}>
         <thead>
           <tr>
             <Th>{t("Süreç")}</Th>

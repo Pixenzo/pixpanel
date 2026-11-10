@@ -11,7 +11,7 @@ const SECURITY_PAGES = [
 
 export function SecurityTabs() {
   return (
-    <nav aria-label={t("Güvenlik")} className="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line">
+    <nav aria-label={t("Güvenlik")} className="no-scrollbar mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line">
       {SECURITY_PAGES.map((page) => (
         <NavLink
           key={page.to}
