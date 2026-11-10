@@ -98,6 +98,13 @@ Bu kurallar her paketin brifine eklenir.
 - **Disk kotası kararı:** dosya sistemi kotası LXC'de güvenilir değil; panel `du` ile düzenli ölçer, sınır aşılınca uyarır ve yüklemeyi/yeni kaynak açmayı engeller ("yumuşak kota"). Gerçek kota ayrı bir iş.
 - **Kabul:** sınırdaki hesap yeni site açamaz; bayi kendi müşterilerine kendi sınırını aşan paket veremez.
 
+### 8a. Hesap başına Redis — O, sistem katmanı + arayüz (8 ile birlikte)
+
+- **Karar (10.11.2026):** ACL/önek yerine hesap başına ayrı Redis örneği. Site başına değil hesap başına; siteler veritabanı numarasıyla ayrılır.
+- **Kapsam:** isteğe bağlı açılır ("Redis'i aç"); `pixpanel-redis-<hesap>.service` hesabın kendi kullanıcısıyla çalışır (Node.js birimleriyle aynı düzen); bağlantı unix soketiyle (`/run/pixpanel-redis/<hesap>/redis.sock`, dosya izniyle yalnız o hesap), parola yok. İstenirse yalnız sunucu içinden erişilen port + üretilmiş parola (Docker'daki uygulamalar için; varsayılan kapalı). Bellek sınırı paketten gelir, dolunca en eski önbellek atılır.
+- **Arayüz:** hazır bağlantı bilgisi (Laravel `.env`, WordPress `wp-config.php`, soket yolu), kullanım çubuğu; mevcut tarayıcı ve konsol hesabın kendi örneğine bağlanır. Ortak Redis yöneticiye kalır.
+- **Kabul:** bir hesap diğerinin anahtarlarını göremez; bellek sınırını dolduran hesap başkasını etkilemez; kapatınca süreç ve veri kalkar.
+
 ### 9. Hesaplara SFTP ve SSH — O, sistem katmanı
 
 - **Kapsam:** hesap başına SFTP (hapisli; ev klasörü düzeni buna hazır) ve isteğe bağlı kabuk erişimi; açık anahtar yönetimi; `sshd_config.d` altında panelin kendi dosyası; panelde hesap terminali (bugün yalnızca yönetici).
