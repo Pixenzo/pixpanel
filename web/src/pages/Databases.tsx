@@ -100,9 +100,24 @@ function HostField({ value, onChange }: { value: string; onChange: (next: string
   );
 }
 
-function CreateDatabaseModal({ engine, prefix, onClose }: { engine: DbEngine; prefix: string; onClose: () => void }) {
+function CreateDatabaseModal({
+  initialEngine,
+  engines,
+  prefix,
+  onClose,
+  onCreated,
+}: {
+  /** Pencere açıldığında seçili gelen tür (o an bakılan sekme). */
+  initialEngine: DbEngine;
+  /** Kurulu ve çalışan veritabanı türleri. */
+  engines: { id: DbEngine; label: string }[];
+  prefix: string;
+  onClose: () => void;
+  onCreated: (engine: DbEngine) => void;
+}) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
+  const [engine, setEngine] = useState<DbEngine>(initialEngine);
   const [name, setName] = useState(prefix);
   const [withUser, setWithUser] = useState(true);
   const [userName, setUserName] = useState("");
@@ -123,6 +138,7 @@ function CreateDatabaseModal({ engine, prefix, onClose }: { engine: DbEngine; pr
     onSuccess: () => {
       feedback.success(t("{name} veritabanı oluşturuldu", { name }));
       void queryClient.invalidateQueries({ queryKey: ["databases"] });
+      onCreated(engine);
       onClose();
     },
   });
@@ -147,6 +163,19 @@ function CreateDatabaseModal({ engine, prefix, onClose }: { engine: DbEngine; pr
       }
     >
       <form id="create-database" onSubmit={submit} className="flex flex-col gap-4">
+        {engines.length > 1 ? (
+          <Select label={t("Veritabanı türü")} value={engine} onChange={(event) => setEngine(event.target.value as DbEngine)}>
+            {engines.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <p className="text-[13px] text-ink-2">
+            {t("Tür")}: <span className="font-medium text-ink">{engines[0]?.label}</span>
+          </p>
+        )}
         <Input
           label={t("Veritabanı adı")}
           value={name}
@@ -655,7 +684,15 @@ export function DatabasesPage() {
         </Panel>
       </div>
 
-      {dialog?.kind === "create-database" && <CreateDatabaseModal engine={engine.id} prefix={data.name_prefix} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "create-database" && (
+        <CreateDatabaseModal
+          initialEngine={engine.id}
+          engines={available.filter((item) => item.running)}
+          prefix={data.name_prefix}
+          onClose={() => setDialog(null)}
+          onCreated={setEngineChoice}
+        />
+      )}
       {dialog?.kind === "create-user" && <CreateUserModal engine={engine.id} prefix={data.name_prefix} onClose={() => setDialog(null)} />}
       {dialog?.kind === "password" && <PasswordModal user={dialog.user} onClose={() => setDialog(null)} />}
       {dialog?.kind === "access" && (
