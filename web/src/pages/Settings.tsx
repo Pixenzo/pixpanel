@@ -8,6 +8,7 @@ import { PanelCertificate } from "../components/PanelCertificate";
 import { Button, ErrorBlock, Input, LoadingBlock, PageHeader, Panel, Select } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { t } from "../lib/i18n";
+import { PanelUpdate } from "./PanelUpdate";
 
 type SmtpSecurity = "starttls" | "tls" | "none";
 
@@ -172,6 +173,7 @@ export function SettingsPage() {
     <>
       <PageHeader title={t("Ayarlar")} description={t("Panelin genel ayarları.")} />
       <PanelCertificate />
+      <PanelUpdate />
       <Panel title={t("E-posta gönderimi (SMTP)")}>
         <p className="mb-4 max-w-[70ch] text-ink-2">
           {t("Panel, bildirim e-postalarını (başarısız dağıtımlar, sertifika sorunları gibi) bu sunucu üzerinden gönderir.")}

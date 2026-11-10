@@ -27,13 +27,14 @@ mod sites;
 pub mod ssl;
 mod system;
 mod terminal;
+mod update;
 mod users;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
         .nest("/users", users::router())
-        .nest("/system", system::router().nest("/certificate", panelcert::router()))
+        .nest("/system", system::router().nest("/certificate", panelcert::router()).nest("/update", update::router()))
         .nest("/jobs", jobs::router())
         .nest("/components", components::router())
         .nest("/databases", databases::router())

@@ -23,6 +23,7 @@ mod state;
 mod sys;
 mod tasks;
 mod totp;
+mod update;
 mod web;
 
 use std::net::SocketAddr;
@@ -38,7 +39,7 @@ use crate::db::Db;
 use crate::state::AppState;
 
 #[derive(Parser)]
-#[command(name = "pixpanel", version, about = "Sunucu ve hosting yönetim paneli")]
+#[command(name = "pixpanel", version = update::VERSION, about = "Sunucu ve hosting yönetim paneli")]
 struct Cli {
     /// Yapılandırma dosyasının yolu
     #[arg(long, global = true, default_value = config::DEFAULT_CONFIG_PATH)]
@@ -63,6 +64,9 @@ enum Command {
     ResetPassword { username: String },
     /// Bir kullanıcının iki adımlı doğrulamasını kapatır (telefonunu kaybedenler için)
     DisableTwoFactor { username: String },
+    /// Güncelleme sonrası paneli yeniden başlatıp gerekirse eski sürüme dönen bekçi
+    #[command(hide = true)]
+    UpdateWatchdog,
     /// Dosya yöneticisinin yardımcı süreci; panel tarafından başlatılır
     #[command(hide = true)]
     FsHelper,
@@ -87,10 +91,14 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let cfg = Config::load(&cli.config)?;
+    // Bekçi, panelin veritabanına dokunmadan çalışır (gerekirse onu geri koyacaktır).
+    if matches!(cli.command, Some(Command::UpdateWatchdog)) {
+        return update::run_watchdog(&cfg);
+    }
     let db = Db::open(&cfg.db_path())?;
 
     match cli.command.unwrap_or(Command::Serve) {
-        Command::Serve => tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(serve(cfg, db)),
+        Command::Serve => tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(serve(cfg, db, cli.config)),
         Command::CreateAdmin { username, password } => create_admin(&db, &username, password),
         Command::ResetPassword { username } => reset_password(&db, &username),
         Command::DisableTwoFactor { username } => {
@@ -101,11 +109,11 @@ fn main() -> anyhow::Result<()> {
             println!("{username} için iki adımlı doğrulama kapatıldı.");
             Ok(())
         }
-        Command::FsHelper => unreachable!("yardımcı süreç yukarıda ele alındı"),
+        Command::FsHelper | Command::UpdateWatchdog => unreachable!("yardımcı süreçler yukarıda ele alındı"),
     }
 }
 
-async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
+async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> {
     let metrics = sys::metrics::Metrics::default();
     metrics.spawn_sampler();
 
@@ -121,6 +129,7 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     let state = AppState {
         jobs: jobs::JobManager::new(db.clone()).map_err(|err| anyhow::anyhow!(err.to_string()))?,
         cfg: Arc::new(cfg.clone()),
+        config_path: Arc::new(config_path),
         db,
         metrics,
         throttle: Arc::default(),
@@ -133,6 +142,7 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
     tasks::spawn_certificate_renewal(state.clone());
     tasks::spawn_db_tool_cleanup(state.clone());
     tasks::spawn_backup_scheduler(state.clone());
+    tasks::spawn_update_check(state.clone());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");

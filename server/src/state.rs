@@ -11,6 +11,8 @@ use crate::sys::metrics::Metrics;
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
+    /// Yapılandırma dosyasının yolu (panelin başlattığı yardımcı süreçlere iletilir).
+    pub config_path: Arc<std::path::PathBuf>,
     pub db: Db,
     pub jobs: JobManager,
     pub metrics: Metrics,

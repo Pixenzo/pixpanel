@@ -11,7 +11,7 @@ HERE="$ROOT/scripts/e2e"
 # Test makinesinin içinde koşanlar (panele yerel adresten bağlanırlar).
 REMOTE=(features mail dbtools webmail node ftp dns twofactor panelcert redis backup)
 # Geliştirme makinesinde koşanlar (bağlantıları dışarıdan denerler).
-LOCAL=(firewall fail2ban)
+LOCAL=(firewall fail2ban update)
 
 WANTED=("$@")
 wanted() { [ ${#WANTED[@]} -eq 0 ] && return 0; for name in "${WANTED[@]}"; do [ "$name" = "$1" ] && return 0; done; return 1; }

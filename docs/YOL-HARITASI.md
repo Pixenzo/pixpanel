@@ -86,7 +86,7 @@ Bu kurallar her paketin brifine eklenir.
   - Geri yükleme: site yerinde (tümü ya da seçilen yollar, isteğe bağlı fazlalıkları silme), başka siteye (klon), silinmiş siteyi bildirimden yeniden kurma; veritabanı aynı ya da başka veritabanına (PostgreSQL dökümü `--clean --if-exists` ile); posta yerinde. Posta alanını yeniden oluşturma ve panelin kendisini geri yükleme ilk sürümde belge + komut.
   - Uçlar: `GET /backup`, hedefler (`POST/PUT/DELETE`, `/check`, `/password`, `/snapshots`, `/snapshots/{id}/files`), planlar (`POST/PUT/DELETE`, `/run`), `POST /backup/run`, `POST /backup/restore`.
 
-### 6. Kurulum betiği ve güncelleme — O, sistem katmanı
+### 6. Kurulum betiği ve güncelleme — TAMAMLANDI (10.11.2026; kalanlar: ilk sürümün yayınlanması ve depo kapalıyken dağıtım kararı, arm64, Ubuntu 24.04 / Debian 12 sınaması)
 
 - **Kapsam:** `install/install.sh` (tek komut; Debian 13 ve Ubuntu LTS; sürüm ikilisini indirir, sağlama toplamını doğrular, servis birimini kurar, ilk yöneticiyi oluşturur, nginx'i kurar); sürüm derlemesi (`--release`, x86_64 ve arm64); panelin kendini güncellemesi (yeni ikiliyi indir, doğrula, değiştir, başlamazsa eskisine dön); kaldırma betiği.
 - **Bağımlılık:** sürümlerin nerede yayınlanacağı kararı (aşağıda "Kararlar").

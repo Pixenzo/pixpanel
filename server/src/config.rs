@@ -32,6 +32,11 @@ pub struct Config {
     pub telegram_api: String,
     /// Cloudflare API'sinin adresi (sınama için değiştirilebilir).
     pub cloudflare_api: String,
+    /// Panel sürümlerinin yayınlandığı adres (`VERSION`, `SHA256SUMS`… bu adresin altındadır).
+    pub update_url: String,
+    /// Sürüm imzalarının doğrulandığı ed25519 açık anahtarı (onaltılık). Verilmezse
+    /// panele gömülü anahtar kullanılır; kendi derlemesini dağıtanlar ve sınamalar içindir.
+    pub update_public_key: Option<String>,
 }
 
 impl Default for Config {
@@ -47,6 +52,8 @@ impl Default for Config {
             allowed_origins: Vec::new(),
             telegram_api: "https://api.telegram.org".into(),
             cloudflare_api: "https://api.cloudflare.com/client/v4".into(),
+            update_url: "https://github.com/Pixenzo/pixpanel/releases/latest/download".into(),
+            update_public_key: None,
         }
     }
 }

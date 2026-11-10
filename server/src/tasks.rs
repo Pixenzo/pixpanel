@@ -41,6 +41,19 @@ pub fn spawn_db_tool_cleanup(state: AppState) {
     });
 }
 
+/// Günde bir kez yeni sürüm yayınlanıp yayınlanmadığına bakar (yalnızca bildirir, kurmaz).
+pub fn spawn_update_check(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(300)).await;
+        loop {
+            if let Err(err) = crate::update::check(&state).await {
+                tracing::warn!(error = %err, "sürüm denetimi yapılamadı");
+            }
+            tokio::time::sleep(Duration::from_secs(24 * 3600)).await;
+        }
+    });
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {
