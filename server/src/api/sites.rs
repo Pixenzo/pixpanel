@@ -11,7 +11,8 @@ use crate::auth::{self, AuthUser, Role};
 use crate::error::{AppError, AppResult};
 use crate::hosting::php::{self, PhpSettings};
 use crate::hosting::sites::{self, NewSite, Site};
-use crate::hosting::{domain, nginx};
+use crate::deploy;
+use crate::hosting::{domain, nginx, ssl};
 use crate::state::AppState;
 
 const AREA: &str = "sites";
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/options", get(options))
+        .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
 }
 
@@ -31,6 +33,55 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
 async fn detail(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Site>> {
     user.require(AREA)?;
     Ok(Json(sites::get(&state.db, &user, id)?))
+}
+
+#[derive(Serialize)]
+struct GitSummary {
+    branch: String,
+    running: bool,
+    last_status: Option<String>,
+    last_at: Option<i64>,
+    last_subject: Option<String>,
+}
+
+/// Site kartlarında gösterilen canlı durum özeti.
+#[derive(Serialize)]
+struct SiteSummary {
+    site_id: i64,
+    ssl_expires_at: Option<i64>,
+    git: Option<GitSummary>,
+    /// Sitenin sahibi olan hesabın veritabanı ve zamanlanmış görev sayıları.
+    databases: i64,
+    cron_jobs: i64,
+}
+
+async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<SiteSummary>>> {
+    user.require(AREA)?;
+    let mut list = Vec::new();
+    for site in sites::list(&state.db, &user)? {
+        let ssl_expires_at = if site.ssl_mode == "none" { None } else { ssl::read_info(&site.domain).map(|info| info.not_after) };
+        let git = match deploy::load_config(&state.db, site.id)? {
+            Some(config) => {
+                let last = deploy::list_deployments(&state.db, site.id, 1)?.into_iter().next();
+                Some(GitSummary {
+                    branch: config.branch,
+                    running: deploy::is_running(site.id),
+                    last_status: last.as_ref().map(|d| d.status.clone()),
+                    last_at: last.as_ref().map(|d| d.finished_at.unwrap_or(d.started_at)),
+                    last_subject: last.map(|d| d.commit_subject),
+                })
+            }
+            None => None,
+        };
+        let (databases, cron_jobs) = state.db.call(|conn| {
+            Ok((
+                conn.query_row("SELECT COUNT(*) FROM databases WHERE user_id = ?1", params![site.user_id], |row| row.get(0))?,
+                conn.query_row("SELECT COUNT(*) FROM cron_jobs WHERE run_as = ?1", params![site.owner], |row| row.get(0))?,
+            ))
+        })?;
+        list.push(SiteSummary { site_id: site.id, ssl_expires_at, git, databases, cron_jobs });
+    }
+    Ok(Json(list))
 }
 
 #[derive(Serialize)]

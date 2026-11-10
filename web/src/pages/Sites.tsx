@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { ChevronRight, ExternalLink, Lock, LockOpen, Plus, UserRound } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useFeedback } from "../components/feedback";
 import {
   Badge,
@@ -12,20 +12,20 @@ import {
   Input,
   LoadingBlock,
   Modal,
+  Meter,
   Mono,
   PageHeader,
   Panel,
+  SearchInput,
   Select,
-  Status,
-  Table,
-  Td,
-  Th,
+  Spinner,
 } from "../components/ui";
-import type { Site, SiteKind, SiteOptions } from "../lib/api";
+import type { JobInfo, Overview, Site, SiteKind, SiteOptions, SiteSummary } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { classNames } from "../lib/format";
+import { classNames, formatBytes, formatPercent, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { siteTools } from "../lib/siteTools";
 
 export const kindLabels: Record<SiteKind, string> = {
   php: "PHP",
@@ -43,15 +43,26 @@ export function useSiteOptions() {
   return useQuery({ queryKey: ["site-options"], queryFn: () => api.get<SiteOptions>("/sites/options") });
 }
 
-function CreateSiteModal({ open, onClose, options }: { open: boolean; onClose: () => void; options: SiteOptions }) {
+function CreateSiteModal({
+  open,
+  onClose,
+  options,
+  proxyTarget: initialTarget,
+}: {
+  open: boolean;
+  onClose: () => void;
+  options: SiteOptions;
+  /** Verilirse pencere ters vekil türü ve bu hedefle açılır. */
+  proxyTarget?: string;
+}) {
   const me = useMe();
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [domain, setDomain] = useState("");
-  const [kind, setKind] = useState<SiteKind>(options.php_versions.length > 0 ? "php" : "static");
+  const [kind, setKind] = useState<SiteKind>(initialTarget !== undefined ? "proxy" : options.php_versions.length > 0 ? "php" : "static");
   const [phpVersion, setPhpVersion] = useState(options.php_versions[0] ?? "");
-  const [proxyTarget, setProxyTarget] = useState("http://127.0.0.1:3000");
+  const [proxyTarget, setProxyTarget] = useState(initialTarget || "http://127.0.0.1:3000");
   const [withWww, setWithWww] = useState(true);
   const [ownerId, setOwnerId] = useState(me.id);
 
@@ -69,6 +80,7 @@ function CreateSiteModal({ open, onClose, options }: { open: boolean; onClose: (
     onSuccess: (site) => {
       feedback.success(t("{domain} oluşturuldu", { domain: site.domain }));
       void queryClient.invalidateQueries({ queryKey: ["sites"] });
+      void queryClient.invalidateQueries({ queryKey: ["sites-summary"] });
       onClose();
       void navigate(`/sites/${site.id}`);
     },
@@ -85,13 +97,13 @@ function CreateSiteModal({ open, onClose, options }: { open: boolean; onClose: (
     <Modal
       open={open}
       onClose={onClose}
-      title={t("Site oluştur")}
+      title={t("Site ekle")}
       wide
       footer={
         <>
           <Button onClick={onClose}>{t("Vazgeç")}</Button>
           <Button variant="primary" type="submit" form="create-site" loading={create.isPending} disabled={phpMissing}>
-            {t("Siteyi oluştur")}
+            {t("Siteyi ekle")}
           </Button>
         </>
       }
@@ -184,86 +196,335 @@ function CreateSiteModal({ open, onClose, options }: { open: boolean; onClose: (
   );
 }
 
+const EXPANDED_KEY = "pixpanel.sites.expanded";
+
+/** Açık site kartları tarayıcıda hatırlanır; ilk gelişte (kayıt yokken) `null` döner. */
+function readExpanded(): number[] | null {
+  try {
+    const raw = window.localStorage.getItem(EXPANDED_KEY);
+    return raw ? (JSON.parse(raw) as number[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+const toneText: Record<string, string> = { warn: "text-warn", bad: "text-bad", accent: "text-accent", ok: "text-ok" };
+
+/** Sitenin araçları: her kutu aracın adını ve o anki durumunu gösterir. */
+export function SiteToolGrid({ site, summary, options }: { site: Site; summary?: SiteSummary; options?: SiteOptions }) {
+  const me = useMe();
+  const tools = siteTools(site, me, summary, options);
+  return (
+    <ul className="-mr-px -mb-px grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      {tools.map((tool) => (
+        <li key={tool.id} className="border-r border-b border-line">
+          <Link to={tool.to} className="group flex h-full items-start gap-3 px-4 py-3 outline-offset-[-2px] transition-colors hover:bg-accent-soft/50">
+            <tool.icon aria-hidden className="mt-0.5 size-[18px] shrink-0 text-ink-3 transition-colors group-hover:text-accent" />
+            <span className="min-w-0">
+              <span className="block font-medium group-hover:text-accent">{tool.label}</span>
+              <span className={classNames("block truncate text-[12.5px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status || " "}</span>
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function siteKindLabel(site: Site): string {
+  return site.kind === "php" ? `PHP ${site.php_version}` : t(kindLabels[site.kind]);
+}
+
+function SiteCard({
+  site,
+  summary,
+  options,
+  expanded,
+  onToggle,
+  showOwner,
+}: {
+  site: Site;
+  summary?: SiteSummary;
+  options: SiteOptions;
+  expanded: boolean;
+  onToggle: () => void;
+  showOwner: boolean;
+}) {
+  const scheme = site.ssl_mode === "none" ? "http" : "https";
+  const panelId = `site-tools-${site.id}`;
+  return (
+    <li className="overflow-hidden rounded-lg border border-line bg-surface">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          aria-label={expanded ? t("{domain} araçlarını gizle", { domain: site.domain }) : t("{domain} araçlarını göster", { domain: site.domain })}
+          onClick={onToggle}
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-sunken hover:text-ink"
+        >
+          <ChevronRight className={classNames("size-4 transition-transform", expanded && "rotate-90")} />
+        </button>
+        <span
+          aria-hidden
+          title={site.status === "active" ? t("Yayında") : t("Askıda")}
+          className={classNames("size-2 shrink-0 rounded-full", site.status === "active" ? "bg-ok" : "bg-warn")}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <Link to={`/sites/${site.id}`} className="truncate font-mono text-[14.5px] font-medium hover:text-accent hover:underline">
+              {site.domain}
+            </Link>
+            <a
+              href={`${scheme}://${site.domain}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t("{domain} adresini yeni sekmede aç", { domain: site.domain })}
+              title={t("Siteyi aç")}
+              className="shrink-0 text-ink-3 hover:text-accent"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+            {site.status !== "active" && <Badge tone="warn">{t("Askıda")}</Badge>}
+          </div>
+          {site.aliases.length > 0 && <p className="truncate font-mono text-[12px] text-ink-3">{site.aliases.join(", ")}</p>}
+        </div>
+        <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
+          <div>
+            <dt className="sr-only">{t("Tür")}</dt>
+            <dd>
+              <Badge>{siteKindLabel(site)}</Badge>
+            </dd>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <dt className="sr-only">SSL</dt>
+            <dd className={classNames("flex items-center gap-1.5", site.ssl_mode === "none" ? "text-ink-3" : "text-ink-2")}>
+              {site.ssl_mode === "none" ? <LockOpen aria-hidden className="size-3.5" /> : <Lock aria-hidden className="size-3.5 text-ok" />}
+              {site.ssl_mode === "none" ? t("SSL yok") : "SSL"}
+            </dd>
+          </div>
+          {showOwner && (
+            <div className="flex items-center gap-1.5">
+              <dt className="sr-only">{t("Sahibi")}</dt>
+              <dd className="flex items-center gap-1.5 text-ink-2">
+                <UserRound aria-hidden className="size-3.5 text-ink-3" />
+                <Mono>{site.owner}</Mono>
+              </dd>
+            </div>
+          )}
+        </dl>
+        <Link
+          to={`/sites/${site.id}`}
+          className="inline-flex h-7 items-center rounded-md border border-line-strong px-2.5 text-[13px] font-medium hover:bg-sunken"
+        >
+          {t("Yönet")}
+        </Link>
+      </div>
+      {expanded && (
+        <div id={panelId} className="overflow-hidden border-t border-line">
+          <SiteToolGrid site={site} summary={summary} options={options} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Sağ sütun: sunucunun anlık durumu (yönetici) ve son işlemler. */
+function SideRail() {
+  const me = useMe();
+  const overview = useQuery({
+    queryKey: ["overview"],
+    queryFn: () => api.get<Overview>("/system/overview"),
+    refetchInterval: 5000,
+    enabled: me.role === "admin",
+  });
+  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => api.get<JobInfo[]>("/jobs"), refetchInterval: 4000 });
+  const recent = jobs.data?.slice(0, 6) ?? [];
+  const current = overview.data?.current;
+  const disk = overview.data?.disks.find((item) => item.mount === "/") ?? overview.data?.disks[0];
+
+  return (
+    <aside className="flex flex-col gap-4 xl:w-72 xl:shrink-0">
+      {current && overview.data && (
+        <Panel
+          title={t("Sunucu")}
+          actions={
+            <Link to="/server" className="text-[13px] font-medium text-accent hover:underline">
+              {t("Ayrıntı")}
+            </Link>
+          }
+        >
+          <dl className="tabular flex flex-col gap-3 text-[13px]">
+            {[
+              { label: t("İşlemci"), percent: current.cpu, detail: formatPercent(current.cpu) },
+              {
+                label: t("Bellek"),
+                percent: current.mem_total > 0 ? (current.mem_used / current.mem_total) * 100 : 0,
+                detail: `${formatBytes(current.mem_used)} / ${formatBytes(current.mem_total)}`,
+              },
+              ...(disk ? [{ label: t("Disk"), percent: disk.total > 0 ? (disk.used / disk.total) * 100 : 0, detail: `${formatBytes(disk.used)} / ${formatBytes(disk.total)}` }] : []),
+            ].map((row) => (
+              <div key={row.label}>
+                <div className="mb-1 flex items-baseline justify-between gap-2">
+                  <dt className="text-ink-2">{row.label}</dt>
+                  <dd className="font-mono text-[12.5px]">{row.detail}</dd>
+                </div>
+                <Meter value={row.percent} label={row.label} />
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 border-t border-line pt-3 font-mono text-[12.5px] text-ink-2">
+            {overview.data.host.hostname} · {overview.data.host.os}
+          </p>
+        </Panel>
+      )}
+      <Panel
+        flush
+        title={t("Son işlemler")}
+        actions={
+          <Link to="/jobs" className="text-[13px] font-medium text-accent hover:underline">
+            {t("Tümü")}
+          </Link>
+        }
+      >
+        {recent.length === 0 ? (
+          <p className="px-4 py-4 text-[13px] text-ink-2">{t("Kurulum, yayınlama ve sertifika işlemleri burada listelenir.")}</p>
+        ) : (
+          <ul>
+            {recent.map((job) => (
+              <li key={job.id} className="border-b border-line last:border-b-0">
+                <Link to="/jobs" className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-sunken/60">
+                  {job.status === "running" ? (
+                    <Spinner className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                  ) : (
+                    <span aria-hidden className={classNames("mt-1.5 size-2 shrink-0 rounded-full", job.status === "success" ? "bg-ok" : "bg-bad")} />
+                  )}
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px]">{job.title}</span>
+                    <span className="block text-[12px] text-ink-3">
+                      {job.status === "running" ? t("Sürüyor") : job.status === "success" ? t(formatRelative(job.finished_at)) : t("Başarısız · {when}", { when: t(formatRelative(job.finished_at)) })}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </aside>
+  );
+}
+
 export function SitesPage() {
   const me = useMe();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [expanded, setExpanded] = useState<number[] | null>(readExpanded);
   const sites = useQuery({ queryKey: ["sites"], queryFn: () => api.get<Site[]>("/sites") });
+  const summaries = useQuery({ queryKey: ["sites-summary"], queryFn: () => api.get<SiteSummary[]>("/sites/summary"), refetchInterval: 15000 });
   const options = useSiteOptions();
   const showOwner = me.role === "admin" || me.role === "reseller";
 
+  // Docker sayfasındaki "Alan adına bağla" bağlantısı oluşturma penceresini hedefle birlikte açar.
+  const proxyTarget = searchParams.get("yeni") === "vekil" ? (searchParams.get("hedef") ?? "") : null;
+  const closeCreate = () => {
+    setCreating(false);
+    if (proxyTarget !== null) setSearchParams({}, { replace: true });
+  };
+
+  // Az site varken hepsi açık gelir; çok site varken liste kısa kalsın diye kapalı.
+  const openIds = expanded ?? ((sites.data?.length ?? 0) <= 4 ? (sites.data ?? []).map((site) => site.id) : []);
+  function persist(next: number[]) {
+    setExpanded(next);
+    try {
+      window.localStorage.setItem(EXPANDED_KEY, JSON.stringify(next));
+    } catch {
+      // Depolama kapalıysa tercih yalnızca bu oturumda geçerli olur.
+    }
+  }
+  const toggle = (id: number) => persist(openIds.includes(id) ? openIds.filter((item) => item !== id) : [...openIds, id]);
+
+  const needle = filter.trim().toLocaleLowerCase("tr");
+  const visible = (sites.data ?? []).filter(
+    (site) => !needle || [site.domain, site.owner, ...site.aliases].some((value) => value.toLocaleLowerCase("tr").includes(needle)),
+  );
+  const allOpen = visible.length > 0 && visible.every((site) => openIds.includes(site.id));
+
   const createButton = (
     <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)} disabled={!options.data?.nginx_installed}>
-      {t("Site oluştur")}
+      {t("Site ekle")}
     </Button>
   );
 
   return (
-    <>
-      <PageHeader title={t("Siteler")} description={t("Bu sunucuda yayınlanan alan adları ve alt alan adları.")} actions={createButton} />
-      {sites.isError && <ErrorBlock message={errorMessage(sites.error)} onRetry={() => void sites.refetch()} />}
-      {(sites.isPending || options.isPending) && <LoadingBlock />}
-      {options.data && !options.data.nginx_installed && (
-        <div className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-warn">
-          {t("Site yayınlamak için nginx gerekli.")}{" "}
-          {me.role === "admin" ? (
-            <Link to="/components" className="font-medium underline">
-              {t("Bileşenler sayfasından kurun")}
-            </Link>
-          ) : (
-            t("Sunucu yöneticinizden kurmasını isteyin.")
-          )}
-        </div>
-      )}
-      {sites.data && options.data && (
-        <Panel flush>
-          {sites.data.length === 0 ? (
+    <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
+      <div className="min-w-0 flex-1">
+        <PageHeader
+          title={t("Siteler")}
+          description={t("Alan adlarınız ve her birinin araçları tek yerde. Bir aracı açmak için kutusuna tıklayın.")}
+          actions={createButton}
+        />
+        {sites.isError && <ErrorBlock message={errorMessage(sites.error)} onRetry={() => void sites.refetch()} />}
+        {(sites.isPending || options.isPending) && <LoadingBlock />}
+        {options.data && !options.data.nginx_installed && (
+          <div className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-warn">
+            {t("Site yayınlamak için nginx gerekli.")}{" "}
+            {me.role === "admin" ? (
+              <Link to="/components" className="font-medium underline">
+                {t("Bileşenler sayfasından kurun")}
+              </Link>
+            ) : (
+              t("Sunucu yöneticinizden kurmasını isteyin.")
+            )}
+          </div>
+        )}
+        {sites.data && options.data && sites.data.length === 0 && (
+          <Panel flush>
             <EmptyState
               title={t("Henüz site yok")}
-              description={t("İlk sitenizi oluşturun; alan adını, türünü ve PHP sürümünü seçmeniz yeterli.")}
+              description={t("İlk sitenizi ekleyin; alan adını, türünü ve PHP sürümünü seçmeniz yeterli.")}
               action={options.data.nginx_installed ? createButton : undefined}
             />
-          ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <Th>{t("Alan adı")}</Th>
-                  <Th>{t("Tür")}</Th>
-                  <Th>{t("SSL")}</Th>
-                  {showOwner && <Th>{t("Sahibi")}</Th>}
-                  <Th>{t("Durum")}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {sites.data.map((site) => (
-                  <tr key={site.id} className="hover:bg-sunken/50">
-                    <Td>
-                      <Link to={`/sites/${site.id}`} className="font-mono text-[13px] font-medium text-accent hover:underline">
-                        {site.domain}
-                      </Link>
-                      {site.aliases.length > 0 && <p className="font-mono text-[12px] text-ink-3">{site.aliases.join(", ")}</p>}
-                    </Td>
-                    <Td className="whitespace-nowrap">
-                      <Badge>{site.kind === "php" ? `PHP ${site.php_version}` : t(kindLabels[site.kind])}</Badge>
-                    </Td>
-                    <Td className="whitespace-nowrap">
-                      {site.ssl_mode === "none" ? <span className="text-ink-3">{t("Yok")}</span> : <Status tone="ok">{t("Etkin")}</Status>}
-                    </Td>
-                    {showOwner && (
-                      <Td>
-                        <Mono>{site.owner}</Mono>
-                      </Td>
-                    )}
-                    <Td className="whitespace-nowrap">
-                      {site.status === "active" ? <Status tone="ok">{t("Yayında")}</Status> : <Status tone="warn">{t("Askıda")}</Status>}
-                    </Td>
-                  </tr>
+          </Panel>
+        )}
+        {sites.data && options.data && sites.data.length > 0 && (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <SearchInput placeholder={t("Alan adı ya da hesap ara")} aria-label={t("Alan adı ya da hesap ara")} value={filter} onChange={(event) => setFilter(event.target.value)} />
+              <p className="text-[13px] text-ink-2">{t("{count} site", { count: visible.length })}</p>
+              <button
+                type="button"
+                onClick={() => persist(allOpen ? openIds.filter((id) => !visible.some((site) => site.id === id)) : [...new Set([...openIds, ...visible.map((site) => site.id)])])}
+                className="ml-auto text-[13px] font-medium text-accent hover:underline"
+              >
+                {allOpen ? t("Araçları gizle") : t("Bütün araçları göster")}
+              </button>
+            </div>
+            {visible.length === 0 ? (
+              <Panel flush>
+                <EmptyState title={t("Aramanıza uyan site yok")} description={t("Alan adının bir bölümünü ya da hesabın adını yazmayı deneyin.")} />
+              </Panel>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {visible.map((site) => (
+                  <SiteCard
+                    key={site.id}
+                    site={site}
+                    summary={summaries.data?.find((item) => item.site_id === site.id)}
+                    options={options.data}
+                    expanded={openIds.includes(site.id)}
+                    onToggle={() => toggle(site.id)}
+                    showOwner={showOwner}
+                  />
                 ))}
-              </tbody>
-            </Table>
-          )}
-        </Panel>
-      )}
-      {options.data && creating && <CreateSiteModal open onClose={() => setCreating(false)} options={options.data} />}
-    </>
+              </ul>
+            )}
+          </>
+        )}
+      </div>
+      <SideRail />
+      {options.data && (creating || proxyTarget !== null) && <CreateSiteModal open onClose={closeCreate} options={options.data} proxyTarget={proxyTarget ?? undefined} />}
+    </div>
   );
 }

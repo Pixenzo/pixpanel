@@ -212,13 +212,14 @@ export interface PhpDirective {
   value: string;
 }
 
+/** `null` olan alanlar PHP sürümünün genel ayarını devralır. */
 export interface PhpSettings {
-  memory_limit: string;
-  upload_max_filesize: string;
-  post_max_size: string;
-  max_execution_time: number;
-  max_input_vars: number;
-  display_errors: boolean;
+  memory_limit: string | null;
+  upload_max_filesize: string | null;
+  post_max_size: string | null;
+  max_execution_time: number | null;
+  max_input_vars: number | null;
+  display_errors: boolean | null;
   max_children: number;
   allow_exec: boolean;
   open_basedir: boolean;
@@ -290,8 +291,67 @@ export interface SslStatus {
   certificate: CertInfo | null;
 }
 
+export interface PhpGlobal {
+  memory_limit: string;
+  upload_max_filesize: string;
+  post_max_size: string;
+  max_execution_time: number;
+  max_input_vars: number;
+  display_errors: boolean;
+  timezone: string;
+  opcache: boolean;
+  opcache_memory: number;
+  custom: PhpDirective[];
+}
+
 export interface SiteOptions {
   nginx_installed: boolean;
   php_versions: string[];
   owners: { id: number; username: string }[];
+  php_defaults: Record<string, PhpGlobal>;
+}
+
+export interface SiteSummary {
+  site_id: number;
+  ssl_expires_at: number | null;
+  git: {
+    branch: string;
+    running: boolean;
+    last_status: "running" | "success" | "failed" | null;
+    last_at: number | null;
+    last_subject: string | null;
+  } | null;
+  databases: number;
+  cron_jobs: number;
+}
+
+export interface GitConfig {
+  site_id: number;
+  repo_url: string;
+  branch: string;
+  auto_deploy: boolean;
+  script: string;
+  webhook_token: string;
+  public_key: string;
+  created_at: number;
+}
+
+export interface Deployment {
+  id: number;
+  site_id: number;
+  source: "manual" | "webhook" | "rollback";
+  commit_hash: string;
+  commit_subject: string;
+  commit_author: string;
+  status: "running" | "success" | "failed";
+  job_id: number | null;
+  started_at: number;
+  finished_at: number | null;
+}
+
+export interface GitView {
+  config: GitConfig | null;
+  webhook_path: string | null;
+  deployments: Deployment[];
+  running: boolean;
 }

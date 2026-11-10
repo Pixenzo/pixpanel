@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Plus, Trash2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ExternalLink, FileCode2, GitBranch, Globe, LayoutGrid, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, NavLink, useNavigate, useParams } from "react-router";
 import { useFeedback } from "../components/feedback";
 import {
   Badge,
@@ -16,18 +17,16 @@ import {
   Panel,
   Select,
   Status,
-  Tabs,
   Textarea,
 } from "../components/ui";
-import type { PhpSettings, Site, SiteOptions } from "../lib/api";
+import type { PhpGlobal, PhpSettings, Site, SiteOptions, SiteSummary } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { formatDateTime } from "../lib/format";
+import { classNames, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
-import { kindLabels, useSiteOptions } from "./Sites";
+import { GitSection } from "./SiteGit";
+import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { SslTab } from "./SiteSsl";
-
-type TabId = "general" | "php" | "proxy" | "ssl" | "advanced";
 
 /** Sitenin bir bölümünü kaydeden ortak mutasyon. */
 function useSaveSite(site: Site, message: string) {
@@ -38,6 +37,7 @@ function useSaveSite(site: Site, message: string) {
     onSuccess: (updated) => {
       queryClient.setQueryData(["site", String(site.id)], updated);
       void queryClient.invalidateQueries({ queryKey: ["sites"] });
+      void queryClient.invalidateQueries({ queryKey: ["sites-summary"] });
       feedback.success(message);
     },
   });
@@ -109,31 +109,9 @@ function GeneralTab({ site }: { site: Site }) {
   }
 
   const canSuspend = me.role === "admin" || (me.role === "reseller" && site.user_id !== me.id);
-  const root = `/home/${site.owner}/sites/${site.domain}`;
 
   return (
     <div className="flex flex-col gap-4">
-      <Panel title={t("Özet")}>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
-          <dt className="text-ink-2">{t("Tür")}</dt>
-          <dd>{site.kind === "php" ? `PHP ${site.php_version}` : t(kindLabels[site.kind])}</dd>
-          <dt className="text-ink-2">{t("Sahibi")}</dt>
-          <dd>
-            <Mono>{site.owner}</Mono>
-          </dd>
-          {site.kind !== "proxy" && (
-            <>
-              <dt className="text-ink-2">{t("Klasör")}</dt>
-              <dd className="min-w-0 break-all">
-                <Mono>{root}</Mono>
-              </dd>
-            </>
-          )}
-          <dt className="text-ink-2">{t("Oluşturulma")}</dt>
-          <dd>{formatDateTime(site.created_at)}</dd>
-        </dl>
-      </Panel>
-
       <SectionForm
         title={t("Adresler")}
         saving={save.isPending}
@@ -199,7 +177,12 @@ function GeneralTab({ site }: { site: Site }) {
   );
 }
 
+/** Boş bırakılan alan genel ayarı devralır; arayüzde boş dize, API'de `null`. */
+const textOrNull = (value: string) => (value.trim() === "" ? null : value.trim());
+const numberOrNull = (value: string) => (value.trim() === "" ? null : Number(value));
+
 function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
+  const me = useMe();
   const [version, setVersion] = useState(site.php_version ?? options.php_versions[0] ?? "");
   const [settings, setSettings] = useState<PhpSettings>(site.php_settings);
   const save = useSaveSite(site, t("PHP ayarları kaydedildi"));
@@ -212,6 +195,18 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
     );
 
   const versions = options.php_versions.includes(version) || !version ? options.php_versions : [version, ...options.php_versions];
+  // Seçili sürümün genel ayarları: boş bırakılan alanların alacağı değerler.
+  const defaults: PhpGlobal | undefined = options.php_defaults[version];
+  const inherited = (directive: string, value: string | number | undefined) =>
+    value === undefined ? directive : t("{directive} · boş bırakılırsa genel ayar: {value}", { directive, value });
+  const overrides = [
+    settings.memory_limit,
+    settings.upload_max_filesize,
+    settings.post_max_size,
+    settings.max_execution_time,
+    settings.max_input_vars,
+    settings.display_errors,
+  ].filter((value) => value !== null).length;
 
   return (
     <SectionForm
@@ -228,32 +223,72 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
         ))}
       </Select>
 
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-sunken/70 px-3 py-2 text-[13px] text-ink-2">
+        <span>
+          {overrides === 0
+            ? t("Bu site PHP {version} sürümünün genel ayarlarını kullanıyor. Bir alanı doldurursanız yalnızca bu sitede o değer geçerli olur.", { version })
+            : t("{count} ayar bu siteye özel; boş bırakılan alanlar PHP {version} genel ayarını kullanır.", { count: overrides, version })}
+        </span>
+        {me.role === "admin" && (
+          <Link to={`/php?surum=${encodeURIComponent(version)}`} className="font-medium text-accent hover:underline">
+            {t("Genel ayarları düzenle")}
+          </Link>
+        )}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label={t("Bellek sınırı")} value={settings.memory_limit} onChange={(e) => set("memory_limit", e.target.value)} hint="memory_limit" className="font-mono text-[13px]" />
+        <Input
+          label={t("Bellek sınırı")}
+          value={settings.memory_limit ?? ""}
+          placeholder={defaults?.memory_limit}
+          onChange={(e) => set("memory_limit", textOrNull(e.target.value))}
+          hint={inherited("memory_limit", defaults?.memory_limit)}
+          className="font-mono text-[13px]"
+        />
         <Input
           label={t("Çalışma süresi (saniye)")}
           type="number"
           min={1}
-          value={settings.max_execution_time}
-          onChange={(e) => set("max_execution_time", Number(e.target.value))}
-          hint="max_execution_time"
+          value={settings.max_execution_time ?? ""}
+          placeholder={defaults ? String(defaults.max_execution_time) : undefined}
+          onChange={(e) => set("max_execution_time", numberOrNull(e.target.value))}
+          hint={inherited("max_execution_time", defaults?.max_execution_time)}
         />
         <Input
           label={t("En büyük yükleme boyutu")}
-          value={settings.upload_max_filesize}
-          onChange={(e) => set("upload_max_filesize", e.target.value)}
-          hint="upload_max_filesize"
+          value={settings.upload_max_filesize ?? ""}
+          placeholder={defaults?.upload_max_filesize}
+          onChange={(e) => set("upload_max_filesize", textOrNull(e.target.value))}
+          hint={inherited("upload_max_filesize", defaults?.upload_max_filesize)}
           className="font-mono text-[13px]"
         />
-        <Input label={t("En büyük POST boyutu")} value={settings.post_max_size} onChange={(e) => set("post_max_size", e.target.value)} hint="post_max_size" className="font-mono text-[13px]" />
+        <Input
+          label={t("En büyük POST boyutu")}
+          value={settings.post_max_size ?? ""}
+          placeholder={defaults?.post_max_size}
+          onChange={(e) => set("post_max_size", textOrNull(e.target.value))}
+          hint={inherited("post_max_size", defaults?.post_max_size)}
+          className="font-mono text-[13px]"
+        />
         <Input
           label={t("En fazla form alanı")}
           type="number"
           min={100}
-          value={settings.max_input_vars}
-          onChange={(e) => set("max_input_vars", Number(e.target.value))}
-          hint="max_input_vars"
+          value={settings.max_input_vars ?? ""}
+          placeholder={defaults ? String(defaults.max_input_vars) : undefined}
+          onChange={(e) => set("max_input_vars", numberOrNull(e.target.value))}
+          hint={inherited("max_input_vars", defaults?.max_input_vars)}
         />
+        <Select
+          label={t("Hataları sayfada göster")}
+          value={settings.display_errors === null ? "" : settings.display_errors ? "on" : "off"}
+          onChange={(e) => set("display_errors", e.target.value === "" ? null : e.target.value === "on")}
+          hint={t("display_errors · geliştirme sırasında işe yarar; canlı sitede kapalı tutun.")}
+        >
+          <option value="">{defaults ? t("Genel ayarı kullan ({value})", { value: defaults.display_errors ? t("açık") : t("kapalı") }) : t("Genel ayarı kullan")}</option>
+          <option value="on">{t("Açık")}</option>
+          <option value="off">{t("Kapalı")}</option>
+        </Select>
         <Input
           label={t("Eşzamanlı süreç sayısı")}
           type="number"
@@ -265,12 +300,6 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
       </div>
 
       <div className="flex flex-col gap-3">
-        <Checkbox
-          label={t("Hataları sayfada göster")}
-          hint={t("Geliştirme sırasında işe yarar; canlı sitede kapalı tutun.")}
-          checked={settings.display_errors}
-          onChange={(e) => set("display_errors", e.target.checked)}
-        />
         <Checkbox
           label={t("Dosya erişimini site klasörüyle sınırla")}
           hint="open_basedir"
@@ -368,10 +397,68 @@ function AdvancedTab({ site }: { site: Site }) {
   );
 }
 
+function OverviewSection({ site, options }: { site: Site; options: SiteOptions }) {
+  const summaries = useQuery({ queryKey: ["sites-summary"], queryFn: () => api.get<SiteSummary[]>("/sites/summary"), refetchInterval: 15000 });
+  const summary = summaries.data?.find((item) => item.site_id === site.id);
+  return (
+    <div className="flex flex-col gap-4">
+      <section aria-label={t("Site araçları")} className="overflow-hidden rounded-lg border border-line bg-surface">
+        <SiteToolGrid site={site} summary={summary} options={options} />
+      </section>
+      <Panel title={t("Özet")}>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+          <dt className="text-ink-2">{t("Tür")}</dt>
+          <dd>{siteKindLabel(site)}</dd>
+          <dt className="text-ink-2">{t("Sahibi")}</dt>
+          <dd>
+            <Mono>{site.owner}</Mono>
+          </dd>
+          {site.kind === "proxy" ? (
+            <>
+              <dt className="text-ink-2">{t("Hedef")}</dt>
+              <dd className="min-w-0 break-all">
+                <Mono>{site.proxy_target}</Mono>
+              </dd>
+            </>
+          ) : (
+            <>
+              <dt className="text-ink-2">{t("Klasör")}</dt>
+              <dd className="min-w-0 break-all">
+                <Mono>
+                  /home/{site.owner}/sites/{site.domain}
+                </Mono>
+              </dd>
+              <dt className="text-ink-2">{t("Yayın klasörü")}</dt>
+              <dd>
+                <Mono>{site.public_dir}</Mono>
+              </dd>
+            </>
+          )}
+          {site.aliases.length > 0 && (
+            <>
+              <dt className="text-ink-2">{t("Takma adlar")}</dt>
+              <dd className="min-w-0 break-all">
+                <Mono>{site.aliases.join(", ")}</Mono>
+              </dd>
+            </>
+          )}
+          <dt className="text-ink-2">{t("Oluşturulma")}</dt>
+          <dd>{formatDateTime(site.created_at)}</dd>
+        </dl>
+      </Panel>
+    </div>
+  );
+}
+
+interface Section {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}
+
 export function SiteDetailPage() {
-  const { id } = useParams();
+  const { id, section } = useParams();
   const me = useMe();
-  const [tab, setTab] = useState<TabId>("general");
   const site = useQuery({ queryKey: ["site", id], queryFn: () => api.get<Site>(`/sites/${id}`) });
   const options = useSiteOptions();
 
@@ -380,14 +467,16 @@ export function SiteDetailPage() {
   if (options.isError) return <ErrorBlock message={errorMessage(options.error)} />;
 
   const data = site.data;
-  const tabs: { id: TabId; label: string }[] = [
-    { id: "general", label: t("Genel") },
-    ...(data.kind === "php" ? [{ id: "php" as const, label: "PHP" }] : []),
-    ...(data.kind === "proxy" ? [{ id: "proxy" as const, label: t("Ters vekil") }] : []),
-    ...(me.role !== "member" || me.permissions.includes("ssl") ? [{ id: "ssl" as const, label: "SSL" }] : []),
-    ...(me.role === "admin" ? [{ id: "advanced" as const, label: t("Gelişmiş") }] : []),
+  const sections: Section[] = [
+    { id: "overview", label: t("Genel bakış"), icon: LayoutGrid },
+    { id: "settings", label: t("Adresler ve yayın"), icon: Globe },
+    ...(data.kind === "php" ? [{ id: "php", label: t("PHP ayarları"), icon: FileCode2 }] : []),
+    ...(data.kind === "proxy" ? [{ id: "proxy", label: t("Ters vekil"), icon: ArrowRightLeft }] : []),
+    ...(me.role !== "member" || me.permissions.includes("ssl") ? [{ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck }] : []),
+    { id: "git", label: t("Git ile yayınlama"), icon: GitBranch },
+    ...(me.role === "admin" ? [{ id: "advanced", label: t("nginx yönergeleri"), icon: SlidersHorizontal }] : []),
   ];
-  const activeTab = tabs.some((item) => item.id === tab) ? tab : "general";
+  const active = sections.some((item) => item.id === section) ? section : "overview";
   const scheme = data.ssl_mode === "none" ? "http" : "https";
 
   return (
@@ -398,23 +487,47 @@ export function SiteDetailPage() {
       <header className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2">
         <h1 className="font-mono text-[22px] leading-tight font-medium tracking-[-0.01em] break-all">{data.domain}</h1>
         {data.status === "active" ? <Status tone="ok">{t("Yayında")}</Status> : <Status tone="warn">{t("Askıda")}</Status>}
-        <Badge>{data.kind === "php" ? `PHP ${data.php_version}` : t(kindLabels[data.kind])}</Badge>
+        <Badge>{siteKindLabel(data)}</Badge>
         <a
           href={`${scheme}://${data.domain}`}
           target="_blank"
           rel="noreferrer"
-          className="ml-auto inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:underline"
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3.5 font-medium hover:bg-sunken"
         >
-          {t("Siteyi aç")} <ExternalLink className="size-3.5" />
+          {t("Siteyi aç")} <ExternalLink className="size-3.5 text-ink-3" />
         </a>
       </header>
-      <Tabs tabs={tabs} value={activeTab} onChange={setTab} label={t("Site bölümleri")} />
-      {/* `key`, kaydetme sonrası gelen yeni değerlerle formların sıfırlanmasını sağlar. */}
-      {activeTab === "general" && <GeneralTab key={JSON.stringify(data)} site={data} />}
-      {activeTab === "php" && <PhpTab key={JSON.stringify(data.php_settings) + data.php_version} site={data} options={options.data} />}
-      {activeTab === "proxy" && <ProxyTab key={data.proxy_target} site={data} />}
-      {activeTab === "ssl" && <SslTab site={data} />}
-      {activeTab === "advanced" && <AdvancedTab key={data.nginx_custom} site={data} />}
+
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <nav aria-label={t("Site bölümleri")} className="-mx-1 flex gap-1 overflow-x-auto px-1 lg:sticky lg:top-18 lg:mx-0 lg:w-52 lg:shrink-0 lg:flex-col lg:gap-px lg:overflow-visible lg:px-0">
+          {sections.map((item) => (
+            <NavLink
+              key={item.id}
+              to={item.id === "overview" ? `/sites/${data.id}` : `/sites/${data.id}/${item.id}`}
+              end
+              className={() =>
+                classNames(
+                  "flex h-9 shrink-0 items-center gap-2.5 rounded-md px-2.5 font-medium whitespace-nowrap transition-colors",
+                  active === item.id ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-sunken hover:text-ink",
+                )
+              }
+            >
+              <item.icon className="size-4 shrink-0" />
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1">
+          {/* `key`, kaydetme sonrası gelen yeni değerlerle formların sıfırlanmasını sağlar. */}
+          {active === "overview" && <OverviewSection site={data} options={options.data} />}
+          {active === "settings" && <GeneralTab key={JSON.stringify(data)} site={data} />}
+          {active === "php" && <PhpTab key={JSON.stringify(data.php_settings) + data.php_version} site={data} options={options.data} />}
+          {active === "proxy" && <ProxyTab key={data.proxy_target} site={data} />}
+          {active === "ssl" && <SslTab site={data} />}
+          {active === "git" && <GitSection site={data} />}
+          {active === "advanced" && <AdvancedTab key={data.nginx_custom} site={data} />}
+        </div>
+      </div>
     </>
   );
 }

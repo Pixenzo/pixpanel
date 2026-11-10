@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Button, Input } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
+import { BrandMark } from "../components/Brand";
 import { t } from "../lib/i18n";
 import { useSession, useTheme } from "../lib/session";
 
@@ -30,11 +31,7 @@ export function LoginPage() {
     <main className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-7 flex items-center gap-3">
-          <svg viewBox="0 0 32 32" className="size-9" aria-hidden>
-            <rect x="3" y="9" width="26" height="14" rx="7" className="fill-accent" />
-            <rect x="16" y="9" width="13" height="14" rx="7" className="fill-ink" />
-            <circle cx="10" cy="16" r="2.2" className="fill-bg" />
-          </svg>
+          <BrandMark className="size-8" />
           <div>
             <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">PixPanel</h1>
             <p className="font-mono text-[12.5px] text-ink-3">{window.location.hostname}</p>

@@ -4,6 +4,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import type { Tone } from "../components/ui";
 import { Button, ErrorBlock, LoadingBlock, PageHeader, Status } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
@@ -104,7 +105,9 @@ function Session({ scope, attempt }: { scope: string; attempt: number }) {
 
 export function TerminalPage() {
   const roots = useQuery({ queryKey: ["file-roots"], queryFn: () => api.get<Root[]>("/files/roots") });
-  const [scope, setScope] = useState("root");
+  // Başka sayfalar terminali belirli bir hedefle açabilir (ör. `?kapsam=container:web`).
+  const [searchParams] = useSearchParams();
+  const [scope, setScope] = useState(searchParams.get("kapsam") || "root");
   const [attempt, setAttempt] = useState(0);
 
   if (roots.isPending) return <LoadingBlock />;
@@ -126,6 +129,7 @@ export function TerminalPage() {
               onChange={(event) => setScope(event.target.value)}
               className="h-9 rounded-md border border-line-strong bg-surface px-3"
             >
+              {scope.startsWith("container:") && <option value={scope}>{t("Konteyner: {name}", { name: scope.slice("container:".length) })}</option>}
               {targets.map((target) => (
                 <option key={target.id} value={target.id}>
                   {target.id === "root" ? "root" : target.label}

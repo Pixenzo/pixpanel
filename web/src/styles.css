@@ -34,6 +34,13 @@
   --bad-soft: #f9e1de;
   --idle: #9aa7b4;
   --shadow-pop: 0 12px 32px -8px rgb(21 32 43 / 0.22), 0 2px 6px rgb(21 32 43 / 0.08);
+  /* Yan gezinme iki temada da koyudur; içerik alanından net ayrılır. */
+  --rail: #101b28;
+  --rail-raised: #1a2a3c;
+  --rail-line: #223347;
+  --rail-ink: #d5dee8;
+  --rail-ink-2: #8c9cae;
+  --rail-accent: #5cc3dd;
   color-scheme: light;
 }
 
@@ -58,6 +65,9 @@
   --bad-soft: #3d1c19;
   --idle: #5a6875;
   --shadow-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
+  --rail: #0a1119;
+  --rail-raised: #15202b;
+  --rail-line: #1b2733;
   color-scheme: dark;
 }
 
@@ -81,6 +91,12 @@
   --color-bad: var(--bad);
   --color-bad-soft: var(--bad-soft);
   --color-idle: var(--idle);
+  --color-rail: var(--rail);
+  --color-rail-raised: var(--rail-raised);
+  --color-rail-line: var(--rail-line);
+  --color-rail-ink: var(--rail-ink);
+  --color-rail-ink-2: var(--rail-ink-2);
+  --color-rail-accent: var(--rail-accent);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
   --shadow-pop: var(--shadow-pop);

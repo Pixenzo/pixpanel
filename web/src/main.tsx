@@ -12,13 +12,16 @@ import { AuditPage } from "./pages/Audit";
 import { ComponentsPage } from "./pages/Components";
 import { CronPage } from "./pages/Cron";
 import { DashboardPage } from "./pages/Dashboard";
+import { DockerPage } from "./pages/Docker";
 import { DatabasesPage } from "./pages/Databases";
 import { FilesPage } from "./pages/Files";
 import { JobsPage } from "./pages/Jobs";
 import { LoginPage } from "./pages/Login";
 import { LogsPage } from "./pages/Logs";
+import { PhpPage } from "./pages/Php";
 import { ProcessesPage } from "./pages/Processes";
 import { ServicesPage } from "./pages/Services";
+import { SettingsPage } from "./pages/Settings";
 import { SiteDetailPage } from "./pages/SiteDetail";
 import { SitesPage } from "./pages/Sites";
 import { TerminalPage } from "./pages/Terminal";
@@ -46,9 +49,13 @@ function App() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={isAdmin ? <DashboardPage /> : <Navigate to={canSites ? "/sites" : "/account"} replace />} />
+        <Route path="/" element={<Navigate to={canSites ? "/sites" : "/account"} replace />} />
         {isAdmin && (
           <>
+            <Route path="/server" element={<DashboardPage />} />
+            <Route path="/docker" element={<DockerPage />} />
+            <Route path="/php" element={<PhpPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/processes" element={<ProcessesPage />} />
@@ -58,7 +65,7 @@ function App() {
         )}
         {me.role !== "member" && <Route path="/users" element={<UsersPage />} />}
         {canSites && <Route path="/sites" element={<SitesPage />} />}
-        {canSites && <Route path="/sites/:id" element={<SiteDetailPage />} />}
+        {canSites && <Route path="/sites/:id/:section?" element={<SiteDetailPage />} />}
         {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
         {can("files") && <Route path="/files" element={<FilesPage />} />}
         {can("cron") && <Route path="/cron" element={<CronPage />} />}

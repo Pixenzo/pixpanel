@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Checkbox, EmptyState, ErrorBlock, LoadingBlock, PageHeader, Panel, SearchInput, Spinner } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { classNames } from "../lib/format";
@@ -37,7 +38,9 @@ function useDebounced(value: string, delay = 350): string {
 
 export function LogsPage() {
   const sources = useQuery({ queryKey: ["log-sources"], queryFn: () => api.get<Source[]>("/logs/sources") });
-  const [choice, setChoice] = useState<string | null>(null);
+  // Site kartındaki "Günlükler" kutusu sayfayı o sitenin günlüğüyle açar (`?kaynak=`).
+  const [searchParams] = useSearchParams();
+  const [choice, setChoice] = useState<string | null>(searchParams.get("kaynak"));
   const [filter, setFilter] = useState("");
   const [count, setCount] = useState(300);
   const [live, setLive] = useState(true);
