@@ -332,7 +332,10 @@ mod tests {
     fn command_rejects_newlines() {
         assert!(validate_command("php /home/u/sites/x/artisan schedule:run").is_ok());
         assert!(validate_command("echo a\n* * * * * root id").is_err());
-        assert!(validate_command("echo a\r").is_err());
+        assert!(validate_command("echo a\rb").is_err());
+        assert!(validate_command("echo a\tb").is_err());
         assert!(validate_command("   ").is_err());
+        // Yapıştırırken sona eklenen satır sonu kırpılır; dosyaya asla yazılmaz.
+        assert_eq!(validate_command("echo a\r\n").unwrap(), "echo a");
     }
 }

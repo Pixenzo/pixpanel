@@ -71,7 +71,7 @@ Son güncelleme: 10.11.2026
 ## Bilinen eksikler
 
 - Panel sertifikası kendinden imzalı; panelin kendi alan adına Let's Encrypt alması SSL aşamasında gelecek.
-- Birim testleri yazıldı ama henüz çalıştırılmadı: kod yalnızca Linux hedefi için derleniyor, `cargo test` Windows'ta çalışmıyor. Test makinesinde ya da CI'da çalıştırılmalı.
+- Birim testleri az (7 test: alan adı, sertifika, SQL kaçışlama, cron doğrulama) ve `scripts/test.sh` ile test makinesinde çalışıyor; kod Linux'a özgü olduğundan Windows'ta derlenmiyor.
 - Uçtan uca doğrulama test makinesinde elle (betiklerle) yapılıyor; otomatik bir test takımı yok.
 - Hosting hesapları terminal kullanamıyor (yalnızca yönetici); hesap başına kabuk/SFTP izni eklenecek.
 - PostgreSQL'e uzaktan bağlantı ayarı (pg_hba) panelden yapılamıyor.

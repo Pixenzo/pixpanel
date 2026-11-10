@@ -22,6 +22,7 @@ Açık kaynak panellerden çıkarılan somut notlar: `docs/arastirma-notlari.md`
 
 - Derleme yerelde yapılır: `cargo zigbuild --target x86_64-unknown-linux-musl` (zig ve cargo-zigbuild pip ile kurulu; yollar `deploy-dev.sh` içinde).
 - Arayüzü canlı görmek: `cd web && pnpm dev` (API istekleri test makinesine vekillenir).
+- Birim testleri: `scripts/test.sh` (kaynağı test makinesine kopyalayıp orada `cargo test` çalıştırır; Windows'ta derlenmez).
 - Test paneli: https://192.168.1.25:8443 — test hesabı bilgileri `.env` dosyasında (depoya girmez).
 
 ## Güvenlik kuralları (pazarlık yok)
