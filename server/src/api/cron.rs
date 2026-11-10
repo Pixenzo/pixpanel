@@ -1,7 +1,7 @@
 //! Zamanlanmış görevler (cron).
 //!
 //! Görevler panel veritabanında tutulur ve her hesap için
-//! `/etc/cron.d/capsule-<hesap>` dosyasına yazılır. Komutlar hesabın kendi
+//! `/etc/cron.d/pixpanel-<hesap>` dosyasına yazılır. Komutlar hesabın kendi
 //! Linux kullanıcısıyla çalışır; yöneticiler root adına da görev tanımlayabilir.
 //!
 //! Buradaki komut metni bilerek kabuk tarafından yorumlanır: cron'un doğası
@@ -164,7 +164,7 @@ fn load(state: &AppState, user: &AuthUser, id: i64) -> AppResult<CronJob> {
 }
 
 fn cron_file(run_as: &str) -> PathBuf {
-    PathBuf::from(format!("/etc/cron.d/capsule-{run_as}"))
+    PathBuf::from(format!("/etc/cron.d/pixpanel-{run_as}"))
 }
 
 /// Hesabın etkin görevlerini cron dosyasına yazar; etkin görev yoksa dosyayı kaldırır.
@@ -182,7 +182,7 @@ fn write_cron_file(state: &AppState, run_as: &str) -> AppResult<()> {
         return Ok(());
     }
     let mut content = String::from(
-        "# Capsule tarafından üretildi. Elle yapılan değişiklikler kaybolur.\n\
+        "# PixPanel tarafından üretildi. Elle yapılan değişiklikler kaybolur.\n\
          SHELL=/bin/sh\n\
          PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\
          MAILTO=\"\"\n",

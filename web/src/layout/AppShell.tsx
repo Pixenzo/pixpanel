@@ -93,7 +93,7 @@ function Logo() {
         <rect x="16" y="9" width="13" height="14" rx="7" className="fill-ink" />
         <circle cx="10" cy="16" r="2.2" className="fill-surface" />
       </svg>
-      <span className="text-[17px] font-semibold tracking-[-0.01em]">Capsule</span>
+      <span className="text-[17px] font-semibold tracking-[-0.01em]">PixPanel</span>
     </span>
   );
 }

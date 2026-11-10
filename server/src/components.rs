@@ -197,7 +197,7 @@ const APT_OPTIONS: &[&str] = &[
     "-y", "-o", "DPkg::Lock::Timeout=180", "-o", "Dpkg::Use-Pty=0", "-o", "Dpkg::Options::=--force-confold",
 ];
 
-async fn apt_install(ctx: &JobCtx, packages: &[String]) -> AppResult<()> {
+pub async fn apt_install(ctx: &JobCtx, packages: &[String]) -> AppResult<()> {
     let mut args: Vec<&str> = vec!["install", "--no-install-recommends"];
     args.extend_from_slice(APT_OPTIONS);
     args.push("--");
@@ -214,9 +214,9 @@ async fn ensure_repo(ctx: &JobCtx, repo: Repo) -> AppResult<()> {
 
     match (repo, os_id.as_str()) {
         (Repo::Php, "debian") => {
-            let list_path = "/etc/apt/sources.list.d/capsule-php.list";
+            let list_path = "/etc/apt/sources.list.d/pixpanel-php.list";
             if !std::path::Path::new(list_path).exists() {
-                let keyring = "/var/lib/capsule/debsuryorg-archive-keyring.deb";
+                let keyring = "/var/lib/pixpanel/debsuryorg-archive-keyring.deb";
                 ctx.exec("curl", &["-fsSLo", keyring, "https://packages.sury.org/debsuryorg-archive-keyring.deb"]).await?;
                 ctx.exec("dpkg", &["-i", keyring]).await?;
                 std::fs::write(
@@ -232,10 +232,10 @@ async fn ensure_repo(ctx: &JobCtx, repo: Repo) -> AppResult<()> {
             ctx.exec("add-apt-repository", &["-y", "ppa:ondrej/php"]).await?;
         }
         (Repo::Docker, _) => {
-            let list_path = "/etc/apt/sources.list.d/capsule-docker.list";
+            let list_path = "/etc/apt/sources.list.d/pixpanel-docker.list";
             if !std::path::Path::new(list_path).exists() {
                 std::fs::create_dir_all("/etc/apt/keyrings")?;
-                let key = "/etc/apt/keyrings/capsule-docker.asc";
+                let key = "/etc/apt/keyrings/pixpanel-docker.asc";
                 ctx.exec("curl", &["-fsSLo", key, &format!("https://download.docker.com/linux/{os_id}/gpg")]).await?;
                 let arch = exec::run_ok("dpkg", &["--print-architecture"]).await?;
                 std::fs::write(

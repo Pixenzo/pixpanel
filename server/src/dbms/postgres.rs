@@ -5,7 +5,7 @@
 //! `:"ad"` (tanımlayıcı) / `:'değer'` (metin) biçimleriyle psql tarafından
 //! tırnaklanır.
 //!
-//! Sahiplik modeli: her veritabanının `capsule_own_<ad>` adında, giriş
+//! Sahiplik modeli: her veritabanının `pixpanel_own_<ad>` adında, giriş
 //! yapamayan bir sahip rolü vardır. "Tam yetkili" kullanıcılar bu rolün
 //! üyesidir ve o veritabanına bağlandıklarında kendiliğinden bu role
 //! bürünürler; böylece hangisi tablo oluşturursa oluştursun nesnelerin sahibi
@@ -20,7 +20,7 @@ use crate::error::AppResult;
 use crate::sys::exec::base_command;
 
 fn owner_role(database: &str) -> String {
-    format!("capsule_own_{database}")
+    format!("pixpanel_own_{database}")
 }
 
 /// `postgres` kullanıcısı olarak çalışan bir komut hazırlar.
@@ -42,7 +42,7 @@ async fn run(database: &str, script: &str, vars: &[(&str, &str)]) -> AppResult<S
     command.args(["-X", "-q", "-At", "-F", "\t", "-v", "ON_ERROR_STOP=1", "-d", database, "-f", "-"]);
     let mut preamble = String::new();
     for (name, value) in vars {
-        let env_name = format!("CAPSULE_PSQL_{}", name.to_ascii_uppercase());
+        let env_name = format!("PIXPANEL_PSQL_{}", name.to_ascii_uppercase());
         preamble.push_str(&format!("\\getenv {name} {env_name}\n"));
         command.env(env_name, value);
     }

@@ -41,11 +41,23 @@ struct Target {
     label: String,
     /// `None` ise root.
     user: Option<sysuser::SysUser>,
+    /// Verilirse kabuk bu Docker konteynerinin içinde açılır.
+    container: Option<String>,
 }
 
 async fn resolve_target(state: &AppState, scope: &str) -> AppResult<Target> {
     if scope == "root" {
-        return Ok(Target { label: "root".into(), user: None });
+        return Ok(Target { label: "root".into(), user: None, container: None });
+    }
+    if let Some(container) = scope.strip_prefix("container:") {
+        let mut chars = container.bytes();
+        let valid = container.len() <= 128
+            && chars.next().is_some_and(|b| b.is_ascii_alphanumeric())
+            && chars.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'));
+        if !valid {
+            return Err(AppError::bad("Geçersiz konteyner"));
+        }
+        return Ok(Target { label: format!("konteyner {container}"), user: None, container: Some(container.to_string()) });
     }
     let id: i64 = scope.strip_prefix("user:").and_then(|id| id.parse().ok()).ok_or_else(|| AppError::bad("Geçersiz terminal hedefi"))?;
     let username: Option<String> = state.db.call(|conn| {
@@ -54,7 +66,7 @@ async fn resolve_target(state: &AppState, scope: &str) -> AppResult<Target> {
     let username = username.ok_or(AppError::NotFound)?;
     let user = sysuser::lookup(&username)
         .ok_or_else(|| AppError::bad("Bu hesabın henüz bir Linux kullanıcısı yok; önce bir site oluşturun"))?;
-    Ok(Target { label: username, user: Some(user) })
+    Ok(Target { label: username, user: Some(user), container: None })
 }
 
 /// WebSocket isteklerinde tarayıcılar çapraz kaynak korumasını uygulamaz; bu
@@ -93,6 +105,16 @@ async fn connect(
 }
 
 fn shell_command(target: &Target) -> CommandBuilder {
+    if let Some(container) = &target.container {
+        // Konteynerde bash yoksa (ör. alpine) sh açılır. Buradaki kabuk dizesi
+        // sabittir; kullanıcı girdisi içermez.
+        let mut command = CommandBuilder::new("docker");
+        command.args(["exec", "-it", "--", container, "/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"]);
+        command.cwd("/");
+        command.env("TERM", "xterm-256color");
+        command.env("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        return command;
+    }
     let mut command = match &target.user {
         None => {
             let mut command = CommandBuilder::new("/bin/bash");

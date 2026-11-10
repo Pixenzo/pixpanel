@@ -137,14 +137,30 @@ pub fn start_issue_job(
     let title = format!("{domain} için Let's Encrypt sertifikası");
     let state = state.clone();
     let jobs = state.jobs.clone();
+    let domain = domain.to_string();
     jobs.start("ssl.letsencrypt", &title, user_id, move |ctx| async move {
-        let (chain, private_key) = acme::issue(&ctx, &state.db, &state.cfg, &names).await?;
-        // Sertifika alınırken site değişmiş ya da silinmiş olabilir; güncel kayıt okunur.
-        let _guard = state.sys_lock.lock().await;
-        let site = sites::load(&state.db, site_id)?.ok_or_else(|| AppError::bad("Site bu sırada silinmiş"))?;
-        sites::activate_ssl(&state.db, &site, "letsencrypt", &chain, &private_key).await?;
-        ctx.log("Sertifika kuruldu; site artık HTTPS ile açılıyor");
-        Ok(())
+        let outcome = async {
+            let (chain, private_key) = acme::issue(&ctx, &state.db, &state.cfg, &names).await?;
+            // Sertifika alınırken site değişmiş ya da silinmiş olabilir; güncel kayıt okunur.
+            let _guard = state.sys_lock.lock().await;
+            let site = sites::load(&state.db, site_id)?.ok_or_else(|| AppError::bad("Site bu sırada silinmiş"))?;
+            sites::activate_ssl(&state.db, &site, "letsencrypt", &chain, &private_key).await?;
+            ctx.log("Sertifika kuruldu; site artık HTTPS ile açılıyor");
+            Ok(())
+        }
+        .await;
+        // Kullanıcının başlattığı istekte hata zaten ekranda görünür; yalnızca
+        // kendiliğinden yenileme başarısız olursa site sahibine haber verilir.
+        if let (Err(err), None) = (&outcome, user_id) {
+            if let Ok(Some(site)) = sites::load(&state.db, site_id) {
+                let body = format!("Site: {domain}
+Hata: {err}
+
+Sertifikanın süresi dolmadan önce panel yeniden deneyecek.");
+                crate::notify::send_event(&state, site.user_id, "ssl_failed", &format!("{domain} sertifikası yenilenemedi"), &body).await;
+            }
+        }
+        outcome
     })
 }
 

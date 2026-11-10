@@ -1,12 +1,12 @@
 [package]
-name = "capsule"
+name = "pixpanel"
 version = "0.1.0"
 edition = "2024"
 description = "Modern sunucu ve hosting yönetim paneli"
 license = "AGPL-3.0-or-later"
 
 [[bin]]
-name = "capsule"
+name = "pixpanel"
 path = "src/main.rs"
 
 [dependencies]
@@ -45,6 +45,8 @@ tar = "0.4"
 flate2 = "1"
 portable-pty = "0.9"
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "hostname", "tokio1-rustls", "ring", "webpki-roots"] }
 
 [profile.release]
 opt-level = 3

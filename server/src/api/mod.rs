@@ -8,9 +8,13 @@ mod auth;
 mod components;
 mod cron;
 mod databases;
+mod docker;
 mod files;
+mod git;
 mod jobs;
 mod logs;
+mod notify;
+mod php;
 mod sites;
 pub mod ssl;
 mod system;
@@ -29,5 +33,9 @@ pub fn router() -> Router<AppState> {
         .nest("/terminal", terminal::router())
         .nest("/cron", cron::router())
         .nest("/logs", logs::router())
-        .nest("/sites", sites::router().merge(ssl::router()))
+        .nest("/php", php::router())
+        .nest("/docker", docker::router())
+        .nest("/notifications", notify::router())
+        .nest("/hooks", git::hooks_router())
+        .nest("/sites", sites::router().merge(ssl::router()).merge(git::router()))
 }

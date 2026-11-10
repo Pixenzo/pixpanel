@@ -76,7 +76,7 @@ export function useMe(): Me {
 // ---- Tema ----
 
 export type Theme = "light" | "dark";
-const THEME_KEY = "capsule-theme";
+const THEME_KEY = "pixpanel-theme";
 
 function initialTheme(): Theme {
   const saved = localStorage.getItem(THEME_KEY);

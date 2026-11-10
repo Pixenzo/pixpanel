@@ -15,11 +15,11 @@ test -d web/dist || (cd web && pnpm build >/dev/null)
 tar czf - --exclude=server/target server/Cargo.toml server/Cargo.lock server/src web/dist |
   ssh -o BatchMode=yes "$TARGET_HOST" '
     set -e
-    mkdir -p /root/capsule-src
+    mkdir -p /root/pixpanel-src
     # Derleme önbelleği (target) korunur; yalnızca kaynak yenilenir.
-    rm -rf /root/capsule-src/server/src /root/capsule-src/web
-    tar xzf - --no-same-owner -C /root/capsule-src
-    cd /root/capsule-src/server
+    rm -rf /root/pixpanel-src/server/src /root/pixpanel-src/web
+    tar xzf - --no-same-owner -C /root/pixpanel-src
+    cd /root/pixpanel-src/server
     . ~/.cargo/env
     cargo test 2>&1 | grep -E "^test |test result|^error|panicked"
   '

@@ -141,6 +141,17 @@ pub fn list_with_ssl(db: &Db) -> AppResult<Vec<Site>> {
     })
 }
 
+/// Verilen PHP sürümünü kullanan bütün siteler (genel ayar değişince havuzları yenilemek için).
+pub fn list_by_php(db: &Db, version: &str) -> AppResult<Vec<Site>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SITE_COLUMNS} FROM sites s JOIN users u ON u.id = s.user_id
+             WHERE s.kind = 'php' AND s.php_version = ?1 ORDER BY s.domain"
+        ))?;
+        stmt.query_map(params![version], read_site)?.collect()
+    })
+}
+
 /// Siteyi okur ve isteği yapanın ona erişimi olduğunu doğrular.
 pub fn get(db: &Db, user: &AuthUser, id: i64) -> AppResult<Site> {
     let (site, owner_parent) = load_with_parent(db, id)?.ok_or(AppError::NotFound)?;

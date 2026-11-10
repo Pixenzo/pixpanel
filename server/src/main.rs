@@ -1,4 +1,4 @@
-//! Capsule — sunucu ve hosting yönetim paneli.
+//! PixPanel — sunucu ve hosting yönetim paneli.
 
 mod api;
 mod auth;
@@ -6,10 +6,12 @@ mod components;
 mod config;
 mod db;
 mod dbms;
+mod deploy;
 mod error;
 mod fsop;
 mod hosting;
 mod jobs;
+mod notify;
 mod state;
 mod sys;
 mod tasks;
@@ -28,7 +30,7 @@ use crate::db::Db;
 use crate::state::AppState;
 
 #[derive(Parser)]
-#[command(name = "capsule", version, about = "Sunucu ve hosting yönetim paneli")]
+#[command(name = "pixpanel", version, about = "Sunucu ve hosting yönetim paneli")]
 struct Cli {
     /// Yapılandırma dosyasının yolu
     #[arg(long, global = true, default_value = config::DEFAULT_CONFIG_PATH)]
@@ -68,7 +70,7 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "capsule=info,tower_http=warn".into()),
+                .unwrap_or_else(|_| "pixpanel=info,tower_http=warn".into()),
         )
         .init();
 
@@ -97,15 +99,15 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
         apt_lock: Arc::default(),
     };
 
+    // TLS kullanan her şey (panel, ACME, bildirimler) aynı şifreleme sağlayıcısını kullanır.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    deploy::mark_interrupted(&state.db).map_err(|err| anyhow::anyhow!(err.to_string()))?;
     tasks::spawn_certificate_renewal(state.clone());
 
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();
     let addr = SocketAddr::new(cfg.listen_addr, cfg.listen_port);
 
     if cfg.tls {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .map_err(|_| anyhow::anyhow!("TLS sağlayıcısı kurulamadı"))?;
         let (cert, key) = ensure_panel_certificate(&cfg.tls_dir())?;
         let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
             .await

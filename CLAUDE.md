@@ -1,4 +1,4 @@
-# Capsule
+# PixPanel
 
 Debian 13 / Ubuntu için açık kaynak sunucu ve hosting yönetim paneli. Rust arka uç (tek statik ikili dosya, arayüz içine gömülü) + React arayüz.
 

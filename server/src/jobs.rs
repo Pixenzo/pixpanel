@@ -65,22 +65,47 @@ impl JobCtx {
     /// Komutu çalıştırır ve çıktısını canlı olarak görev günlüğüne aktarır.
     pub async fn exec(&self, program: &str, args: &[&str]) -> AppResult<()> {
         self.log(format!("$ {program} {}", args.join(" ")));
-        self.run_streaming(base_command(program).args(args), program).await
+        self.run_streaming(base_command(program).args(args), program, None).await
+    }
+
+    /// Günlüğün son satırları (bildirimlerde hata özetini göstermek için).
+    pub fn tail(&self, lines: usize) -> String {
+        let log = self.job.log.lock().unwrap_or_else(|p| p.into_inner());
+        let all: Vec<&str> = log.lines().collect();
+        all[all.len().saturating_sub(lines)..].join("
+")
     }
 
     /// `exec` gibi, ama komutu verilen klasörde çalıştırır ve komut satırını günlüğe yazmaz
     /// (çağıran, çalıştırılan şeyi kendi sözleriyle günlüğe yazar).
     pub async fn exec_in(&self, dir: &str, program: &str, args: &[&str]) -> AppResult<()> {
-        self.run_streaming(base_command(program).args(args).current_dir(dir), program).await
+        self.run_streaming(base_command(program).args(args).current_dir(dir), program, None).await
     }
 
-    async fn run_streaming(&self, command: &mut tokio::process::Command, program: &str) -> AppResult<()> {
+    /// Hazırlanmış komutu çalıştırıp çıktısını günlüğe aktarır. `stdin` verilirse
+    /// sürecin standart girdisine yazılır (ör. diske yazılmadan çalıştırılan betik).
+    pub async fn run_streaming(
+        &self,
+        command: &mut tokio::process::Command,
+        program: &str,
+        stdin: Option<Vec<u8>>,
+    ) -> AppResult<()> {
+        if stdin.is_some() {
+            command.stdin(Stdio::piped());
+        }
         let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|err| AppError::internal(format!("komut başlatılamadı ({program}): {err}")))?;
 
+        if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
+            tokio::spawn(async move {
+                use tokio::io::AsyncWriteExt;
+                let _ = pipe.write_all(&data).await;
+                let _ = pipe.shutdown().await;
+            });
+        }
         let stdout = child.stdout.take().expect("stdout borusu");
         let stderr = child.stderr.take().expect("stderr borusu");
         let out_ctx = self.clone();

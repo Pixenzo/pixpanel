@@ -81,7 +81,7 @@ function uploadFile(scope: string, dir: string, file: File, overwrite: boolean, 
     const request = new XMLHttpRequest();
     const query = `scope=${encodeURIComponent(scope)}&dir=${encodeURIComponent(dir)}&overwrite=${overwrite}`;
     request.open("POST", `/api/v1/files/upload?${query}`);
-    request.setRequestHeader("x-capsule-csrf", "1");
+    request.setRequestHeader("x-pixpanel-csrf", "1");
     request.upload.onprogress = (event) => event.lengthComputable && onProgress(event.loaded / event.total);
     request.onerror = () => reject(new ApiError(0, "network", t("Yükleme sırasında bağlantı koptu")));
     request.onload = () => {

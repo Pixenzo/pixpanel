@@ -24,7 +24,7 @@ use crate::error::{AppError, AppResult};
 use crate::sys::exec;
 
 /// Panelin oluşturduğu kullanıcıların üye olduğu grup.
-pub const MANAGED_GROUP: &str = "capsule-users";
+pub const MANAGED_GROUP: &str = "pixpanel-users";
 pub const WEB_GROUP: &str = "www-data";
 
 #[derive(Debug, Clone)]

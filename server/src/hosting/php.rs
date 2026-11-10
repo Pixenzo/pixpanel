@@ -22,15 +22,17 @@ const FORBIDDEN_DIRECTIVES: &[&str] = &[
     "sys_temp_dir", "doc_root", "user_dir", "auto_prepend_file", "auto_append_file",
 ];
 
+/// Site başına PHP ayarları. `None` olan alanlar o PHP sürümünün genel
+/// ayarını (`PhpGlobal`) devralır.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct PhpSettings {
-    pub memory_limit: String,
-    pub upload_max_filesize: String,
-    pub post_max_size: String,
-    pub max_execution_time: u32,
-    pub max_input_vars: u32,
-    pub display_errors: bool,
+    pub memory_limit: Option<String>,
+    pub upload_max_filesize: Option<String>,
+    pub post_max_size: Option<String>,
+    pub max_execution_time: Option<u32>,
+    pub max_input_vars: Option<u32>,
+    pub display_errors: Option<bool>,
     /// Aynı anda çalışabilecek en fazla PHP süreci.
     pub max_children: u32,
     /// `exec`, `shell_exec` gibi işlevlere izin ver.
@@ -50,15 +52,54 @@ pub struct Directive {
 impl Default for PhpSettings {
     fn default() -> Self {
         Self {
+            memory_limit: None,
+            upload_max_filesize: None,
+            post_max_size: None,
+            max_execution_time: None,
+            max_input_vars: None,
+            display_errors: None,
+            max_children: 8,
+            allow_exec: false,
+            open_basedir: true,
+            custom: Vec::new(),
+        }
+    }
+}
+
+/// Bir PHP sürümünün bütün sitelere ve komut satırına uygulanan genel ayarları.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PhpGlobal {
+    pub memory_limit: String,
+    pub upload_max_filesize: String,
+    pub post_max_size: String,
+    pub max_execution_time: u32,
+    pub max_input_vars: u32,
+    pub display_errors: bool,
+    pub timezone: String,
+    pub opcache: bool,
+    /// OPcache belleği (MB).
+    pub opcache_memory: u32,
+    pub custom: Vec<Directive>,
+}
+
+impl Default for PhpGlobal {
+    fn default() -> Self {
+        let timezone = std::fs::read_to_string("/etc/timezone")
+            .map(|zone| zone.trim().to_string())
+            .ok()
+            .filter(|zone| validate_timezone(zone).is_ok())
+            .unwrap_or_else(|| "UTC".into());
+        Self {
             memory_limit: "256M".into(),
             upload_max_filesize: "64M".into(),
             post_max_size: "64M".into(),
             max_execution_time: 60,
             max_input_vars: 3000,
             display_errors: false,
-            max_children: 8,
-            allow_exec: false,
-            open_basedir: true,
+            timezone,
+            opcache: true,
+            opcache_memory: 128,
             custom: Vec::new(),
         }
     }
@@ -72,6 +113,62 @@ fn is_size(value: &str) -> bool {
         && value.len() - digits.len() <= 1
 }
 
+fn validate_size(label: &str, value: &str) -> AppResult<()> {
+    if is_size(value) { Ok(()) } else { Err(AppError::bad(format!("{label} geçersiz: {value} (örnek: 256M)"))) }
+}
+
+fn validate_limits(max_execution_time: u32, max_input_vars: u32) -> AppResult<()> {
+    if !(1..=86400).contains(&max_execution_time) {
+        return Err(AppError::bad("Çalışma süresi 1-86400 saniye arasında olmalı"));
+    }
+    if !(100..=100_000).contains(&max_input_vars) {
+        return Err(AppError::bad("max_input_vars 100-100000 arasında olmalı"));
+    }
+    Ok(())
+}
+
+/// Özel yönergeleri doğrular. `isolated` verilirse site yalıtımını delebilecek
+/// yönergeler de reddedilir (site sahipleri için).
+fn validate_directives(custom: &[Directive], isolated: bool) -> AppResult<()> {
+    if custom.len() > 50 {
+        return Err(AppError::bad("En fazla 50 özel yönerge eklenebilir"));
+    }
+    for directive in custom {
+        let key = directive.key.as_str();
+        let key_ok = !key.is_empty()
+            && key.len() <= 64
+            && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.');
+        if !key_ok {
+            return Err(AppError::bad(format!("Geçersiz yönerge adı: {key}")));
+        }
+        if isolated && FORBIDDEN_DIRECTIVES.contains(&key.to_ascii_lowercase().as_str()) {
+            return Err(AppError::bad(format!("{key} yönergesi site yalıtımı nedeniyle değiştirilemez")));
+        }
+        // Değer yapılandırma dosyasına yazıldığından satır sonu, tırnak ve yorum
+        // karakterleri gibi dosyanın yapısını bozabilecek her şey reddedilir.
+        let value_ok = directive.value.len() <= 255
+            && directive.value.chars().all(|c| c.is_ascii_alphanumeric() || " _.,:/@=+~&|^!()%*-".contains(c));
+        if !value_ok {
+            return Err(AppError::bad(format!("{key} için geçersiz değer")));
+        }
+    }
+    Ok(())
+}
+
+/// Saat dilimi `Europe/Istanbul` biçiminde ve sistemde tanımlı olmalıdır.
+pub fn validate_timezone(zone: &str) -> AppResult<()> {
+    let shaped = !zone.is_empty()
+        && zone.len() <= 64
+        && !zone.starts_with(['/', '.'])
+        && !zone.contains("..")
+        && zone.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'+' | b'-'));
+    if shaped && Path::new("/usr/share/zoneinfo").join(zone).is_file() {
+        Ok(())
+    } else {
+        Err(AppError::bad(format!("Geçersiz saat dilimi: {zone} (örnek: Europe/Istanbul)")))
+    }
+}
+
 impl PhpSettings {
     pub fn validate(&self) -> AppResult<()> {
         for (label, value) in [
@@ -79,43 +176,97 @@ impl PhpSettings {
             ("En büyük yükleme boyutu", &self.upload_max_filesize),
             ("En büyük POST boyutu", &self.post_max_size),
         ] {
-            if !is_size(value) {
-                return Err(AppError::bad(format!("{label} geçersiz: {value} (örnek: 256M)")));
+            if let Some(value) = value {
+                validate_size(label, value)?;
             }
         }
-        if !(1..=86400).contains(&self.max_execution_time) {
-            return Err(AppError::bad("Çalışma süresi 1-86400 saniye arasında olmalı"));
-        }
-        if !(100..=100_000).contains(&self.max_input_vars) {
-            return Err(AppError::bad("max_input_vars 100-100000 arasında olmalı"));
-        }
+        validate_limits(self.max_execution_time.unwrap_or(60), self.max_input_vars.unwrap_or(3000))?;
         if !(1..=500).contains(&self.max_children) {
             return Err(AppError::bad("Süreç sayısı 1-500 arasında olmalı"));
         }
-        if self.custom.len() > 50 {
-            return Err(AppError::bad("En fazla 50 özel yönerge eklenebilir"));
+        validate_directives(&self.custom, true)
+    }
+}
+
+impl PhpGlobal {
+    pub fn validate(&self) -> AppResult<()> {
+        validate_size("Bellek sınırı", &self.memory_limit)?;
+        validate_size("En büyük yükleme boyutu", &self.upload_max_filesize)?;
+        validate_size("En büyük POST boyutu", &self.post_max_size)?;
+        validate_limits(self.max_execution_time, self.max_input_vars)?;
+        validate_timezone(&self.timezone)?;
+        if !(8..=4096).contains(&self.opcache_memory) {
+            return Err(AppError::bad("OPcache belleği 8-4096 MB arasında olmalı"));
+        }
+        validate_directives(&self.custom, false)
+    }
+
+    /// `conf.d` altına yazılan ini içeriği. Komut satırında bellek ve süre
+    /// sınırı uygulanmaz (uzun süren betikler ve composer için).
+    fn render_ini(&self, cli: bool) -> String {
+        let mut out = String::from("; PixPanel tarafından üretildi. Elle yapılan değişiklikler kaybolur.\n");
+        if !cli {
+            out.push_str(&format!("memory_limit = {}\n", self.memory_limit));
+            out.push_str(&format!("max_execution_time = {}\n", self.max_execution_time));
+            out.push_str(&format!("display_errors = {}\n", if self.display_errors { "On" } else { "Off" }));
+        }
+        out.push_str(&format!("upload_max_filesize = {}\n", self.upload_max_filesize));
+        out.push_str(&format!("post_max_size = {}\n", self.post_max_size));
+        out.push_str(&format!("max_input_vars = {}\n", self.max_input_vars));
+        out.push_str(&format!("date.timezone = \"{}\"\n", self.timezone));
+        if !cli {
+            out.push_str(&format!("opcache.enable = {}\n", u8::from(self.opcache)));
+            out.push_str(&format!("opcache.memory_consumption = {}\n", self.opcache_memory));
         }
         for directive in &self.custom {
-            let key = directive.key.as_str();
-            let key_ok = !key.is_empty()
-                && key.len() <= 64
-                && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.');
-            if !key_ok {
-                return Err(AppError::bad(format!("Geçersiz yönerge adı: {key}")));
-            }
-            if FORBIDDEN_DIRECTIVES.contains(&key.to_ascii_lowercase().as_str()) {
-                return Err(AppError::bad(format!("{key} yönergesi site yalıtımı nedeniyle değiştirilemez")));
-            }
-            // Değer havuz dosyasına yazıldığından satır sonu, tırnak ve yorum
-            // karakterleri gibi dosyanın yapısını bozabilecek her şey reddedilir.
-            let value_ok = directive.value.len() <= 255
-                && directive.value.chars().all(|c| c.is_ascii_alphanumeric() || " _.,:/@=+~&|^!()%*-".contains(c));
-            if !value_ok {
-                return Err(AppError::bad(format!("{key} için geçersiz değer")));
+            out.push_str(&format!("{} = \"{}\"\n", directive.key, directive.value));
+        }
+        out
+    }
+}
+
+fn global_store_path(version: &str) -> PathBuf {
+    PathBuf::from(format!("/etc/pixpanel/php/{version}.json"))
+}
+
+fn ini_path(version: &str, sapi: &str) -> PathBuf {
+    PathBuf::from(format!("/etc/php/{version}/{sapi}/conf.d/99-pixpanel.ini"))
+}
+
+/// Sürümün kayıtlı genel ayarları; hiç kaydedilmediyse varsayılanlar.
+pub fn load_global(version: &str) -> PhpGlobal {
+    std::fs::read(global_store_path(version))
+        .ok()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Genel ayarları kaydeder ve FPM ile komut satırı için ini dosyalarını yazar.
+/// FPM sınamadan geçemezse eski dosyalar geri konur. Yeniden yükleme çağırana
+/// aittir (havuzlar da yeniden yazılacağından tek seferde yapılır).
+pub async fn save_global(version: &str, settings: &PhpGlobal) -> AppResult<()> {
+    validate_version(version)?;
+    settings.validate()?;
+    let targets = [(ini_path(version, "fpm"), false), (ini_path(version, "cli"), true)];
+    let previous: Vec<Option<Vec<u8>>> = targets.iter().map(|(path, _)| std::fs::read(path).ok()).collect();
+    for (path, cli) in &targets {
+        if path.parent().is_some_and(Path::is_dir) {
+            atomic_write(path, settings.render_ini(*cli).as_bytes(), 0o644)?;
+        }
+    }
+    if let Err(detail) = test_config(version).await? {
+        for ((path, _), content) in targets.iter().zip(previous) {
+            match content {
+                Some(content) => atomic_write(path, &content, 0o644)?,
+                None => {
+                    let _ = std::fs::remove_file(path);
+                }
             }
         }
-        Ok(())
+        return Err(AppError::bad(format!("PHP ayarları geçersiz: {detail}")));
     }
+    let encoded = serde_json::to_vec_pretty(settings).map_err(|err| AppError::internal(err.to_string()))?;
+    atomic_write(&global_store_path(version), &encoded, 0o600)
 }
 
 /// Sürüm dizgesi yalnızca `8.3` biçiminde olabilir (dosya yolunda kullanılır).
@@ -151,11 +302,11 @@ pub fn installed_versions() -> Vec<String> {
 /// yan yana çalışır, nginx yeni sokete geçtikten sonra eskisi kaldırılır.
 /// (Ortak yol kullanılsaydı kapanan eski sürüm yeni soketi de silerdi.)
 pub fn socket_path(site_id: i64, version: &str) -> String {
-    format!("/run/php/capsule-{site_id}-php{version}.sock")
+    format!("/run/php/pixpanel-{site_id}-php{version}.sock")
 }
 
 fn pool_path(version: &str, site_id: i64) -> PathBuf {
-    PathBuf::from(format!("/etc/php/{version}/fpm/pool.d/capsule-{site_id}.conf"))
+    PathBuf::from(format!("/etc/php/{version}/fpm/pool.d/pixpanel-{site_id}.conf"))
 }
 
 fn render_pool(
@@ -165,14 +316,15 @@ fn render_pool(
     user: &SysUser,
     site_root: &Path,
     settings: &PhpSettings,
+    global: &PhpGlobal,
 ) -> String {
     let tmp = user.tmp_dir();
     let tmp = tmp.display();
     let root = site_root.display();
     let name = &user.name;
     let mut out = format!(
-        "; Capsule tarafından üretildi ({domain}). Elle yapılan değişiklikler kaybolur.\n\
-         [capsule-{site_id}]\n\
+        "; PixPanel tarafından üretildi ({domain}). Elle yapılan değişiklikler kaybolur.\n\
+         [pixpanel-{site_id}]\n\
          user = {name}\n\
          group = {name}\n\
          listen = {socket}\n\
@@ -200,12 +352,14 @@ fn render_pool(
          php_flag[display_errors] = {display}\n",
         socket = socket_path(site_id, version),
         children = settings.max_children,
-        memory = settings.memory_limit,
-        upload = settings.upload_max_filesize,
-        post = settings.post_max_size,
-        vars = settings.max_input_vars,
-        time = settings.max_execution_time,
-        display = if settings.display_errors { "on" } else { "off" },
+        // Devralınan değerler de havuza yazılır: `php_admin_value` olmadan
+        // site, genel sınırı `ini_set` ile aşabilirdi.
+        memory = settings.memory_limit.as_ref().unwrap_or(&global.memory_limit),
+        upload = settings.upload_max_filesize.as_ref().unwrap_or(&global.upload_max_filesize),
+        post = settings.post_max_size.as_ref().unwrap_or(&global.post_max_size),
+        vars = settings.max_input_vars.unwrap_or(global.max_input_vars),
+        time = settings.max_execution_time.unwrap_or(global.max_execution_time),
+        display = if settings.display_errors.unwrap_or(global.display_errors) { "on" } else { "off" },
     );
     if settings.open_basedir {
         out.push_str(&format!("php_admin_value[open_basedir] = {root}:{tmp}:/usr/share/php\n"));
@@ -225,7 +379,7 @@ fn render_pool(
 /// sitelerin o an işlenen isteklerini yarıda keser; bu ayarla süren isteklerin
 /// bitmesi 10 saniyeye kadar beklenir.
 const GLOBAL_CONFIG: &str = concat!(
-    "; Capsule tarafından yönetilir.\n",
+    "; PixPanel tarafından yönetilir.\n",
     "[global]\n",
     "process_control_timeout = 10s\n",
     "emergency_restart_threshold = 10\n",
@@ -242,7 +396,7 @@ async fn test_config(version: &str) -> AppResult<Result<(), String>> {
 /// etkilediğinden, sınamadan geçemezse hemen eski hâline döndürülür.
 pub async fn ensure_global_config(version: &str) -> AppResult<()> {
     validate_version(version)?;
-    let path = PathBuf::from(format!("/etc/php/{version}/fpm/pool.d/000-capsule-global.conf"));
+    let path = PathBuf::from(format!("/etc/php/{version}/fpm/pool.d/000-pixpanel-global.conf"));
     let previous = std::fs::read(&path).ok();
     if previous.as_deref() == Some(GLOBAL_CONFIG.as_bytes()) {
         return Ok(());
@@ -265,7 +419,7 @@ pub async fn ensure_global_config(version: &str) -> AppResult<()> {
     Ok(())
 }
 
-async fn reload(version: &str) -> AppResult<()> {
+pub async fn reload(version: &str) -> AppResult<()> {
     let service = format!("php{version}-fpm.service");
     exec::run_ok("systemctl", &["reload-or-restart", "--", &service]).await?;
     Ok(())
@@ -290,7 +444,7 @@ pub async fn apply_pool(
     ensure_global_config(version).await?;
     let path = pool_path(version, site_id);
     let previous = std::fs::read(&path).ok();
-    atomic_write(&path, render_pool(site_id, domain, version, user, site_root, settings).as_bytes(), 0o644)?;
+    atomic_write(&path, render_pool(site_id, domain, version, user, site_root, settings, &load_global(version)).as_bytes(), 0o644)?;
 
     // Hatalı bir havuz bütün PHP sitelerini düşürebileceğinden önce sınanır.
     if let Err(detail) = test_config(version).await? {
@@ -331,4 +485,69 @@ pub async fn remove_pool_except(site_id: i64, keep: Option<&str>) -> AppResult<(
         }
     }
     Ok(())
+}
+
+/// Panelden kurulabilen yaygın eklentiler (paket adı `php<sürüm>-<ad>`).
+pub const INSTALLABLE_EXTENSIONS: &[&str] = &[
+    "apcu", "bcmath", "bz2", "curl", "gd", "gmp", "igbinary", "imagick", "imap", "intl", "ldap", "mbstring",
+    "memcached", "mongodb", "msgpack", "mysql", "opcache", "pgsql", "redis", "soap", "sqlite3", "ssh2",
+    "swoole", "xdebug", "xml", "xsl", "yaml", "zip",
+];
+
+#[derive(Debug, Serialize)]
+pub struct Extension {
+    pub name: String,
+    pub enabled: bool,
+}
+
+pub fn validate_extension_name(name: &str) -> AppResult<()> {
+    let valid = !name.is_empty()
+        && name.len() <= 32
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+    if valid { Ok(()) } else { Err(AppError::bad("Geçersiz eklenti adı")) }
+}
+
+/// Sürümde kurulu eklenti modülleri ve FPM için etkin olup olmadıkları.
+pub fn extensions(version: &str) -> AppResult<Vec<Extension>> {
+    validate_version(version)?;
+    let available = PathBuf::from(format!("/etc/php/{version}/mods-available"));
+    let enabled_dir = PathBuf::from(format!("/etc/php/{version}/fpm/conf.d"));
+    let enabled: Vec<String> = std::fs::read_dir(&enabled_dir)
+        .map(|entries| entries.flatten().filter_map(|entry| entry.file_name().into_string().ok()).collect())
+        .unwrap_or_default();
+    let mut list: Vec<Extension> = std::fs::read_dir(&available)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter_map(|file| file.strip_suffix(".ini").map(str::to_string))
+                .filter(|name| validate_extension_name(name).is_ok())
+                .map(|name| {
+                    // Etkin modüller `20-redis.ini` gibi öncelik önekiyle bağlanır.
+                    let suffix = format!("-{name}.ini");
+                    Extension { enabled: enabled.iter().any(|file| file.ends_with(&suffix)), name }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(list)
+}
+
+/// Eklentiyi bütün çalışma biçimleri (FPM, komut satırı) için açar ya da kapatır.
+pub async fn set_extension(version: &str, name: &str, enabled: bool) -> AppResult<()> {
+    validate_version(version)?;
+    validate_extension_name(name)?;
+    if !extensions(version)?.iter().any(|extension| extension.name == name) {
+        return Err(AppError::NotFound);
+    }
+    let tool = if enabled { "phpenmod" } else { "phpdismod" };
+    exec::run_ok(tool, &["-v", version, "-s", "ALL", "--", name]).await?;
+    if let Err(detail) = test_config(version).await? {
+        // Açılan eklenti FPM'i bozduysa geri kapatılır.
+        let undo = if enabled { "phpdismod" } else { "phpenmod" };
+        exec::run_ok(undo, &["-v", version, "-s", "ALL", "--", name]).await?;
+        return Err(AppError::bad(format!("Eklenti uygulanamadı: {detail}")));
+    }
+    reload(version).await
 }

@@ -55,7 +55,7 @@ Son güncelleme: 10.11.2026
 
 ## Test ortamı notları
 
-- Test makinesinde `/etc/capsule/config.toml` paneli Pebble'a yönlendirir (`acme_directory`, `acme_root_ca`); gerçek Let's Encrypt için bu dosya silinmelidir.
+- Test makinesinde `/etc/pixpanel/config.toml` paneli Pebble'a yönlendirir (`acme_directory`, `acme_root_ca`); gerçek Let's Encrypt için bu dosya silinmelidir.
 - Pebble `/opt/pebble` altında, `pebble-test.service` olarak çalışır; `/etc/hosts` içinde `*.test` adları 127.0.0.1'e yönlenir.
 
 ## Sıradaki (öncelik sırasıyla)

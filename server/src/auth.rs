@@ -21,9 +21,9 @@ use crate::db::{now, Db};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-pub const SESSION_COOKIE: &str = "capsule_session";
-pub const CSRF_HEADER: &str = "x-capsule-csrf";
-pub const API_TOKEN_PREFIX: &str = "cap_";
+pub const SESSION_COOKIE: &str = "pixpanel_session";
+pub const CSRF_HEADER: &str = "x-pixpanel-csrf";
+pub const API_TOKEN_PREFIX: &str = "pix_";
 
 /// Alt hesaplara (member) verilebilecek yetki alanları.
 pub const PERMISSION_AREAS: &[&str] = &[

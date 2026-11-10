@@ -45,6 +45,8 @@ struct Options {
     php_versions: Vec<String>,
     /// Sitenin atanabileceği hesaplar (yönetici ve bayiler için).
     owners: Vec<OwnerOption>,
+    /// Sürüm başına genel PHP ayarları; site formunda devralınan değerleri göstermek için.
+    php_defaults: std::collections::BTreeMap<String, php::PhpGlobal>,
 }
 
 async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Options>> {
@@ -63,7 +65,9 @@ async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
         }
         _ => Vec::new(),
     };
-    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions: php::installed_versions(), owners }))
+    let php_versions = php::installed_versions();
+    let php_defaults = php_versions.iter().map(|version| (version.clone(), php::load_global(version))).collect();
+    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults }))
 }
 
 #[derive(Deserialize)]

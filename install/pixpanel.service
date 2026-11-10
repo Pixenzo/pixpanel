@@ -1,11 +1,11 @@
 [Unit]
-Description=Capsule sunucu yönetim paneli
+Description=PixPanel sunucu yönetim paneli
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/capsule serve
+ExecStart=/usr/local/bin/pixpanel serve
 Restart=on-failure
 RestartSec=2
 # Panel, sistem servislerini yönettiği için root olarak çalışır.

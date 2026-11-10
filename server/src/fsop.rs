@@ -479,7 +479,7 @@ fn upload(dir: &str, name: &str, overwrite: bool, input: &mut dyn Read) -> OpRes
         return Err(format!("{name} zaten var"));
     }
     // Yarım kalan yükleme hedef dosyayı bozmasın diye önce geçici ada yazılır.
-    let temp = dir.join(format!(".{name}.capsule-yukleme-{}", std::process::id()));
+    let temp = dir.join(format!(".{name}.pixpanel-yukleme-{}", std::process::id()));
     let result = (|| {
         let mut file = fs::OpenOptions::new().write(true).create_new(true).mode(0o644).open(&temp).map_err(|err| describe(err, &temp))?;
         let size = io::copy(input, &mut file).map_err(|err| describe(err, &target))?;

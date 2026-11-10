@@ -120,7 +120,7 @@ pub fn validate_name(name: &str, what: &str) -> AppResult<()> {
             "{what} en fazla 48 karakter olmalı, küçük harfle başlamalı; yalnızca küçük harf, rakam ve _ içerebilir"
         )));
     }
-    if RESERVED.contains(&name) || name.starts_with("pg_") || name.starts_with("capsule_") {
+    if RESERVED.contains(&name) || name.starts_with("pg_") || name.starts_with("pixpanel_") {
         return Err(AppError::bad(format!("“{name}” adı sunucu tarafından kullanılıyor; başka bir ad seçin")));
     }
     Ok(())

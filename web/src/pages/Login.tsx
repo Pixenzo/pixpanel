@@ -36,7 +36,7 @@ export function LoginPage() {
             <circle cx="10" cy="16" r="2.2" className="fill-bg" />
           </svg>
           <div>
-            <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">Capsule</h1>
+            <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">PixPanel</h1>
             <p className="font-mono text-[12.5px] text-ink-3">{window.location.hostname}</p>
           </div>
         </div>
@@ -72,7 +72,7 @@ export function LoginPage() {
 
         <p className="mt-4 text-[12.5px] text-ink-3">
           {t("Parolanızı unuttuysanız sunucuda şu komutla sıfırlayabilirsiniz:")}{" "}
-          <code className="font-mono text-ink-2">capsule reset-password {username || "admin"}</code>
+          <code className="font-mono text-ink-2">pixpanel reset-password {username || "admin"}</code>
         </p>
       </div>
     </main>

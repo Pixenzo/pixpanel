@@ -33,7 +33,7 @@ struct Source {
 
 /// Yöneticiye hazır sunulan servis günlükleri; kurulu olmayanlar listelenmez.
 const SYSTEM_UNITS: &[(&str, &str)] = &[
-    ("capsule.service", "Panel"),
+    ("pixpanel.service", "Panel"),
     ("nginx.service", "nginx"),
     ("mariadb.service", "MariaDB"),
     ("postgresql.service", "PostgreSQL"),

@@ -13,10 +13,10 @@ export class ApiError extends Error {
 }
 
 /** Oturum düştüğünde uygulamanın giriş ekranına dönmesi için yayılan olay. */
-export const UNAUTHORIZED_EVENT = "capsule:unauthorized";
+export const UNAUTHORIZED_EVENT = "pixpanel:unauthorized";
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "x-capsule-csrf": "1" };
+  const headers: Record<string, string> = { "x-pixpanel-csrf": "1" };
   // Dosya yüklemelerinde içerik türünü (sınır değeriyle birlikte) tarayıcı belirler.
   const isForm = body instanceof FormData;
   if (body !== undefined && !isForm) headers["content-type"] = "application/json";

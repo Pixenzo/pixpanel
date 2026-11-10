@@ -3,4 +3,5 @@
 pub mod exec;
 pub mod metrics;
 pub mod procs;
+pub mod runas;
 pub mod services;

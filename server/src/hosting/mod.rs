@@ -20,7 +20,7 @@ pub fn atomic_write(path: &Path, content: &[u8], mode: u32) -> AppResult<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("capsule-tmp");
+    let tmp = path.with_extension("pixpanel-tmp");
     let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(mode).open(&tmp)?;
     file.write_all(content)?;
     file.sync_all()?;

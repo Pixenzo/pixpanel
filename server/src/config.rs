@@ -1,4 +1,4 @@
-//! Panel yapılandırması: `/etc/capsule/config.toml` dosyasından okunur.
+//! Panel yapılandırması: `/etc/pixpanel/config.toml` dosyasından okunur.
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_CONFIG_PATH: &str = "/etc/capsule/config.toml";
+pub const DEFAULT_CONFIG_PATH: &str = "/etc/pixpanel/config.toml";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -28,6 +28,8 @@ pub struct Config {
     /// Panelin kendi adresi dışında WebSocket bağlantısına izin verilen kaynaklar
     /// (ör. geliştirme sunucusu: `http://localhost:5183`).
     pub allowed_origins: Vec<String>,
+    /// Telegram bildirimlerinin gönderildiği API adresi (sınama için değiştirilebilir).
+    pub telegram_api: String,
 }
 
 impl Default for Config {
@@ -35,12 +37,13 @@ impl Default for Config {
         Self {
             listen_addr: "0.0.0.0".parse().expect("geçerli adres"),
             listen_port: 8443,
-            data_dir: PathBuf::from("/var/lib/capsule"),
+            data_dir: PathBuf::from("/var/lib/pixpanel"),
             tls: true,
             session_ttl_secs: 12 * 3600,
             acme_directory: "https://acme-v02.api.letsencrypt.org/directory".into(),
             acme_root_ca: None,
             allowed_origins: Vec::new(),
+            telegram_api: "https://api.telegram.org".into(),
         }
     }
 }
@@ -57,7 +60,7 @@ impl Config {
     }
 
     pub fn db_path(&self) -> PathBuf {
-        self.data_dir.join("capsule.db")
+        self.data_dir.join("pixpanel.db")
     }
 
     pub fn tls_dir(&self) -> PathBuf {

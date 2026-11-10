@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 // Geliştirme sırasında API istekleri test makinesindeki panele yönlendirilir.
-const devTarget = process.env.CAPSULE_DEV_TARGET ?? "https://192.168.1.25:8443";
+const devTarget = process.env.PIXPANEL_DEV_TARGET ?? "https://192.168.1.25:8443";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

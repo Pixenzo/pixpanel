@@ -155,6 +155,38 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX cron_jobs_run_as ON cron_jobs(run_as);
     "#,
+    // 5: Git ile yayınlama ve bildirimler
+    r#"
+    CREATE TABLE site_git (
+        site_id       INTEGER PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+        repo_url      TEXT NOT NULL,
+        branch        TEXT NOT NULL,
+        auto_deploy   INTEGER NOT NULL DEFAULT 1,
+        script        TEXT NOT NULL DEFAULT '',
+        webhook_token TEXT NOT NULL UNIQUE,
+        public_key    TEXT NOT NULL DEFAULT '',
+        created_at    INTEGER NOT NULL
+    );
+
+    CREATE TABLE deployments (
+        id             INTEGER PRIMARY KEY,
+        site_id        INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        source         TEXT NOT NULL CHECK (source IN ('manual', 'webhook', 'rollback')),
+        commit_hash    TEXT NOT NULL DEFAULT '',
+        commit_subject TEXT NOT NULL DEFAULT '',
+        commit_author  TEXT NOT NULL DEFAULT '',
+        status         TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
+        job_id         INTEGER,
+        started_at     INTEGER NOT NULL,
+        finished_at    INTEGER
+    );
+    CREATE INDEX deployments_site ON deployments(site_id, id);
+
+    CREATE TABLE user_notify (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        config  TEXT NOT NULL
+    );
+    "#,
 ];
 
 #[derive(Clone)]
