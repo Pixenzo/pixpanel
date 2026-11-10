@@ -5,7 +5,10 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowRightLeft,
   CalendarClock,
+  CornerDownRight,
   Database,
+  Hexagon,
+  Route,
   FileCode2,
   FileText,
   FolderOpen,
@@ -87,6 +90,15 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
       status: memory ? t("Sürüm {version} · {memory} bellek", { version: site.php_version ?? "", memory }) : t("Sürüm {version}", { version: site.php_version ?? "" }),
     });
   }
+  if (site.kind === "node") {
+    tools.push({
+      id: "node",
+      label: t("Node.js uygulaması"),
+      icon: Hexagon,
+      to: `${base}/node`,
+      status: t("Sürüm {version} · {command}", { version: site.node.version, command: site.node.command }),
+    });
+  }
   if (site.kind === "proxy") {
     tools.push({ id: "proxy", label: t("Ters vekil"), icon: ArrowRightLeft, to: `${base}/proxy`, status: site.proxy_target ?? "" });
   }
@@ -115,6 +127,22 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
       status: summary ? (summary.cron_jobs === 0 ? t("Henüz yok") : t("{count} görev", { count: summary.cron_jobs })) : "",
     });
   }
+  if (site.kind !== "proxy") {
+    tools.push({
+      id: "rules",
+      label: t("Vekil kuralları"),
+      icon: Route,
+      to: `${base}/rules`,
+      status: site.proxy_rules.length === 0 ? t("Kural yok") : t("{count} yol iletiliyor", { count: site.proxy_rules.length }),
+    });
+  }
+  tools.push({
+    id: "subdomain",
+    label: t("Alt alan adı ekle"),
+    icon: CornerDownRight,
+    to: `/sites?yeni=alt&ust=${encodeURIComponent(site.domain)}`,
+    status: t("blog.{domain} gibi", { domain: site.domain }),
+  });
   tools.push({
     id: "settings",
     label: t("Adresler ve yayın"),

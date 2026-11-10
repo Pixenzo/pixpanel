@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, ArrowRightLeft, ExternalLink, FileCode2, GitBranch, Globe, LayoutGrid, Plus, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ExternalLink, FileCode2, GitBranch, Globe, Hexagon, LayoutGrid, Plus, Route, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router";
@@ -25,6 +25,8 @@ import { classNames, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { GitSection } from "./SiteGit";
+import { NodeSection } from "./SiteNode";
+import { ProxyRulesSection } from "./SiteProxyRules";
 import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { SslTab } from "./SiteSsl";
 
@@ -119,7 +121,7 @@ function GeneralTab({ site }: { site: Site }) {
         onSubmit={() =>
           save.mutate({
             aliases: aliases.split(/[\s,]+/).filter(Boolean),
-            public_dir: site.kind === "proxy" ? undefined : publicDir,
+            public_dir: site.kind === "php" || site.kind === "static" ? publicDir : undefined,
           })
         }
       >
@@ -131,7 +133,7 @@ function GeneralTab({ site }: { site: Site }) {
           placeholder={`www.${site.domain}`}
           spellCheck={false}
         />
-        {site.kind !== "proxy" && (
+        {(site.kind === "php" || site.kind === "static") && (
           <Input
             label={t("Yayın klasörü")}
             value={publicDir}
@@ -471,7 +473,9 @@ export function SiteDetailPage() {
     { id: "overview", label: t("Genel bakış"), icon: LayoutGrid },
     { id: "settings", label: t("Adresler ve yayın"), icon: Globe },
     ...(data.kind === "php" ? [{ id: "php", label: t("PHP ayarları"), icon: FileCode2 }] : []),
+    ...(data.kind === "node" ? [{ id: "node", label: t("Node.js uygulaması"), icon: Hexagon }] : []),
     ...(data.kind === "proxy" ? [{ id: "proxy", label: t("Ters vekil"), icon: ArrowRightLeft }] : []),
+    ...(data.kind !== "proxy" ? [{ id: "rules", label: t("Vekil kuralları"), icon: Route }] : []),
     ...(me.role !== "member" || me.permissions.includes("ssl") ? [{ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck }] : []),
     { id: "git", label: t("Git ile yayınlama"), icon: GitBranch },
     ...(me.role === "admin" ? [{ id: "advanced", label: t("nginx yönergeleri"), icon: SlidersHorizontal }] : []),
@@ -522,7 +526,9 @@ export function SiteDetailPage() {
           {active === "overview" && <OverviewSection site={data} options={options.data} />}
           {active === "settings" && <GeneralTab key={JSON.stringify(data)} site={data} />}
           {active === "php" && <PhpTab key={JSON.stringify(data.php_settings) + data.php_version} site={data} options={options.data} />}
+          {active === "node" && <NodeSection site={data} options={options.data} />}
           {active === "proxy" && <ProxyTab key={data.proxy_target} site={data} />}
+          {active === "rules" && <ProxyRulesSection key={JSON.stringify(data.proxy_rules)} site={data} />}
           {active === "ssl" && <SslTab site={data} />}
           {active === "git" && <GitSection site={data} />}
           {active === "advanced" && <AdvancedTab key={data.nginx_custom} site={data} />}

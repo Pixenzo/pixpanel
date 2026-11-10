@@ -50,6 +50,9 @@ async fn sources(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
     for site in sites::list(&state.db, &user)? {
         list.push(Source { id: format!("site:{}:access", site.id), label: format!("{} erişim", site.domain), group: "site" });
         list.push(Source { id: format!("site:{}:error", site.id), label: format!("{} hata", site.domain), group: "site" });
+        if site.kind == "node" {
+            list.push(Source { id: format!("site:{}:app", site.id), label: format!("{} uygulama", site.domain), group: "site" });
+        }
     }
     if user.is_admin() {
         list.push(Source { id: "journal".into(), label: "Bütün sistem günlüğü".into(), group: "system" });
@@ -125,6 +128,17 @@ async fn read(State(state): State<AppState>, user: AuthUser, Query(query): Query
             let id: i64 = id.parse().map_err(|_| AppError::bad("Geçersiz günlük kaynağı"))?;
             // `sites::get` erişim denetimini yapar; yol alan adından üretilir, istekten alınmaz.
             let site = sites::get(&state.db, &user, id)?;
+            if *kind == "app" {
+                // Node.js uygulamasının çıktısı systemd günlüğündedir; birim adı kimlikten üretilir.
+                let unit = crate::hosting::node::unit_name(site.id);
+                let lines = journal(Some(&unit), if needle.is_some() { JOURNAL_SCAN_LINES } else { wanted }).await?;
+                let mut lines = lines;
+                if let Some(needle) = &needle {
+                    lines.retain(|line| line.to_lowercase().contains(needle));
+                }
+                let skip = lines.len().saturating_sub(wanted);
+                return Ok(Json(LogView { lines: lines.split_off(skip), exists: true }));
+            }
             let path = match *kind {
                 "access" => nginx::access_log_path(&site.domain),
                 "error" => nginx::error_log_path(&site.domain),

@@ -9,7 +9,10 @@ use serde_json::json;
 
 use crate::auth::{self, AuthUser, Role};
 use crate::error::{AppError, AppResult};
+use crate::hosting::nginx::ProxyRule;
+use crate::hosting::node::{self, NodeSettings};
 use crate::hosting::php::{self, PhpSettings};
+use crate::sys::runas;
 use crate::hosting::sites::{self, NewSite, Site};
 use crate::deploy;
 use crate::hosting::{domain, nginx, ssl};
@@ -23,6 +26,9 @@ pub fn router() -> Router<AppState> {
         .route("/options", get(options))
         .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
+        .route("/{id}/node", get(node_status))
+        .route("/{id}/node/run", axum::routing::post(node_run))
+        .route("/{id}/node/{action}", axum::routing::post(node_action))
 }
 
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<Site>>> {
@@ -98,6 +104,7 @@ struct Options {
     owners: Vec<OwnerOption>,
     /// Sürüm başına genel PHP ayarları; site formunda devralınan değerleri göstermek için.
     php_defaults: std::collections::BTreeMap<String, php::PhpGlobal>,
+    node_versions: Vec<String>,
 }
 
 async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Options>> {
@@ -118,7 +125,7 @@ async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
     };
     let php_versions = php::installed_versions();
     let php_defaults = php_versions.iter().map(|version| (version.clone(), php::load_global(version))).collect();
-    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults }))
+    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults, node_versions: node::installed_versions() }))
 }
 
 #[derive(Deserialize)]
@@ -127,6 +134,7 @@ struct CreateBody {
     kind: String,
     php_version: Option<String>,
     proxy_target: Option<String>,
+    node_version: Option<String>,
     #[serde(default)]
     aliases: Vec<String>,
     /// Sitenin sahibi; verilmezse isteği yapan hesap.
@@ -187,11 +195,20 @@ async fn create(
         _ => None,
     };
 
+    let node_settings = match body.kind.as_str() {
+        "node" => {
+            let settings = NodeSettings { version: body.node_version.ok_or_else(|| AppError::bad("Node.js sürümü seçin"))?, ..NodeSettings::default() };
+            settings.validate()?;
+            settings
+        }
+        _ => NodeSettings::default(),
+    };
+
     // Sistem dosyalarına dokunan işlemler sırayla yürür.
     let _guard = state.sys_lock.lock().await;
     let id = sites::insert(
         &state.db,
-        &NewSite { user_id: owner_id, domain: domain_name.clone(), aliases, kind: body.kind, php_version, proxy_target },
+        &NewSite { user_id: owner_id, domain: domain_name.clone(), aliases, kind: body.kind, php_version, proxy_target, node: node_settings },
     )?;
     let site = sites::get(&state.db, &user, id)?;
     if let Err(err) = sites::provision(&site).await {
@@ -219,6 +236,8 @@ struct UpdateBody {
     hsts: Option<bool>,
     nginx_custom: Option<String>,
     status: Option<String>,
+    node: Option<NodeSettings>,
+    proxy_rules: Option<Vec<ProxyRule>>,
 }
 
 async fn update(
@@ -280,6 +299,16 @@ async fn update(
         }
         site.status = status;
     }
+    if let Some(settings) = body.node {
+        settings.validate()?;
+        site.node = settings;
+    }
+    if let Some(rules) = &body.proxy_rules {
+        site.proxy_rules = sites::validate_proxy_rules(rules)?;
+    }
+    if site.kind == "node" {
+        site.node.validate()?;
+    }
     if site.kind == "php" && site.php_version.is_none() {
         return Err(AppError::bad("PHP sürümü seçin"));
     }
@@ -301,6 +330,77 @@ async fn update(
     }
     auth::audit(&state.db, &user, "site.update", &site.domain, "");
     Ok(Json(site))
+}
+
+/// Node.js sitesini okur; site başka türdeyse hata döner.
+fn node_site(state: &AppState, user: &AuthUser, id: i64) -> AppResult<Site> {
+    let site = sites::get(&state.db, user, id)?;
+    if site.kind == "node" { Ok(site) } else { Err(AppError::bad("Bu site bir Node.js uygulaması değil")) }
+}
+
+async fn node_status(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<node::Status>> {
+    user.require(AREA)?;
+    let site = node_site(&state, &user, id)?;
+    Ok(Json(node::status(site.id).await?))
+}
+
+async fn node_action(State(state): State<AppState>, user: AuthUser, Path((id, action)): Path<(i64, String)>) -> AppResult<Json<node::Status>> {
+    user.require(AREA)?;
+    let site = node_site(&state, &user, id)?;
+    if site.status != "active" && action != "stop" {
+        return Err(AppError::bad("Askıdaki sitenin uygulaması başlatılamaz"));
+    }
+    node::action(site.id, &action).await?;
+    auth::audit(&state.db, &user, &format!("node.{action}"), &site.domain, "");
+    Ok(Json(node::status(site.id).await?))
+}
+
+#[derive(Deserialize)]
+struct NodeRunBody {
+    /// `install`, `ci` ya da package.json içindeki bir betiğin adı (ör. `build`).
+    script: String,
+    /// Bitince uygulama yeniden başlatılsın mı?
+    #[serde(default)]
+    restart: bool,
+}
+
+/// Site klasöründe, sitenin kullanıcısıyla bir npm komutu çalıştırır (bağımlılık kurma, derleme).
+async fn node_run(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(body): Json<NodeRunBody>,
+) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let site = node_site(&state, &user, id)?;
+    let args: Vec<String> = match body.script.as_str() {
+        "install" => vec!["install".into()],
+        "ci" => vec!["ci".into()],
+        script => {
+            let valid = !script.is_empty() && script.len() <= 64 && script.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'_' | b'-' | b'.'));
+            if !valid {
+                return Err(AppError::bad("Geçersiz betik adı"));
+            }
+            vec!["run".into(), script.to_string()]
+        }
+    };
+    let account = crate::hosting::sysuser::lookup(&site.owner).ok_or_else(|| AppError::bad("Hesabın Linux kullanıcısı bulunamadı"))?;
+    let title = format!("npm {} ({})", args.join(" "), site.domain);
+    let (root, bin, site_id, restart) = (site.root(), node::bin_dir(&site.node.version), site.id, body.restart);
+    let job_id = state.jobs.start("node.npm", &title, Some(user.id), move |ctx| async move {
+        ctx.log(format!("$ npm {}", args.join(" ")));
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let mut command = runas::command(&account, &root, "npm", &args);
+        command.env("PATH", format!("{}:{}", bin.display(), runas::USER_PATH)).env("NODE_ENV", "production").env("CI", "1");
+        ctx.run_streaming(&mut command, "npm", None).await?;
+        if restart {
+            ctx.log("Uygulama yeniden başlatılıyor");
+            node::action(site_id, "restart").await?;
+        }
+        Ok(())
+    })?;
+    auth::audit(&state.db, &user, "node.npm", &site.domain, &body.script);
+    Ok(Json(serde_json::json!({ "job_id": job_id })))
 }
 
 #[derive(Deserialize)]

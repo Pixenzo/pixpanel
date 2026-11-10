@@ -3,6 +3,7 @@
 pub mod acme;
 pub mod domain;
 pub mod nginx;
+pub mod node;
 pub mod php;
 pub mod sites;
 pub mod ssl;

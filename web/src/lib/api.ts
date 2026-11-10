@@ -198,14 +198,37 @@ export interface ComponentStatus {
   id: string;
   name: string;
   description: string;
-  category: "web" | "php" | "database" | "container" | "mail";
+  category: "web" | "php" | "node" | "database" | "container" | "mail";
   installed: boolean;
   version: string | null;
   service: string | null;
   running: boolean;
 }
 
-export type SiteKind = "php" | "static" | "proxy";
+export type SiteKind = "php" | "static" | "proxy" | "node";
+
+export interface NodeSettings {
+  version: string;
+  command: string;
+  env: { key: string; value: string }[];
+  memory_mb: number;
+}
+
+export interface NodeStatus {
+  state: string;
+  sub_state: string;
+  pid: number;
+  memory_bytes: number | null;
+  restarts: number;
+  port: number;
+}
+
+export interface ProxyRule {
+  path: string;
+  target: string;
+  websocket: boolean;
+  strip_prefix: boolean;
+}
 
 export interface PhpDirective {
   key: string;
@@ -244,6 +267,8 @@ export interface Site {
   nginx_custom: string;
   status: "active" | "suspended";
   created_at: number;
+  node: NodeSettings;
+  proxy_rules: ProxyRule[];
 }
 
 export type DbEngine = "mariadb" | "postgresql";
@@ -310,6 +335,7 @@ export interface SiteOptions {
   php_versions: string[];
   owners: { id: number; username: string }[];
   php_defaults: Record<string, PhpGlobal>;
+  node_versions: string[];
 }
 
 export interface SiteSummary {

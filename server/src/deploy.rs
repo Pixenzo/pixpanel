@@ -472,6 +472,10 @@ async fn run(
     if let Some(shim) = site.php_version.as_deref().and_then(php_shim) {
         path = format!("{shim}:{path}");
     }
+    if site.kind == "node" {
+        // Betikteki `node` ve `npm` sitenin Node.js sürümünü kullanır.
+        path = format!("{}:{path}", crate::hosting::node::bin_dir(&site.node.version).display());
+    }
     let runner = Runner {
         ctx,
         user,
@@ -527,7 +531,7 @@ async fn run(
 
     if config.script.is_empty() {
         ctx.log("Yayın betiği tanımlı değil; dosyalar güncellendi");
-        return Ok(());
+        return restart_node(ctx, site).await;
     }
     ctx.log("Yayın betiği çalıştırılıyor");
     // Betik diske yazılmaz, bash'e standart girdiden verilir. `-e`: bir komut
@@ -535,7 +539,17 @@ async fn run(
     let mut script = runner.command("bash", &["-eo", "pipefail", "-s"]);
     script.env("PIXPANEL_COMMIT", &hash).env("PIXPANEL_PREVIOUS_COMMIT", &previous);
     ctx.run_streaming(&mut script, "yayın betiği", Some(config.script.clone().into_bytes())).await?;
+    restart_node(ctx, site).await?;
     ctx.log("Yayınlama tamamlandı");
+    Ok(())
+}
+
+/// Node.js sitelerinde yeni kodun devreye girmesi için uygulama yeniden başlatılır.
+async fn restart_node(ctx: &JobCtx, site: &Site) -> AppResult<()> {
+    if site.kind == "node" && site.status == "active" {
+        ctx.log("Uygulama yeniden başlatılıyor");
+        crate::hosting::node::action(site.id, "restart").await?;
+    }
     Ok(())
 }
 

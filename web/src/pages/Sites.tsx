@@ -31,10 +31,12 @@ export const kindLabels: Record<SiteKind, string> = {
   php: "PHP",
   static: "Statik",
   proxy: "Ters vekil",
+  node: "Node.js",
 };
 
 const kindChoices: { id: SiteKind; title: string; description: string }[] = [
   { id: "php", title: "PHP", description: "WordPress, Laravel ve diğer PHP uygulamaları" },
+  { id: "node", title: "Node.js", description: "Express, Next.js, NestJS gibi Node.js uygulamaları" },
   { id: "static", title: "Statik", description: "Yalnızca HTML, CSS ve JavaScript dosyaları" },
   { id: "proxy", title: "Ters vekil", description: "Başka bir adreste ya da portta çalışan uygulamaya yönlendirir" },
 ];
@@ -48,23 +50,31 @@ function CreateSiteModal({
   onClose,
   options,
   proxyTarget: initialTarget,
+  parent,
 }: {
   open: boolean;
   onClose: () => void;
   options: SiteOptions;
   /** Verilirse pencere ters vekil türü ve bu hedefle açılır. */
   proxyTarget?: string;
+  /** Verilirse bu alan adının altına bir alt alan adı eklenir. */
+  parent?: { domain: string; ownerId: number | null };
 }) {
   const me = useMe();
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [domain, setDomain] = useState("");
+  // Alt alan adı eklenirken yalnızca ön ek yazılır; üst alan adı sabittir.
+  const [prefix, setPrefix] = useState("");
+  const [fullDomain, setFullDomain] = useState("");
+  const domain = parent ? (prefix.trim() ? `${prefix.trim()}.${parent.domain}` : "") : fullDomain;
+  const setDomain = setFullDomain;
+  const [nodeVersion, setNodeVersion] = useState(options.node_versions[0] ?? "");
   const [kind, setKind] = useState<SiteKind>(initialTarget !== undefined ? "proxy" : options.php_versions.length > 0 ? "php" : "static");
   const [phpVersion, setPhpVersion] = useState(options.php_versions[0] ?? "");
   const [proxyTarget, setProxyTarget] = useState(initialTarget || "http://127.0.0.1:3000");
   const [withWww, setWithWww] = useState(true);
-  const [ownerId, setOwnerId] = useState(me.id);
+  const [ownerId, setOwnerId] = useState(parent?.ownerId ?? me.id);
 
   const isSubdomain = domain.trim().split(".").length > 2;
   const create = useMutation({
@@ -74,6 +84,7 @@ function CreateSiteModal({
         kind,
         php_version: kind === "php" ? phpVersion : undefined,
         proxy_target: kind === "proxy" ? proxyTarget : undefined,
+        node_version: kind === "node" ? nodeVersion : undefined,
         aliases: withWww && !isSubdomain && domain.trim() ? [`www.${domain.trim()}`] : [],
         user_id: options.owners.length > 0 ? ownerId : undefined,
       }),
@@ -92,34 +103,58 @@ function CreateSiteModal({
   }
 
   const phpMissing = kind === "php" && options.php_versions.length === 0;
+  const nodeMissing = kind === "node" && options.node_versions.length === 0;
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={t("Site ekle")}
+      title={parent ? t("{domain} için alt alan adı ekle", { domain: parent.domain }) : t("Site ekle")}
       wide
       footer={
         <>
           <Button onClick={onClose}>{t("Vazgeç")}</Button>
-          <Button variant="primary" type="submit" form="create-site" loading={create.isPending} disabled={phpMissing}>
+          <Button variant="primary" type="submit" form="create-site" loading={create.isPending} disabled={phpMissing || nodeMissing}>
             {t("Siteyi ekle")}
           </Button>
         </>
       }
     >
       <form id="create-site" onSubmit={submit} className="flex flex-col gap-5">
-        <Input
-          label={t("Alan adı")}
-          value={domain}
-          onChange={(event) => setDomain(event.target.value)}
-          placeholder="ornek.com"
-          hint={t("Alt alan adı da yazabilirsiniz: blog.ornek.com")}
-          autoCapitalize="none"
-          spellCheck={false}
-          autoFocus
-          required
-        />
+        {parent ? (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="subdomain-prefix" className="text-[13px] font-medium text-ink-2">
+              {t("Alt alan adı")}
+            </label>
+            <div className="flex items-center rounded-md border border-line-strong bg-surface focus-within:border-accent">
+              <input
+                id="subdomain-prefix"
+                value={prefix}
+                onChange={(event) => setPrefix(event.target.value.toLowerCase())}
+                placeholder="blog"
+                className="h-9 min-w-0 flex-1 rounded-l-md bg-transparent px-3 text-right font-mono text-[13px] outline-none"
+                autoCapitalize="none"
+                spellCheck={false}
+                autoFocus
+                required
+              />
+              <span className="shrink-0 border-l border-line bg-sunken/70 px-3 py-2 font-mono text-[13px] text-ink-2">.{parent.domain}</span>
+            </div>
+            <p className="text-[12.5px] text-ink-3">{t("Alt alan adı kendi klasörü, türü ve ayarları olan ayrı bir sitedir.")}</p>
+          </div>
+        ) : (
+          <Input
+            label={t("Alan adı")}
+            value={domain}
+            onChange={(event) => setDomain(event.target.value)}
+            placeholder="ornek.com"
+            hint={t("Alt alan adı da yazabilirsiniz: blog.ornek.com")}
+            autoCapitalize="none"
+            spellCheck={false}
+            autoFocus
+            required
+          />
+        )}
         {!isSubdomain && domain.trim() && (
           <label className="-mt-2 flex items-center gap-2.5">
             <input type="checkbox" className="size-4 accent-(--accent)" checked={withWww} onChange={(event) => setWithWww(event.target.checked)} />
@@ -168,6 +203,29 @@ function CreateSiteModal({
             </Select>
           ))}
 
+        {kind === "node" &&
+          (nodeMissing ? (
+            <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+              {t("Henüz kurulu bir Node.js sürümü yok.")}{" "}
+              <Link to="/components" className="font-medium underline">
+                {t("Bileşenler sayfasından kurun")}
+              </Link>
+            </p>
+          ) : (
+            <Select
+              label={t("Node.js sürümü")}
+              value={nodeVersion}
+              onChange={(event) => setNodeVersion(event.target.value)}
+              hint={t("Site, hemen çalışan örnek bir uygulamayla açılır; başlatma komutunu ve ortam değişkenlerini sonra ayarlarsınız.")}
+            >
+              {options.node_versions.map((version) => (
+                <option key={version} value={version}>
+                  Node.js {version}
+                </option>
+              ))}
+            </Select>
+          ))}
+
         {kind === "proxy" && (
           <Input
             label={t("Hedef adres")}
@@ -180,7 +238,7 @@ function CreateSiteModal({
           />
         )}
 
-        {options.owners.length > 1 && (
+        {options.owners.length > 1 && !parent && (
           <Select label={t("Sahibi")} value={ownerId} onChange={(event) => setOwnerId(Number(event.target.value))} hint={t("Site bu hesabın Linux kullanıcısıyla çalışır.")}>
             {options.owners.map((owner) => (
               <option key={owner.id} value={owner.id}>
@@ -232,7 +290,9 @@ export function SiteToolGrid({ site, summary, options }: { site: Site; summary?:
 }
 
 export function siteKindLabel(site: Site): string {
-  return site.kind === "php" ? `PHP ${site.php_version}` : t(kindLabels[site.kind]);
+  if (site.kind === "php") return `PHP ${site.php_version}`;
+  if (site.kind === "node") return `Node.js ${site.node.version}`;
+  return t(kindLabels[site.kind]);
 }
 
 function SiteCard({
@@ -242,6 +302,7 @@ function SiteCard({
   expanded,
   onToggle,
   showOwner,
+  nested,
 }: {
   site: Site;
   summary?: SiteSummary;
@@ -249,11 +310,13 @@ function SiteCard({
   expanded: boolean;
   onToggle: () => void;
   showOwner: boolean;
+  /** Listede üst alan adının altında, girintili gösterilir. */
+  nested: boolean;
 }) {
   const scheme = site.ssl_mode === "none" ? "http" : "https";
   const panelId = `site-tools-${site.id}`;
   return (
-    <li className="overflow-hidden rounded-lg border border-line bg-surface">
+    <li className={classNames("overflow-hidden rounded-lg border border-line bg-surface", nested && "ml-6 sm:ml-9")}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
         <button
           type="button"
@@ -428,9 +491,12 @@ export function SitesPage() {
 
   // Docker sayfasındaki "Alan adına bağla" bağlantısı oluşturma penceresini hedefle birlikte açar.
   const proxyTarget = searchParams.get("yeni") === "vekil" ? (searchParams.get("hedef") ?? "") : null;
+  // Site kartındaki "Alt alan adı ekle" kutusu pencereyi üst alan adıyla açar.
+  const parentDomain = searchParams.get("yeni") === "alt" ? searchParams.get("ust") : null;
+  const parentSite = parentDomain ? sites.data?.find((site) => site.domain === parentDomain) : undefined;
   const closeCreate = () => {
     setCreating(false);
-    if (proxyTarget !== null) setSearchParams({}, { replace: true });
+    if (proxyTarget !== null || parentDomain !== null) setSearchParams({}, { replace: true });
   };
 
   // Az site varken hepsi açık gelir; çok site varken liste kısa kalsın diye kapalı.
@@ -449,6 +515,11 @@ export function SitesPage() {
   const visible = (sites.data ?? []).filter(
     (site) => !needle || [site.domain, site.owner, ...site.aliases].some((value) => value.toLocaleLowerCase("tr").includes(needle)),
   );
+  // Alt alan adları üst sitelerinin hemen altında listelenir: sıralama anahtarı
+  // etiketlerin tersidir (ornek.com, blog.ornek.com → "com.ornek", "com.ornek.blog").
+  const sortKey = (name: string) => name.split(".").reverse().join(".");
+  visible.sort((a, b) => sortKey(a.domain).localeCompare(sortKey(b.domain)));
+  const isSubdomain = (site: Site) => visible.some((other) => other.id !== site.id && site.domain.endsWith(`.${other.domain}`));
   const allOpen = visible.length > 0 && visible.every((site) => openIds.includes(site.id));
 
   const createButton = (
@@ -516,6 +587,7 @@ export function SitesPage() {
                     expanded={openIds.includes(site.id)}
                     onToggle={() => toggle(site.id)}
                     showOwner={showOwner}
+                    nested={isSubdomain(site)}
                   />
                 ))}
               </ul>
@@ -524,7 +596,16 @@ export function SitesPage() {
         )}
       </div>
       <SideRail />
-      {options.data && (creating || proxyTarget !== null) && <CreateSiteModal open onClose={closeCreate} options={options.data} proxyTarget={proxyTarget ?? undefined} />}
+      {options.data && (creating || proxyTarget !== null || parentSite) && (
+        <CreateSiteModal
+          key={parentSite?.domain ?? "new"}
+          open
+          onClose={closeCreate}
+          options={options.data}
+          proxyTarget={proxyTarget ?? undefined}
+          parent={parentSite ? { domain: parentSite.domain, ownerId: options.data.owners.length > 0 ? parentSite.user_id : null } : undefined}
+        />
+      )}
     </div>
   );
 }

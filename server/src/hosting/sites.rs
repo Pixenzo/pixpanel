@@ -9,11 +9,13 @@ use serde::Serialize;
 use crate::auth::{AuthUser, Role};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::hosting::nginx::ProxyRule;
+use crate::hosting::node::{self, NodeSettings};
 use crate::hosting::php::PhpSettings;
 use crate::hosting::sysuser::{self, SysUser};
 use crate::hosting::{domain, nginx, php, ssl};
 
-pub const KINDS: &[&str] = &["php", "static", "proxy"];
+pub const KINDS: &[&str] = &["php", "static", "proxy", "node"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Site {
@@ -36,6 +38,10 @@ pub struct Site {
     pub nginx_custom: String,
     pub status: String,
     pub created_at: i64,
+    /// Node.js sitelerinin sürüm, başlatma komutu ve ortam değişkenleri.
+    pub node: NodeSettings,
+    /// Yol bazlı vekil kuralları (ör. `/api/` → bir Docker konteyneri).
+    pub proxy_rules: Vec<ProxyRule>,
 }
 
 impl Site {
@@ -50,7 +56,7 @@ impl Site {
 
 const SITE_COLUMNS: &str = "s.id, s.user_id, u.username, s.domain, s.kind, s.public_dir, s.php_version,
      s.php_settings, s.proxy_target, s.proxy_websocket, s.ssl_mode, s.force_https, s.hsts,
-     s.nginx_custom, s.status, s.created_at";
+     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules";
 
 fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
     let php_settings: String = row.get(7)?;
@@ -72,6 +78,8 @@ fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
         nginx_custom: row.get(13)?,
         status: row.get(14)?,
         created_at: row.get(15)?,
+        node: serde_json::from_str(&row.get::<_, String>(16)?).unwrap_or_default(),
+        proxy_rules: serde_json::from_str(&row.get::<_, String>(17)?).unwrap_or_default(),
     })
 }
 
@@ -108,7 +116,7 @@ fn load_with_parent(db: &Db, id: i64) -> AppResult<Option<(Site, Option<i64>)>> 
             .query_row(
                 &format!("SELECT {SITE_COLUMNS}, u.parent_id FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = ?1"),
                 params![id],
-                |row| Ok((read_site(row)?, row.get::<_, Option<i64>>(16)?)),
+                |row| Ok((read_site(row)?, row.get::<_, Option<i64>>(18)?)),
             )
             .optional()?;
         match site {
@@ -204,6 +212,41 @@ pub fn validate_proxy_target(value: &str) -> AppResult<String> {
     if plain && safe { Ok(rendered) } else { Err(invalid()) }
 }
 
+/// Vekil kuralının yolu: `/` ile başlar, yalnızca güvenli karakterler içerir.
+/// Kök yol (`/`) kural olamaz; bütün siteyi iletmek için site türü kullanılır.
+pub fn validate_proxy_rules(rules: &[ProxyRule]) -> AppResult<Vec<ProxyRule>> {
+    if rules.len() > 30 {
+        return Err(AppError::bad("Bir siteye en fazla 30 vekil kuralı eklenebilir"));
+    }
+    let mut normalized: Vec<ProxyRule> = Vec::new();
+    for rule in rules {
+        let path = rule.path.trim();
+        let path_ok = path.starts_with('/')
+            && path.len() > 1
+            && path.len() <= 100
+            && !path.contains("..")
+            && !path.contains("//")
+            && !path.starts_with("/.well-known")
+            && path.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'));
+        if !path_ok {
+            return Err(AppError::bad(format!("Geçersiz yol: {path} (örnek: /api/ ; harf, rakam, / _ - . kullanılabilir)")));
+        }
+        if normalized.iter().any(|other| other.path == path) {
+            return Err(AppError::bad(format!("{path} yolu için birden fazla kural var")));
+        }
+        // Hedefin yalnızca kökü (şema, sunucu, port) saklanır; yol kısmı kuraldan gelir.
+        let parsed = url::Url::parse(&validate_proxy_target(&rule.target)?).map_err(|_| AppError::bad("Geçersiz hedef adres"))?;
+        if parsed.path() != "/" {
+            return Err(AppError::bad("Hedef adres yol içeremez (örnek: http://127.0.0.1:8080)"));
+        }
+        let origin = parsed.as_str().trim_end_matches('/').to_string();
+        normalized.push(ProxyRule { path: path.to_string(), target: origin, websocket: rule.websocket, strip_prefix: rule.strip_prefix });
+    }
+    // Daha özgül (uzun) yollar önce yazılır; okunaklı ve öngörülebilir bir sıra verir.
+    normalized.sort_by(|a, b| b.path.len().cmp(&a.path.len()).then(a.path.cmp(&b.path)));
+    Ok(normalized)
+}
+
 /// Alan adlarının (ana ad ve takma adlar) başka bir sitede kullanılmadığını denetler.
 fn ensure_names_free(conn: &rusqlite::Connection, names: &[String], except_site: Option<i64>) -> rusqlite::Result<Option<String>> {
     for name in names {
@@ -241,21 +284,23 @@ pub struct NewSite {
     pub kind: String,
     pub php_version: Option<String>,
     pub proxy_target: Option<String>,
+    pub node: NodeSettings,
 }
 
 /// Site kaydını ekler ve kimliğini döner. Girdiler çağıran tarafından doğrulanmış olmalıdır.
 pub fn insert(db: &Db, new: &NewSite) -> AppResult<i64> {
     let mut names = vec![new.domain.clone()];
     names.extend(new.aliases.iter().cloned());
+    let node_settings = serde_json::to_string(&new.node).map_err(|err| AppError::internal(err.to_string()))?;
     let outcome = db.call(|conn| {
         let tx = conn.transaction()?;
         if let Some(taken) = ensure_names_free(&tx, &names, None)? {
             return Ok(Err(taken));
         }
         tx.execute(
-            "INSERT INTO sites (user_id, domain, kind, php_version, proxy_target, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![new.user_id, new.domain, new.kind, new.php_version, new.proxy_target, crate::db::now()],
+            "INSERT INTO sites (user_id, domain, kind, php_version, proxy_target, node_settings, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![new.user_id, new.domain, new.kind, new.php_version, new.proxy_target, node_settings, crate::db::now()],
         )?;
         let id = tx.last_insert_rowid();
         for alias in &new.aliases {
@@ -269,7 +314,10 @@ pub fn insert(db: &Db, new: &NewSite) -> AppResult<i64> {
 
 /// Sitenin değiştirilebilir alanlarını (ve takma adlarını) kaydeder.
 pub fn save(db: &Db, site: &Site) -> AppResult<()> {
-    let settings = serde_json::to_string(&site.php_settings).map_err(|err| AppError::internal(err.to_string()))?;
+    let to_json = |err: serde_json::Error| AppError::internal(err.to_string());
+    let settings = serde_json::to_string(&site.php_settings).map_err(to_json)?;
+    let node_settings = serde_json::to_string(&site.node).map_err(to_json)?;
+    let proxy_rules = serde_json::to_string(&site.proxy_rules).map_err(to_json)?;
     let outcome = db.call(|conn| {
         let tx = conn.transaction()?;
         if let Some(taken) = ensure_names_free(&tx, &site.aliases, Some(site.id))? {
@@ -277,11 +325,13 @@ pub fn save(db: &Db, site: &Site) -> AppResult<()> {
         }
         tx.execute(
             "UPDATE sites SET kind = ?1, public_dir = ?2, php_version = ?3, php_settings = ?4, proxy_target = ?5,
-                    proxy_websocket = ?6, ssl_mode = ?7, force_https = ?8, hsts = ?9, nginx_custom = ?10, status = ?11
-             WHERE id = ?12",
+                    proxy_websocket = ?6, ssl_mode = ?7, force_https = ?8, hsts = ?9, nginx_custom = ?10, status = ?11,
+                    node_settings = ?12, proxy_rules = ?13
+             WHERE id = ?14",
             params![
                 site.kind, site.public_dir, site.php_version, settings, site.proxy_target, site.proxy_websocket,
-                site.ssl_mode, site.force_https, site.hsts, site.nginx_custom, site.status, site.id
+                site.ssl_mode, site.force_https, site.hsts, site.nginx_custom, site.status, node_settings, proxy_rules,
+                site.id
             ],
         )?;
         tx.execute("DELETE FROM site_aliases WHERE site_id = ?1", params![site.id])?;
@@ -312,6 +362,11 @@ pub async fn provision(site: &Site) -> AppResult<()> {
     let root = sysuser::create_site_dirs(&user, &site.domain, &site.public_dir)?;
     let docroot = site.docroot();
     let socket = site.php_version.as_deref().map(|version| php::socket_path(site.id, version)).unwrap_or_default();
+    let node_target = format!("http://127.0.0.1:{}", node::port(site.id));
+    if site.kind != "node" {
+        // Tür değiştiyse eski Node.js servisi kaldırılır.
+        node::remove(site.id).await?;
+    }
 
     let backend = match site.kind.as_str() {
         "php" => {
@@ -322,6 +377,15 @@ pub async fn provision(site: &Site) -> AppResult<()> {
         "proxy" => {
             let target = site.proxy_target.as_deref().ok_or_else(|| AppError::bad("Hedef adres girilmedi"))?;
             nginx::Backend::Proxy { target, websocket: site.proxy_websocket }
+        }
+        "node" => {
+            // Askıdaki sitenin uygulaması çalıştırılmaz.
+            if site.status == "active" {
+                node::apply(site.id, &site.domain, &user, &root, &site.node).await?;
+            } else {
+                let _ = node::action(site.id, "stop").await;
+            }
+            nginx::Backend::Proxy { target: &node_target, websocket: true }
         }
         _ => nginx::Backend::Static { docroot: &docroot },
     };
@@ -335,6 +399,7 @@ pub async fn provision(site: &Site) -> AppResult<()> {
         hsts: site.hsts,
         suspended: site.status != "active",
         custom: &site.nginx_custom,
+        proxy_rules: &site.proxy_rules,
     })
     .await?;
 
@@ -346,6 +411,7 @@ pub async fn provision(site: &Site) -> AppResult<()> {
 /// Siteyi sistemden kaldırır; `delete_files` verilirse dosyalarını da siler.
 pub async fn deprovision(site: &Site, delete_files: bool) -> AppResult<()> {
     nginx::remove(&site.domain).await?;
+    node::remove(site.id).await?;
     php::remove_pool_except(site.id, None).await?;
     let ssl_dir = Path::new(nginx::SSL_DIR).join(&site.domain);
     if ssl_dir.exists() {

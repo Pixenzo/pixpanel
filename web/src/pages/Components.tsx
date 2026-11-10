@@ -11,6 +11,7 @@ import { JobLog } from "./Jobs";
 const categories: { id: ComponentStatus["category"]; title: string }[] = [
   { id: "web", title: "Web sunucusu" },
   { id: "php", title: "PHP sürümleri" },
+  { id: "node", title: "Node.js sürümleri" },
   { id: "database", title: "Veritabanı ve önbellek" },
   { id: "container", title: "Konteyner" },
   { id: "mail", title: "Posta" },

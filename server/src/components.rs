@@ -11,6 +11,9 @@ use crate::sys::{exec, services};
 /// Panelden kurulabilen PHP sürümleri (yeniden eskiye).
 pub const PHP_VERSIONS: &[&str] = &["8.5", "8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
 
+/// Panelden kurulabilen Node.js ana sürümleri (yeniden eskiye).
+pub const NODE_VERSIONS: &[&str] = &["24", "22", "20"];
+
 /// Her PHP sürümüyle birlikte kurulmaya çalışılan eklentiler. Bir sürümde
 /// bulunmayan eklenti (ör. 8.5'te yerleşik gelen opcache) sessizce atlanır.
 const PHP_EXTENSIONS: &[&str] = &[
@@ -95,6 +98,20 @@ pub fn catalog() -> Vec<Component> {
             optional_packages: PHP_EXTENSIONS.iter().map(|ext| format!("php{version}-{ext}")).collect(),
             service: Some(format!("php{version}-fpm.service")),
             repo: Repo::Php,
+        });
+    }
+    for version in NODE_VERSIONS {
+        // Node.js paket deposundan değil, nodejs.org'un resmî derlemelerinden kurulur;
+        // böylece birden çok sürüm yan yana durabilir.
+        list.push(Component {
+            id: format!("node-{version}"),
+            name: format!("Node.js {version}"),
+            description: "Node.js çalışma ortamı ve npm. Siteler sürümü tek tek seçebilir.",
+            category: "node",
+            packages: Vec::new(),
+            optional_packages: Vec::new(),
+            service: None,
+            repo: Repo::Distro,
         });
     }
     list.extend([
@@ -188,7 +205,30 @@ async fn installed_version(package: &str) -> Option<String> {
     status.starts_with("ii").then(|| version.trim().to_string())
 }
 
+/// Kurulu Node.js sürümünün tam numarası (ör. `22.11.0`).
+async fn node_version(major: &str) -> Option<String> {
+    let binary = hosting::node::bin_dir(major).join("node");
+    if !binary.is_file() {
+        return None;
+    }
+    let output = exec::run(&binary.to_string_lossy(), &["--version"]).await.ok()?;
+    output.success().then(|| output.stdout.trim().trim_start_matches('v').to_string())
+}
+
 pub async fn status(component: &Component) -> ComponentStatus {
+    if let Some(major) = component.id.strip_prefix("node-") {
+        let version = node_version(major).await;
+        return ComponentStatus {
+            id: component.id.clone(),
+            name: component.name.clone(),
+            description: component.description,
+            category: component.category,
+            installed: version.is_some(),
+            running: version.is_some(),
+            version,
+            service: None,
+        };
+    }
     let version = installed_version(&component.packages[0]).await;
     let running = match (&version, &component.service) {
         (Some(_), Some(service)) => services::is_active(service).await,
@@ -300,7 +340,63 @@ async fn package_available(package: &str) -> bool {
 }
 
 /// Bileşeni kurar; görev günlüğüne ilerleme yazar.
+/// Node.js'in resmî derlemesini indirir, sağlama toplamını doğrular ve kurar.
+async fn install_node(ctx: &JobCtx, major: &str) -> AppResult<()> {
+    use sha2::{Digest, Sha256};
+    hosting::node::validate_version(major)?;
+    apt_install(ctx, &["curl".into(), "ca-certificates".into(), "xz-utils".into()]).await?;
+    let arch = match exec::run_ok("dpkg", &["--print-architecture"]).await?.trim() {
+        "amd64" => "x64",
+        "arm64" => "arm64",
+        other => return Err(AppError::bad(format!("Node.js bu işlemci mimarisi için kurulamıyor: {other}"))),
+    };
+    let base = format!("https://nodejs.org/dist/latest-v{major}.x");
+    let sums = exec::run_ok("curl", &["-fsSL", "--max-time", "60", &format!("{base}/SHASUMS256.txt")]).await?;
+    let suffix = format!("-linux-{arch}.tar.xz");
+    let (expected, file) = sums
+        .lines()
+        .filter_map(|line| line.split_once("  "))
+        .find(|(_, name)| name.ends_with(&suffix))
+        .ok_or_else(|| AppError::internal("Node.js sürüm listesinde uygun derleme bulunamadı"))?;
+    // Dosya adı indirme adresine ve yola girdiğinden biçimi ayrıca denetlenir.
+    let name_ok = file.starts_with("node-v") && file.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'));
+    if !name_ok || expected.len() != 64 {
+        return Err(AppError::internal("Node.js sürüm listesi beklenmeyen biçimde"));
+    }
+
+    let archive = format!("/var/lib/pixpanel/{file}");
+    ctx.log(format!("{file} indiriliyor"));
+    ctx.exec("curl", &["-fsSL", "--max-time", "600", "-o", &archive, &format!("{base}/{file}")]).await?;
+    let actual = hex::encode(Sha256::digest(std::fs::read(&archive)?));
+    if !actual.eq_ignore_ascii_case(expected) {
+        let _ = std::fs::remove_file(&archive);
+        return Err(AppError::internal("İndirilen dosyanın sağlama toplamı uyuşmuyor; kurulum durduruldu"));
+    }
+    ctx.log("Sağlama toplamı doğrulandı");
+
+    let target = std::path::Path::new(hosting::node::NODE_ROOT).join(major);
+    let staging = std::path::Path::new(hosting::node::NODE_ROOT).join(format!("{major}.new"));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging)?;
+    ctx.exec("tar", &["-xJf", &archive, "-C", &staging.to_string_lossy(), "--strip-components=1", "--no-same-owner"]).await?;
+    // Yeni sürüm hazır olduktan sonra eskisinin yerine geçer; çalışan uygulamalar yeniden başlatılana kadar eski dosyalarla sürer.
+    let previous = std::path::Path::new(hosting::node::NODE_ROOT).join(format!("{major}.old"));
+    let _ = std::fs::remove_dir_all(&previous);
+    if target.exists() {
+        std::fs::rename(&target, &previous)?;
+    }
+    std::fs::rename(&staging, &target)?;
+    let _ = std::fs::remove_dir_all(&previous);
+    let _ = std::fs::remove_file(&archive);
+    ctx.log(format!("Node.js {} kuruldu", node_version(major).await.unwrap_or_default()));
+    Ok(())
+}
+
 pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
+    if let Some(major) = component.id.strip_prefix("node-") {
+        ctx.log(format!("{} kuruluyor", component.name));
+        return install_node(ctx, major).await;
+    }
     ctx.log(format!("{} kuruluyor", component.name));
     ensure_repo(ctx, component.repo).await?;
     ctx.exec("apt-get", &["update", "-o", "DPkg::Lock::Timeout=180"]).await?;

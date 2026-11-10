@@ -234,6 +234,11 @@ const MIGRATIONS: &[&str] = &[
         expires_at INTEGER NOT NULL
     );
     "#,
+    // 8: Node.js ayarları ve yol bazlı vekil kuralları
+    r#"
+    ALTER TABLE sites ADD COLUMN node_settings TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE sites ADD COLUMN proxy_rules TEXT NOT NULL DEFAULT '[]';
+    "#,
 ];
 
 #[derive(Clone)]
