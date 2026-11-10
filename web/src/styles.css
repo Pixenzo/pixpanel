@@ -34,6 +34,7 @@
   --bad-soft: #f9e1de;
   --idle: #9aa7b4;
   --shadow-pop: 0 12px 32px -8px rgb(21 32 43 / 0.22), 0 2px 6px rgb(21 32 43 / 0.08);
+  --shadow-card: 0 1px 2px rgb(21 32 43 / 0.05);
   /* Yan gezinme iki temada da koyudur; içerik alanından net ayrılır. */
   --rail: #101b28;
   --rail-raised: #1a2a3c;
@@ -65,6 +66,7 @@
   --bad-soft: #3d1c19;
   --idle: #5a6875;
   --shadow-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.25);
   --rail: #0a1119;
   --rail-raised: #15202b;
   --rail-line: #1b2733;
@@ -100,6 +102,7 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
   --shadow-pop: var(--shadow-pop);
+  --shadow-card: var(--shadow-card);
 }
 
 @layer base {
@@ -137,6 +140,92 @@
   }
 }
 
+/* Kaydırma çubuğu gizli, kaydırma açık (sekme şeritleri gibi yatay listeler için). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Dar ekranda tablo satırları karta dönüşür; sütun adları `Table` bileşeninin
+   hücrelere işlediği `data-label` özniteliğinden okunur. */
+@media (max-width: 639px) {
+  .stack-table,
+  .stack-table tbody {
+    display: block;
+  }
+
+  .stack-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .stack-table tr {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .stack-table tbody > tr:last-child {
+    border-bottom: 0;
+  }
+
+  .stack-table td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem 0.5rem;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    border: 0;
+    text-align: right;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .stack-table td::before {
+    content: attr(data-label);
+    margin-right: auto;
+    padding-right: 0.75rem;
+    color: var(--ink-3);
+    font-size: 12.5px;
+    font-weight: 400;
+    text-align: left;
+  }
+
+  /* İlk hücre kartın başlığıdır; adı yazılmaz. */
+  .stack-table td:first-child {
+    justify-content: flex-start;
+    padding-bottom: 0.125rem;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .stack-table td:first-child::before,
+  .stack-table td[data-label=""]::before {
+    content: none;
+  }
+
+  /* Başlıksız sütun işlem düğmeleridir; kartın altına, sağa yaslanır. */
+  .stack-table td[data-label=""]:not(:first-child) {
+    padding-top: 0.25rem;
+  }
+
+  .stack-table td:empty {
+    display: none;
+  }
+}
+
 @keyframes pop-in {
   from {
     opacity: 0;
@@ -147,6 +236,36 @@
 @keyframes fade-in {
   from {
     opacity: 0;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes live-ping {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
   }
 }
 

@@ -75,6 +75,8 @@ impl Metrics {
                 };
                 prev_cpu = cpu;
                 prev_net = net;
+                // Açık arayüzler yeni örneği yoklamadan alır (yalnızca yöneticiler).
+                crate::events::publish(crate::events::Event::Metrics { sample: sample.clone() }, None);
                 let mut guard = store.write().unwrap_or_else(|p| p.into_inner());
                 if guard.len() >= HISTORY_LEN {
                     guard.pop_front();

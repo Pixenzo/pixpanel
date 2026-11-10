@@ -6,6 +6,7 @@ import { FeedbackProvider } from "./components/feedback";
 import { LoadingBlock } from "./components/ui";
 import { AppShell } from "./layout/AppShell";
 import { ApiError } from "./lib/api";
+import { LiveProvider } from "./lib/live";
 import { SessionProvider, useSession } from "./lib/session";
 import { AccountPage } from "./pages/Account";
 import { AuditPage } from "./pages/Audit";
@@ -55,6 +56,7 @@ function App() {
   const can = (area: string) => me.role !== "member" || me.permissions.includes(area);
   const canSites = can("sites");
   return (
+    <LiveProvider>
     <AppShell>
       <Routes>
         <Route path="/" element={<Navigate to={canSites ? "/sites" : "/account"} replace />} />
@@ -91,6 +93,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
+    </LiveProvider>
   );
 }
 

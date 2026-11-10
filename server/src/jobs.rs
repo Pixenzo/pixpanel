@@ -145,7 +145,7 @@ impl JobCtx {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct JobInfo {
     pub id: i64,
     pub kind: String,
@@ -185,6 +185,17 @@ impl JobManager {
             Ok(conn.last_insert_rowid())
         })?;
 
+        let mut info = JobInfo {
+            id,
+            kind: kind.to_string(),
+            title: title.to_string(),
+            status: "running".into(),
+            user_id,
+            created_at: now(),
+            finished_at: None,
+        };
+        crate::events::publish(crate::events::Event::Job { job: info.clone() }, user_id);
+
         let (tx, _) = broadcast::channel(1024);
         let job = Arc::new(LiveJob { log: Mutex::new(String::new()), tx });
         self.live.lock().unwrap_or_else(|p| p.into_inner()).insert(id, job.clone());
@@ -216,6 +227,9 @@ impl JobManager {
                 tracing::error!(error = %err, job = id, "görev sonucu kaydedilemedi");
             }
             manager.live.lock().unwrap_or_else(|p| p.into_inner()).remove(&id);
+            info.status = status.to_string();
+            info.finished_at = Some(now());
+            crate::events::publish(crate::events::Event::Job { job: info }, user_id);
             let _ = job.tx.send(JobEvent::Done { status: status.to_string() });
         });
         Ok(id)

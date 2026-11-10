@@ -3,7 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { LoaderCircle, X } from "lucide-react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { useId } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { classNames } from "../lib/format";
 import { t } from "../lib/i18n";
 
@@ -43,7 +43,7 @@ export function Button({
       className={classNames(
         "inline-flex items-center justify-center gap-1.5 rounded-md border font-medium whitespace-nowrap transition-colors",
         "disabled:cursor-not-allowed disabled:opacity-55",
-        size === "sm" ? "h-7 px-2.5 text-[13px]" : "h-9 px-3.5",
+        size === "sm" ? "h-7 px-2.5 text-[13px] max-sm:h-9 max-sm:px-3" : "h-9 px-3.5 max-sm:h-10.5",
         buttonVariants[variant],
         className,
       )}
@@ -68,7 +68,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={classNames(
-        "inline-flex size-8 items-center justify-center rounded-md text-ink-2 transition-colors",
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-ink-2 transition-colors max-sm:size-10",
         "hover:bg-sunken hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
         className,
       )}
@@ -85,8 +85,9 @@ export function Spinner({ className }: { className?: string }) {
 
 // ---- Form alanları ----
 
+// Telefonda 16 px yazı: iOS, daha küçük yazılı alana odaklanınca sayfayı yakınlaştırır.
 const controlClass =
-  "h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-ink placeholder:text-ink-3 " +
+  "h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-ink placeholder:text-ink-3 max-sm:h-10.5 max-sm:text-[16px] " +
   "transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 " +
   "disabled:bg-sunken disabled:text-ink-3";
 
@@ -146,8 +147,8 @@ export function Checkbox({
   ...rest
 }: { label: string; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <label className="flex items-start gap-2.5">
-      <input type="checkbox" className="mt-0.5 size-4 accent-(--accent)" {...rest} />
+    <label className="flex items-start gap-2.5 max-sm:py-1">
+      <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-(--accent) max-sm:size-5" {...rest} />
       <span>
         <span className="text-ink">{label}</span>
         {hint && <span className="block text-[12.5px] text-ink-3">{hint}</span>}
@@ -158,7 +159,7 @@ export function Checkbox({
 
 /** Tablo üstündeki arama kutusu gibi etiketsiz, küçük girdiler için. */
 export function SearchInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input type="search" className={classNames(controlClass, "h-8 max-w-64", className)} {...rest} />;
+  return <input type="search" className={classNames(controlClass, "h-8 sm:max-w-64", className)} {...rest} />;
 }
 
 // ---- Durum göstergeleri ----
@@ -237,12 +238,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+    <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 sm:mb-5">
       <div className="min-w-0">
-        <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">{title}</h1>
+        <h1 className="text-[20px] leading-tight font-semibold tracking-[-0.015em] sm:text-[22px]">{title}</h1>
         {description && <p className="mt-1 max-w-[70ch] text-ink-2">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 max-sm:w-full max-sm:[&>*]:flex-1">{actions}</div>}
     </header>
   );
 }
@@ -262,11 +263,11 @@ export function Panel({
   flush?: boolean;
 }) {
   return (
-    <section className={classNames("rounded-lg border border-line bg-surface", className)}>
+    <section className={classNames("rounded-xl border border-line bg-surface shadow-card", className)}>
       {(title || actions) && (
-        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 py-2">
-          <h2 className="font-semibold">{title}</h2>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+        <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-line px-4 py-2">
+          <h2 className="min-w-0 font-semibold">{title}</h2>
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
       <div className={flush ? "" : "p-4"}>{children}</div>
@@ -284,10 +285,27 @@ export function EmptyState({ title, description, action }: { title: string; desc
   );
 }
 
+/** İçerik gelene kadar yerini tutan soluk çubuk. */
+export function Skeleton({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={classNames(
+        "block animate-[shimmer_1.6s_linear_infinite] rounded bg-[linear-gradient(90deg,var(--sunken)_25%,var(--line)_37%,var(--sunken)_63%)] bg-[length:200%_100%]",
+        className,
+      )}
+    />
+  );
+}
+
+/** Sayfa verisi yüklenirken gösterilen iskelet; gelecek içeriğin kabaca biçimini taşır. */
 export function LoadingBlock() {
   return (
-    <div className="flex items-center gap-2 px-4 py-10 text-ink-3">
-      <Spinner /> {t("Yükleniyor")}
+    <div role="status" aria-label={t("Yükleniyor")} className="flex flex-col gap-3 p-4">
+      <Skeleton className="h-4 w-40" />
+      <Skeleton className="h-3.5 w-full" />
+      <Skeleton className="h-3.5 w-11/12" />
+      <Skeleton className="h-3.5 w-2/3" />
     </div>
   );
 }
@@ -307,10 +325,47 @@ export function ErrorBlock({ message, onRetry }: { message: string; onRetry?: ()
 
 // ---- Tablo ----
 
-export function Table({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * Veri tablosu. Dar ekranda her satır bir karta dönüşür: ilk hücre başlık olur, öteki
+ * hücreler "sütun adı: değer" çiftleri olarak alt alta dizilir (kurallar `styles.css`
+ * içinde `.stack-table`). Sütun adları başlık satırından okunup hücrelere işlendiği
+ * için sayfaların ayrıca bir şey yapması gerekmez.
+ *
+ * `scroll`: çok sütunlu, satırları kıyaslanarak okunan tablolar (süreç listesi gibi)
+ * karta dönüşmek yerine yana kayar.
+ */
+export function Table({ children, className, scroll }: { children: ReactNode; className?: string; scroll?: boolean }) {
+  const ref = useRef<HTMLTableElement>(null);
+
+  useLayoutEffect(() => {
+    const table = ref.current;
+    if (!table || scroll) return;
+    const label = () => {
+      // İşlem sütununun adı kartta yer kaplamasın: düğmeler kendini anlatır.
+      const actions = t("İşlemler");
+      const labels = Array.from(table.querySelectorAll("thead th")).map((cell) => {
+        const text = cell.textContent?.trim() ?? "";
+        return text === actions ? "" : text;
+      });
+      for (const row of table.querySelectorAll("tbody > tr")) {
+        Array.from(row.children).forEach((cell, index) => {
+          const text = labels[index] ?? "";
+          if (cell.getAttribute("data-label") !== text) cell.setAttribute("data-label", text);
+        });
+      }
+    };
+    label();
+    // Satırlar veri geldikçe eklenir; öznitelik yazmak bu gözlemciyi yeniden tetiklemez.
+    const observer = new MutationObserver(label);
+    observer.observe(table, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [scroll]);
+
   return (
-    <div className="overflow-x-auto">
-      <table className={classNames("w-full border-collapse text-left", className)}>{children}</table>
+    <div className={scroll ? "overflow-x-auto" : "sm:overflow-x-auto"}>
+      <table ref={ref} className={classNames("w-full border-collapse text-left", !scroll && "stack-table", className)}>
+        {children}
+      </table>
     </div>
   );
 }
@@ -367,14 +422,17 @@ export function Modal({
         <Dialog.Content
           aria-describedby={undefined}
           className={classNames(
-            "fixed left-1/2 z-50 flex w-[calc(100vw-2rem)] -translate-x-1/2 flex-col",
-            extraWide ? "top-[6vh] max-h-[88vh]" : "top-[12vh] max-h-[80vh]",
-            "animate-[pop-in_140ms_ease-out] rounded-xl border border-line bg-surface shadow-pop",
-            extraWide ? "max-w-5xl" : wide ? "max-w-2xl" : "max-w-md",
+            "fixed z-50 flex flex-col border border-line bg-surface shadow-pop",
+            // Telefonda ekranın altından açılan sayfa; düğmeler başparmağın ulaştığı yerde durur.
+            "max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:animate-[sheet-in_220ms_cubic-bezier(0.2,0.8,0.2,1)] max-sm:rounded-t-2xl max-sm:border-b-0",
+            "sm:left-1/2 sm:w-[calc(100vw-2rem)] sm:-translate-x-1/2 sm:animate-[pop-in_140ms_ease-out] sm:rounded-xl",
+            extraWide ? "sm:top-[6vh] sm:max-h-[88vh]" : "sm:top-[12vh] sm:max-h-[80vh]",
+            extraWide ? "sm:max-w-5xl" : wide ? "sm:max-w-2xl" : "sm:max-w-md",
           )}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
-            <div>
+          <span aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong sm:hidden" />
+          <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
+            <div className="min-w-0">
               <Dialog.Title className="text-[16px] font-semibold">{title}</Dialog.Title>
               {description && <p className="mt-0.5 text-ink-2">{description}</p>}
             </div>
@@ -384,8 +442,12 @@ export function Modal({
               </IconButton>
             </Dialog.Close>
           </div>
-          <div className="overflow-y-auto px-5 py-4">{children}</div>
-          {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
+          <div className="overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">{children}</div>
+          {footer && (
+            <div className="flex justify-end gap-2 border-t border-line px-4 py-3 max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:[&>*]:flex-1 sm:px-5">
+              {footer}
+            </div>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -411,7 +473,7 @@ export function Tabs<T extends string>({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line">
+    <div role="tablist" aria-label={label} className="no-scrollbar mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line max-sm:-mx-3 max-sm:px-3">
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -420,7 +482,7 @@ export function Tabs<T extends string>({
           aria-selected={value === tab.id}
           onClick={() => onChange(tab.id)}
           className={classNames(
-            "-mb-px h-9 border-b-2 px-3 font-medium whitespace-nowrap transition-colors",
+            "-mb-px h-9 shrink-0 border-b-2 px-3 font-medium whitespace-nowrap transition-colors max-sm:h-11",
             value === tab.id ? "border-accent text-accent" : "border-transparent text-ink-2 hover:text-ink",
           )}
         >

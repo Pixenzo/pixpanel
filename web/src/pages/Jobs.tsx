@@ -1,11 +1,12 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Tone } from "../components/ui";
 import { EmptyState, ErrorBlock, LoadingBlock, Modal, PageHeader, Panel, Status, Table, Td, Th } from "../components/ui";
 import type { JobInfo } from "../lib/api";
-import { api, errorMessage } from "../lib/api";
+import { errorMessage } from "../lib/api";
 import { formatDateTime, formatDuration } from "../lib/format";
 import { t } from "../lib/i18n";
+import { useJobs } from "../lib/live";
 
 const statusView: Record<JobInfo["status"], { tone: Tone; label: string }> = {
   running: { tone: "accent", label: "Çalışıyor" },
@@ -72,7 +73,7 @@ export function JobLog({ jobId, onDone }: { jobId: number; onDone?: (status: str
 export function JobsPage() {
   const queryClient = useQueryClient();
   const [openJob, setOpenJob] = useState<JobInfo | null>(null);
-  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => api.get<JobInfo[]>("/jobs"), refetchInterval: 4000 });
+  const jobs = useJobs();
 
   return (
     <>

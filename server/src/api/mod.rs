@@ -11,6 +11,7 @@ mod cron;
 mod databases;
 mod dns;
 mod docker;
+mod events;
 mod fail2ban;
 mod files;
 mod firewall;
@@ -36,6 +37,7 @@ pub fn router() -> Router<AppState> {
         .nest("/users", users::router())
         .nest("/system", system::router().nest("/certificate", panelcert::router()).nest("/update", update::router()))
         .nest("/jobs", jobs::router())
+        .nest("/events", events::router())
         .nest("/components", components::router())
         .nest("/databases", databases::router())
         .nest("/files", files::router())

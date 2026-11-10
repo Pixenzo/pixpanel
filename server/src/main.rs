@@ -11,6 +11,7 @@ mod dbtools;
 mod deploy;
 mod dns;
 mod error;
+mod events;
 mod fail2ban;
 mod firewall;
 mod fsop;

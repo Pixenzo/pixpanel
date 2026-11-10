@@ -7,6 +7,7 @@ import type { Overview, Process, Sample } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDuration, formatPercent, formatRate } from "../lib/format";
 import { t } from "../lib/i18n";
+import { useFallbackInterval } from "../lib/live";
 
 /** 5 dakikalık pencere: 2 saniyede bir örnek. */
 const WINDOW_SAMPLES = 150;
@@ -193,15 +194,17 @@ function TopProcesses() {
 }
 
 export function DashboardPage() {
+  const fallbackInterval = useFallbackInterval(2000);
   const overview = useQuery({
     queryKey: ["overview"],
     queryFn: () => api.get<Overview>("/system/overview"),
-    refetchInterval: 5000,
+    // Anlık yük canlı akıştan gelir; disk ve çalışma süresi için seyrek yenileme yeter.
+    refetchInterval: 30000,
   });
   const history = useQuery({
     queryKey: ["metrics", WINDOW_SAMPLES],
     queryFn: () => api.get<Sample[]>(`/system/metrics?count=${WINDOW_SAMPLES}`),
-    refetchInterval: 2000,
+    refetchInterval: fallbackInterval,
   });
 
   if (overview.isPending) return <LoadingBlock />;

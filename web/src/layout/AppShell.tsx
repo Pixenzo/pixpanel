@@ -2,7 +2,7 @@
 
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, LogOut, Menu, Moon, Search, Sun, UserRound, X } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Moon, Search, Sun, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
@@ -10,11 +10,14 @@ import { BrandMark } from "../components/Brand";
 import { CommandPalette } from "../components/CommandPalette";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { IconButton, Spinner } from "../components/ui";
-import type { JobInfo, Overview } from "../lib/api";
+import type { Overview } from "../lib/api";
 import { api } from "../lib/api";
 import { classNames, formatBytes, formatPercent } from "../lib/format";
 import { t } from "../lib/i18n";
+import type { LiveState } from "../lib/live";
+import { useFallbackInterval, useJobs, useLiveState } from "../lib/live";
 import { useMe, useSession, useTheme } from "../lib/session";
+import type { NavItem } from "./navigation";
 import { navigation } from "./navigation";
 
 const roleLabels: Record<string, string> = {
@@ -70,10 +73,11 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
 
 /** Üst çubuktaki canlı yük göstergesi; yalnızca yöneticiler için. */
 function LiveReadout() {
+  const refetchInterval = useFallbackInterval(5000);
   const { data } = useQuery({
     queryKey: ["overview"],
     queryFn: () => api.get<Overview>("/system/overview"),
-    refetchInterval: 5000,
+    refetchInterval,
   });
   if (!data) return null;
   const { current, host } = data;
@@ -106,22 +110,82 @@ function LiveReadout() {
 /** Çalışan görev varsa üst çubukta gösterilir. */
 function RunningJobs() {
   const navigate = useNavigate();
-  const { data } = useQuery({
-    queryKey: ["jobs"],
-    queryFn: () => api.get<JobInfo[]>("/jobs"),
-    refetchInterval: 4000,
-  });
+  const { data } = useJobs();
   const running = data?.filter((job) => job.status === "running") ?? [];
   if (running.length === 0) return null;
   return (
     <button
       type="button"
       onClick={() => navigate("/jobs")}
+      aria-label={t("{count} görev çalışıyor", { count: running.length })}
       className="flex h-8 max-w-64 items-center gap-2 rounded-md bg-accent-soft px-2.5 text-[13px] font-medium text-accent"
     >
       <Spinner className="size-3.5 shrink-0" />
-      <span className="truncate">{running.length === 1 ? running[0].title : t("{count} görev çalışıyor", { count: running.length })}</span>
+      <span className="truncate max-sm:hidden">{running.length === 1 ? running[0].title : t("{count} görev çalışıyor", { count: running.length })}</span>
+      <span className="tabular sm:hidden">{running.length}</span>
     </button>
+  );
+}
+
+const liveLabels: Record<LiveState, string> = {
+  live: "Canlı: değişiklikler anında yansır",
+  connecting: "Sunucuya bağlanılıyor",
+  offline: "Bağlantı koptu, yeniden deneniyor",
+};
+
+/** Canlı bağlantının durumu; koptuğunda kullanıcı ekrandaki verinin eskiyebileceğini bilir. */
+function LiveIndicator() {
+  const state = useLiveState();
+  const label = t(liveLabels[state]);
+  return (
+    <span
+      role="status"
+      title={label}
+      className={classNames(
+        "flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium",
+        state === "offline" ? "bg-warn-soft text-warn" : "text-ink-3",
+      )}
+    >
+      <span className="relative flex size-2">
+        {state === "live" && <span aria-hidden className="absolute inset-0 animate-[live-ping_2.4s_ease-out_infinite] rounded-full bg-ok" />}
+        <span
+          aria-hidden
+          className={classNames("relative size-2 rounded-full", state === "live" ? "bg-ok" : state === "offline" ? "bg-warn" : "bg-idle")}
+        />
+      </span>
+      <span className={state === "offline" ? "max-sm:sr-only" : "sr-only"}>{state === "offline" ? t("Bağlantı koptu") : label}</span>
+    </span>
+  );
+}
+
+/** Telefonda alt çubukta duran sayfalar (görünür olan ilk dördü); geri kalanı "Menü"den açılır. */
+const QUICK_ROUTES = ["/sites", "/server", "/databases", "/mail", "/jobs"];
+/** Alt çubuğa sığması için kısaltılan adlar. */
+const QUICK_LABELS: Record<string, string> = { "/server": "Sunucu", "/databases": "Veritabanı" };
+
+function BottomBar({ onOpenMenu, menuOpen }: { onOpenMenu: () => void; menuOpen: boolean }) {
+  const me = useMe();
+  const all = navigation.flatMap((group) => group.items).filter((item) => item.visible(me));
+  const quick = QUICK_ROUTES.map((route) => all.find((item) => item.to === route))
+    .filter((item): item is NavItem => Boolean(item))
+    .slice(0, 4);
+  const cell = "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11.5px] font-medium";
+  return (
+    <nav
+      aria-label={t("Hızlı gezinme")}
+      className="fixed inset-x-0 bottom-0 z-30 flex h-[calc(3.75rem+env(safe-area-inset-bottom))] border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+    >
+      {quick.map((item) => (
+        <NavLink key={item.to} to={item.to} className={({ isActive }) => classNames(cell, isActive ? "text-accent" : "text-ink-2")}>
+          <item.icon aria-hidden className="size-5" />
+          <span className="max-w-full truncate px-1">{t(QUICK_LABELS[item.to] ?? item.label)}</span>
+        </NavLink>
+      ))}
+      <button type="button" aria-expanded={menuOpen} onClick={onOpenMenu} className={classNames(cell, menuOpen ? "text-accent" : "text-ink-2")}>
+        <Menu aria-hidden className="size-5" />
+        <span>{t("Menü")}</span>
+      </button>
+    </nav>
   );
 }
 
@@ -184,7 +248,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-dvh lg:pl-56">
+    <div className="min-h-dvh max-lg:pb-[calc(3.75rem+env(safe-area-inset-bottom))] lg:pl-56">
       <a
         href="#content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:rounded-md focus:bg-surface focus:px-3 focus:py-2"
@@ -199,16 +263,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       {drawerOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <button type="button" aria-label={t("Menüyü kapat")} className="absolute inset-0 bg-[rgb(10_16_22/0.5)]" onClick={() => setDrawerOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 shadow-pop">
+          <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-[drawer-in_180ms_ease-out] shadow-pop">
             <Sidebar onNavigate={() => setDrawerOpen(false)} />
           </aside>
         </div>
       )}
 
-      <header className="sticky top-0 z-20 flex h-13 items-center gap-3 border-b border-line bg-surface px-4 lg:px-6">
-        <IconButton label={drawerOpen ? t("Menüyü kapat") : t("Menüyü aç")} className="lg:hidden" onClick={() => setDrawerOpen((open) => !open)}>
-          {drawerOpen ? <X className="size-4.5" /> : <Menu className="size-4.5" />}
-        </IconButton>
+      <header className="sticky top-0 z-20 flex h-13 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-4 lg:px-6">
+        <span className="flex shrink-0 items-center lg:hidden">
+          <BrandMark />
+        </span>
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
@@ -223,6 +287,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="ml-auto flex items-center gap-1.5">
           {me.role === "admin" && <LiveReadout />}
           <RunningJobs />
+          <LiveIndicator />
           <IconButton label={theme === "dark" ? t("Açık temaya geç") : t("Koyu temaya geç")} onClick={toggleTheme}>
             {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </IconButton>
@@ -230,10 +295,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="content" className="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-6">
+      <main id="content" className="mx-auto w-full max-w-[1400px] px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
         <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>
       </main>
 
+      <BottomBar menuOpen={drawerOpen} onOpenMenu={() => setDrawerOpen((open) => !open)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );

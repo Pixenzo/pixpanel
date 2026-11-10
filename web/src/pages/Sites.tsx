@@ -20,10 +20,11 @@ import {
   Select,
   Spinner,
 } from "../components/ui";
-import type { JobInfo, Overview, Site, SiteKind, SiteOptions, SiteSummary } from "../lib/api";
+import type { Overview, Site, SiteKind, SiteOptions, SiteSummary } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatBytes, formatPercent, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
+import { useJobs } from "../lib/live";
 import { useMe } from "../lib/session";
 import { siteTools } from "../lib/siteTools";
 
@@ -316,15 +317,15 @@ function SiteCard({
   const scheme = site.ssl_mode === "none" ? "http" : "https";
   const panelId = `site-tools-${site.id}`;
   return (
-    <li className={classNames("overflow-hidden rounded-lg border border-line bg-surface", nested && "ml-6 sm:ml-9")}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2.5">
+    <li className={classNames("overflow-hidden rounded-lg border border-line bg-surface", nested && "ml-4 sm:ml-9")}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:gap-x-4">
         <button
           type="button"
           aria-expanded={expanded}
           aria-controls={panelId}
           aria-label={expanded ? t("{domain} araçlarını gizle", { domain: site.domain }) : t("{domain} araçlarını göster", { domain: site.domain })}
           onClick={onToggle}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-sunken hover:text-ink"
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-sunken hover:text-ink max-sm:size-9"
         >
           <ChevronRight className={classNames("size-4 transition-transform", expanded && "rotate-90")} />
         </button>
@@ -333,7 +334,7 @@ function SiteCard({
           title={site.status === "active" ? t("Yayında") : t("Askıda")}
           className={classNames("size-2 shrink-0 rounded-full", site.status === "active" ? "bg-ok" : "bg-warn")}
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-5rem)]">
           <div className="flex items-center gap-2">
             <Link to={`/sites/${site.id}`} className="truncate font-mono text-[14.5px] font-medium hover:text-accent hover:underline">
               {site.domain}
@@ -352,7 +353,7 @@ function SiteCard({
           </div>
           {site.aliases.length > 0 && <p className="truncate font-mono text-[12px] text-ink-3">{site.aliases.join(", ")}</p>}
         </div>
-        <dl className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
+        <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] max-sm:min-w-0 max-sm:flex-1 max-sm:pl-1 sm:gap-x-5">
           <div>
             <dt className="sr-only">{t("Tür")}</dt>
             <dd>
@@ -401,7 +402,7 @@ function SideRail() {
     refetchInterval: 5000,
     enabled: me.role === "admin",
   });
-  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => api.get<JobInfo[]>("/jobs"), refetchInterval: 4000 });
+  const jobs = useJobs();
   const recent = jobs.data?.slice(0, 6) ?? [];
   const current = overview.data?.current;
   const disk = overview.data?.disks.find((item) => item.mount === "/") ?? overview.data?.disks[0];

@@ -401,4 +401,6 @@ pub fn audit(db: &Db, user: &AuthUser, action: &str, target: &str, detail: &str)
     if let Err(err) = result {
         tracing::warn!(error = %err, action, "denetim kaydı yazılamadı");
     }
+    // Denetlenen her işlem bir şeyi değiştirmiştir; açık arayüzler anında haberdar edilir.
+    crate::events::changed(action, user.owner_id());
 }
