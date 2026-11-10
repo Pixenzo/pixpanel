@@ -1,0 +1,18 @@
+[Unit]
+Description=Capsule sunucu yönetim paneli
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/capsule serve
+Restart=on-failure
+RestartSec=2
+# Panel, sistem servislerini yönettiği için root olarak çalışır.
+User=root
+LimitNOFILE=65536
+# Panelin başlattığı uzun görevler (ör. paket kurulumu) yeniden başlatmada öldürülmesin.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,69 @@
+//! HTTP uygulaması: API, gömülü arayüz dosyaları ve güvenlik başlıkları.
+
+use axum::extract::Request;
+use axum::http::header::{self, HeaderValue};
+use axum::http::{StatusCode, Uri};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
+use axum::Router;
+use rust_embed::Embed;
+use tower_http::compression::CompressionLayer;
+
+use crate::api;
+use crate::error::AppError;
+use crate::state::AppState;
+
+/// Derlenmiş arayüz dosyaları ikili dosyanın içine gömülür.
+#[derive(Embed)]
+#[folder = "../web/dist"]
+struct Assets;
+
+pub fn app(state: AppState) -> Router {
+    Router::new()
+        .nest("/api/v1", api::router().fallback(|| async { AppError::NotFound }))
+        .fallback(static_file)
+        .layer(middleware::from_fn(security_headers))
+        .layer(CompressionLayer::new())
+        .with_state(state)
+}
+
+async fn static_file(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+    match Assets::get(path) {
+        Some(file) => serve_asset(path, file),
+        // Tek sayfalı uygulama: bilinmeyen yollar arayüzün yönlendiricisine bırakılır.
+        None => match Assets::get("index.html") {
+            Some(file) => serve_asset("index.html", file),
+            None => (StatusCode::NOT_FOUND, "Arayüz dosyaları bulunamadı").into_response(),
+        },
+    }
+}
+
+fn serve_asset(path: &str, file: rust_embed::EmbeddedFile) -> Response {
+    let mime = mime_guess::from_path(path).first_or_octet_stream();
+    // Vite çıktısındaki dosya adları içerik özetini taşır; süresiz önbelleklenebilir.
+    let cache = if path.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "no-cache" };
+    (
+        [(header::CONTENT_TYPE, mime.as_ref().to_string()), (header::CACHE_CONTROL, cache.to_string())],
+        file.data,
+    )
+        .into_response()
+}
+
+async fn security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    let mut set = |name: &'static str, value: &'static str| {
+        headers.insert(name, HeaderValue::from_static(value));
+    };
+    set("x-content-type-options", "nosniff");
+    set("x-frame-options", "DENY");
+    set("referrer-policy", "same-origin");
+    set(
+        "content-security-policy",
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; \
+         font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    );
+    response
+}

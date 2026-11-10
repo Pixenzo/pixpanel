@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans/latin-ext-600.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-ext-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/ibm-plex-mono/latin-ext-500.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Renk belirteçleri: açık tema */
+:root {
+  --bg: #f2f5f8;
+  --surface: #ffffff;
+  --sunken: #e8edf2;
+  --line: #d8dfe7;
+  --line-strong: #bcc7d2;
+  --ink: #15202b;
+  --ink-2: #485868;
+  --ink-3: #788795;
+  --accent: #0b6b86;
+  --accent-hover: #095a71;
+  --accent-ink: #ffffff;
+  --accent-soft: #dceef3;
+  --ok: #1f8457;
+  --ok-soft: #dcf1e6;
+  --warn: #a96d05;
+  --warn-soft: #f8ecd2;
+  --bad: #c23f35;
+  --bad-soft: #f9e1de;
+  --idle: #9aa7b4;
+  --shadow-pop: 0 12px 32px -8px rgb(21 32 43 / 0.22), 0 2px 6px rgb(21 32 43 / 0.08);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #0f161d;
+  --surface: #17212b;
+  --sunken: #111a22;
+  --line: #25323f;
+  --line-strong: #364656;
+  --ink: #e4eaf0;
+  --ink-2: #a9b6c3;
+  --ink-3: #74838f;
+  --accent: #4db4cf;
+  --accent-hover: #6cc3da;
+  --accent-ink: #06222b;
+  --accent-soft: #143642;
+  --ok: #4cc38a;
+  --ok-soft: #143326;
+  --warn: #e0a83a;
+  --warn-soft: #382c11;
+  --bad: #ef7a6e;
+  --bad-soft: #3d1c19;
+  --idle: #5a6875;
+  --shadow-pop: 0 16px 40px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-idle: var(--idle);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+  --shadow-pop: var(--shadow-pop);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100dvh;
+  }
+
+  /* Sayılar tablo ve göstergelerde hizalı dursun */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
+
+  button:not(:disabled),
+  [role="menuitem"] {
+    cursor: pointer;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
