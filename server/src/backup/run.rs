@@ -166,6 +166,12 @@ async fn run_backup(state: &AppState, ctx: &JobCtx, target: &Target, scope: &Sco
     }
 }
 
+/// Başka bir görevin içinden, o görevin günlüğüne yazarak yedek alır (ör. güncellemeden
+/// hemen önce). Yedek "elle alınmış" sayılır; saklama ilkeleri onu silmez.
+pub async fn run_inline(state: &AppState, ctx: &JobCtx, target: &Target, scope: &Scope) -> AppResult<()> {
+    run_backup(state, ctx, target, scope, None).await
+}
+
 /// Yedekleme görevini başlatır. `plan` verilirse sonucu plana işlenir ve saklama
 /// ilkesi uygulanır; verilmezse yedek "elle alınmış" sayılır ve kendiliğinden silinmez.
 pub fn start_backup(state: &AppState, user_id: Option<i64>, target: Target, scope: Scope, plan: Option<Plan>) -> AppResult<i64> {

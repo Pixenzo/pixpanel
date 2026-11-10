@@ -58,8 +58,7 @@ async fn update(State(state): State<AppState>, user: AuthUser, Path(id): Path<i6
         return Err(AppError::bad("Geçersiz güncelleme kapsamı"));
     }
     auth::audit(&state.db, &user, "wordpress.update", &site.domain, &body.what);
-    let title = format!("WordPress güncellemesi: {}", site.domain);
-    let job_id = state.jobs.start("wordpress.update", &title, Some(user.id), move |ctx| async move { wordpress::update(&ctx, &site, &body.what).await })?;
+    let job_id = wordpress::start_update_job(&state, Some(user.id), site, body.what)?;
     Ok(Json(json!({ "job_id": job_id })))
 }
 

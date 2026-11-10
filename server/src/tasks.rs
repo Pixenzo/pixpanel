@@ -66,6 +66,17 @@ pub fn spawn_health_monitor(state: AppState) {
     });
 }
 
+/// WordPress sitelerini bekleyen güncellemeler için altı saatte bir tarar.
+pub fn spawn_wordpress_scan(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        loop {
+            crate::health::scan_wordpress(&state).await;
+            tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
+        }
+    });
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {

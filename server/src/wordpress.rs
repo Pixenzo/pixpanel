@@ -500,6 +500,102 @@ async fn install_files(ctx: &JobCtx, site: &Site, wp: &Wp, request: &InstallRequ
 
 // ---- Güncelleme ve ayarlar ----
 
+/// Güncelleme görevini başlatır: önce (yedek yeri varsa) sitenin ve veritabanının yedeği
+/// alınır, sonra güncelleme yapılır, en son sitenin hâlâ yanıt verdiği denetlenir.
+pub fn start_update_job(state: &AppState, user_id: Option<i64>, site: Site, what: String) -> AppResult<i64> {
+    let title = format!("WordPress güncellemesi: {}", site.domain);
+    let job_state = state.clone();
+    state.jobs.start("wordpress.update", &title, user_id, move |ctx| async move {
+        backup_before_update(&ctx, &job_state, &site).await?;
+        update(&ctx, &site, &what).await?;
+        let outcome = verify_after_update(&ctx, &site).await;
+        // Genel bakıştaki "güncelleme bekliyor" bulgusu bir sonraki taramayı beklemeden kalksın.
+        crate::health::rescan_wordpress_site(&job_state, &site).await;
+        outcome
+    })
+}
+
+/// Güncellemeden önce sitenin dosyalarını ve WordPress veritabanını yedekler. Yedek
+/// yeri yoksa uyarıp sürer; yedek alınamazsa güncelleme yapılmaz.
+async fn backup_before_update(ctx: &JobCtx, state: &AppState, site: &Site) -> AppResult<()> {
+    let target = if crate::backup::is_installed() { crate::backup::list_targets(&state.db)?.into_iter().next() } else { None };
+    let Some(target) = target else {
+        ctx.log("UYARI: Yedek yeri tanımlı olmadığı için güncellemeden önce yedek alınamadı. Yedekler sayfasından bir yedek yeri ekleyin.");
+        return Ok(());
+    };
+    let wp = Wp::for_site(site)?;
+    let database = wp.run_ok(&["config", "get", "DB_NAME", "--skip-plugins", "--skip-themes"]).await.unwrap_or_default();
+    let database_id: Option<i64> = state.db.call(|conn| {
+        use rusqlite::OptionalExtension;
+        conn.query_row("SELECT id FROM databases WHERE engine = 'mariadb' AND name = ?1 AND user_id = ?2", params![database, site.user_id], |row| row.get(0)).optional()
+    })?;
+    let scope = crate::backup::Scope { site_ids: vec![site.id], database_ids: database_id.into_iter().collect(), ..Default::default() };
+    ctx.log(format!("== Güncellemeden önce yedek alınıyor ({})", target.name));
+    crate::backup::run::run_inline(state, ctx, &target, &scope)
+        .await
+        .map_err(|err| AppError::internal(format!("Yedek alınamadığı için güncelleme yapılmadı: {err}")))?;
+    ctx.log(String::new());
+    Ok(())
+}
+
+/// Güncellemeden sonra siteyi sunucunun içinden yoklar; sunucu hatası dönüyorsa görev
+/// başarısız sayılır ki yönetici hemen fark edip az önce alınan yedeğe dönebilsin.
+async fn verify_after_update(ctx: &JobCtx, site: &Site) -> AppResult<()> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|err| AppError::internal(err.to_string()))?;
+    match client.get("http://127.0.0.1/").header("Host", site.domain.as_str()).send().await {
+        Ok(response) if response.status().is_server_error() => Err(AppError::internal(format!(
+            "Site güncellemeden sonra hata veriyor (HTTP {}). Yedekler sayfasından az önce alınan yedeğe dönebilirsiniz.",
+            response.status().as_u16()
+        ))),
+        Ok(response) => {
+            ctx.log(format!("Site yanıt veriyor (HTTP {}).", response.status().as_u16()));
+            Ok(())
+        }
+        Err(_) => {
+            ctx.log("UYARI: Site yoklanamadı; elle denetleyin.");
+            Ok(())
+        }
+    }
+}
+
+/// Bekleyen güncellemeler; sitede WordPress yoksa `None`.
+#[derive(Debug, Clone, Default)]
+pub struct Pending {
+    pub core: Option<String>,
+    pub plugins: usize,
+    pub themes: usize,
+}
+
+impl Pending {
+    pub fn is_empty(&self) -> bool {
+        self.core.is_none() && self.plugins == 0 && self.themes == 0
+    }
+}
+
+pub async fn pending_updates(site: &Site) -> Option<Pending> {
+    let wp = Wp::for_site(site).ok()?;
+    if !wp.has_files().await {
+        return None;
+    }
+    let count = |output: AppResult<CmdOutput>| output.ok().filter(CmdOutput::success).and_then(|out| out.stdout.trim().parse::<usize>().ok()).unwrap_or(0);
+    let (core, plugins, themes) = tokio::join!(
+        wp.run(&["core", "check-update", "--format=json", "--skip-plugins", "--skip-themes"]),
+        wp.run(&["plugin", "list", "--update=available", "--format=count", "--skip-plugins", "--skip-themes"]),
+        wp.run(&["theme", "list", "--update=available", "--format=count", "--skip-plugins", "--skip-themes"]),
+    );
+    let core = core
+        .ok()
+        .filter(CmdOutput::success)
+        .and_then(|out| serde_json::from_str::<Vec<CoreUpdate>>(out.stdout.trim()).ok())
+        .and_then(|list| list.into_iter().next_back())
+        .map(|update| update.version);
+    Some(Pending { core, plugins: count(plugins), themes: count(themes) })
+}
+
 pub async fn update(ctx: &JobCtx, site: &Site, what: &str) -> AppResult<()> {
     let wp = Wp::for_site(site)?;
     if matches!(what, "all" | "core") {

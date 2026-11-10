@@ -98,7 +98,17 @@ check "geçersiz seçenek" "$(code PUT /sites/$S/wordpress/settings -d '{"auto_c
 
 say "Güncelleme"
 check "geçersiz kapsam" "$(code POST /sites/$S/wordpress/update -d '{"what":"--all"}')" 400
-check "güncelleme görevi" "$(wait_job "$(api POST /sites/$S/wordpress/update -d '{"what":"all"}' | jget 'd["job_id"]')")" success
+UJOB=$(api POST /sites/$S/wordpress/update -d '{"what":"all"}' | jget 'd["job_id"]')
+check "güncelleme görevi" "$(wait_job "$UJOB")" success
+ULOG=$(api GET "/jobs/$UJOB" | jget 'd["log"]')
+if [ "$(api GET /backup | jget 'len(d["targets"]) > 0')" = True ]; then
+  has "güncellemeden önce yedek alındı" "$ULOG" "Güncellemeden önce yedek alınıyor"
+  T=$(api GET /backup | jget 'd["targets"][0]["id"]')
+  check "yedekte site ve veritabanı var" "$(api GET "/backup/targets/$T/snapshots" | jget "sorted({s['kind'] for s in d['snapshots'] if s['name'] in ('$DOMAIN', 'wp_wp_e2e_test')})")" "['db', 'site']"
+else
+  has "yedek yeri yokken uyarır" "$ULOG" "yedek alınamadı"
+fi
+has "güncellemeden sonra site yoklandı" "$ULOG" "Site yanıt veriyor"
 check "güncellemeden sonra site yayında" "$(site / -o /dev/null -w '%{http_code}')" 200
 
 say "wp-cli bütünlüğü"

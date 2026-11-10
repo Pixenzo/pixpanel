@@ -75,6 +75,7 @@ function CreateSiteModal({
   const [phpVersion, setPhpVersion] = useState(options.php_versions[0] ?? "");
   const [proxyTarget, setProxyTarget] = useState(initialTarget || "http://127.0.0.1:3000");
   const [withWww, setWithWww] = useState(true);
+  const [withWordPress, setWithWordPress] = useState(false);
   const [ownerId, setOwnerId] = useState(parent?.ownerId ?? me.id);
 
   const isSubdomain = domain.trim().split(".").length > 2;
@@ -94,7 +95,8 @@ function CreateSiteModal({
       void queryClient.invalidateQueries({ queryKey: ["sites"] });
       void queryClient.invalidateQueries({ queryKey: ["sites-summary"] });
       onClose();
-      void navigate(`/sites/${site.id}`);
+      // WordPress istenmişse doğrudan kurulum formuna geçilir.
+      void navigate(kind === "php" && withWordPress ? `/sites/${site.id}/wordpress` : `/sites/${site.id}`);
     },
   });
 
@@ -195,13 +197,29 @@ function CreateSiteModal({
               </Link>
             </p>
           ) : (
-            <Select label={t("PHP sürümü")} value={phpVersion} onChange={(event) => setPhpVersion(event.target.value)}>
-              {options.php_versions.map((version) => (
-                <option key={version} value={version}>
-                  PHP {version}
-                </option>
-              ))}
-            </Select>
+            <>
+              <Select label={t("PHP sürümü")} value={phpVersion} onChange={(event) => setPhpVersion(event.target.value)}>
+                {options.php_versions.map((version) => (
+                  <option key={version} value={version}>
+                    PHP {version}
+                  </option>
+                ))}
+              </Select>
+              <label className="-mt-1 flex items-start gap-2.5 rounded-lg border border-line-strong p-3 has-[:checked]:border-accent has-[:checked]:bg-accent-soft">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 size-4 shrink-0 accent-(--accent)"
+                  checked={withWordPress}
+                  onChange={(event) => setWithWordPress(event.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">{t("WordPress ile başlat")}</span>
+                  <span className="block text-[12.5px] text-ink-2">
+                    {t("Site açılınca kurulum adımına geçersiniz; veritabanını ve ayarları panel hazırlar.")}
+                  </span>
+                </span>
+              </label>
+            </>
           ))}
 
         {kind === "node" &&

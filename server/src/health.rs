@@ -201,6 +201,8 @@ pub struct Monitor {
     port_failures: Arc<Mutex<HashMap<String, u32>>>,
     dns_cache: Arc<Mutex<HashMap<String, (bool, i64)>>>,
     updates: Arc<RwLock<PendingUpdates>>,
+    /// WordPress sitelerinin bekleyen güncellemeleri (site kimliğine göre).
+    wordpress: Arc<RwLock<HashMap<i64, crate::wordpress::Pending>>>,
     /// Aynı anda tek denetim turu yürür.
     running: Arc<tokio::sync::Mutex<()>>,
 }
@@ -687,6 +689,67 @@ fn count_upgrades(simulation: &str) -> (usize, usize) {
     (installs.len(), security)
 }
 
+/// WordPress sitelerini bekleyen güncellemeler için tarar. Site başına birkaç saniye
+/// sürdüğünden dakikalık turun dışında, kendi görevinde ve seyrek çalışır.
+pub async fn scan_wordpress(state: &AppState) {
+    if crate::wordpress::ensure_cli().await.is_err() {
+        return;
+    }
+    let sites: Vec<Site> = crate::backup::all_sites(&state.db).unwrap_or_default().into_iter().filter(|site| site.status == "active" && site.kind == "php").collect();
+    let mut found = HashMap::new();
+    for site in &sites {
+        if let Some(pending) = crate::wordpress::pending_updates(site).await {
+            found.insert(site.id, pending);
+        }
+    }
+    *state.health.wordpress.write().unwrap_or_else(|p| p.into_inner()) = found;
+}
+
+/// Tek bir sitenin güncelleme durumunu yeniler (güncelleme görevi bittikten sonra).
+pub async fn rescan_wordpress_site(state: &AppState, site: &Site) {
+    let pending = crate::wordpress::pending_updates(site).await;
+    let mut all = state.health.wordpress.write().unwrap_or_else(|p| p.into_inner());
+    match pending {
+        Some(pending) => all.insert(site.id, pending),
+        None => all.remove(&site.id),
+    };
+}
+
+fn check_wordpress(state: &AppState, batch: &mut Batch, sites: &[Site]) {
+    let pending = state.health.wordpress.read().unwrap_or_else(|p| p.into_inner()).clone();
+    for site in sites {
+        let Some(updates) = pending.get(&site.id) else { continue };
+        batch.checks += 1;
+        if updates.is_empty() {
+            continue;
+        }
+        let mut parts = Vec::new();
+        if let Some(version) = &updates.core {
+            parts.push(format!("WordPress {version}"));
+        }
+        if updates.plugins > 0 {
+            parts.push(format!("{} eklenti", updates.plugins));
+        }
+        if updates.themes > 0 {
+            parts.push(format!("{} tema", updates.themes));
+        }
+        // Çekirdek güncellemeleri çoğunlukla güvenlik düzeltmesi içerir.
+        let severity = if updates.core.is_some() { Severity::Warning } else { Severity::Info };
+        batch.push(
+            Finding::new(
+                "wordpress.updates",
+                site.id,
+                severity,
+                format!("{} için güncelleme var: {}", site.domain, parts.join(", ")),
+                "Eski eklenti ve temalar WordPress sitelerinin ele geçirilmesinin başlıca nedenidir. Panel güncellemeden önce sitenin yedeğini alır.",
+            )
+            .subject(&site.domain)
+            .link(format!("/sites/{}/wordpress", site.id))
+            .fix("Güncelle"),
+        );
+    }
+}
+
 fn check_updates(state: &AppState, batch: &mut Batch) {
     batch.checks += 2;
     let pending = state.health.updates.read().unwrap_or_else(|p| p.into_inner()).clone();
@@ -762,6 +825,7 @@ pub async fn run_checks(state: &AppState) -> Report {
     apply_security_updates(state, settings.security_updates).await;
     refresh_updates(&monitor).await;
     check_updates(state, &mut batch);
+    check_wordpress(state, &mut batch, &sites);
 
     collapse(
         &mut batch.findings,
@@ -996,6 +1060,13 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
             let (unit, label) = watched_units().into_iter().find(|(unit, _)| unit == target).ok_or_else(|| AppError::bad("Bu servis izlenmiyor"))?;
             crate::sys::services::action(&unit, "restart").await?;
             Ok(format!("{label} yeniden başlatıldı."))
+        }
+        "wordpress.updates" => {
+            let id: i64 = target.parse().map_err(|_| AppError::bad("Geçersiz site"))?;
+            let site = crate::hosting::sites::load(&state.db, id)?.ok_or(AppError::NotFound)?;
+            let domain = site.domain.clone();
+            crate::wordpress::start_update_job(state, user_id, site, "all".into())?;
+            Ok(format!("{domain} güncelleniyor; önce yedeği alınacak."))
         }
         "updates.pending" => {
             start_upgrade_job(state, user_id)?;
