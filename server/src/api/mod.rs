@@ -10,6 +10,7 @@ mod cron;
 mod databases;
 mod docker;
 mod files;
+mod ftp;
 mod git;
 mod jobs;
 mod logs;
@@ -41,5 +42,5 @@ pub fn router() -> Router<AppState> {
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())
-        .nest("/sites", sites::router().merge(ssl::router()).merge(git::router()))
+        .nest("/sites", sites::router().merge(ssl::router()).merge(git::router()).merge(ftp::router()))
 }

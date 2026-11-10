@@ -2,6 +2,7 @@
 
 pub mod acme;
 pub mod domain;
+pub mod ftp;
 pub mod nginx;
 pub mod node;
 pub mod php;

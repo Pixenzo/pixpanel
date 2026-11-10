@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, ArrowRightLeft, ExternalLink, FileCode2, GitBranch, Globe, Hexagon, LayoutGrid, Plus, Route, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ExternalLink, FileCode2, GitBranch, Globe, HardDriveUpload, Hexagon, LayoutGrid, Plus, Route, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router";
@@ -24,6 +24,7 @@ import { api, errorMessage } from "../lib/api";
 import { classNames, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { FtpSection } from "./SiteFtp";
 import { GitSection } from "./SiteGit";
 import { NodeSection } from "./SiteNode";
 import { ProxyRulesSection } from "./SiteProxyRules";
@@ -478,6 +479,7 @@ export function SiteDetailPage() {
     ...(data.kind !== "proxy" ? [{ id: "rules", label: t("Vekil kuralları"), icon: Route }] : []),
     ...(me.role !== "member" || me.permissions.includes("ssl") ? [{ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck }] : []),
     { id: "git", label: t("Git ile yayınlama"), icon: GitBranch },
+    ...(data.kind !== "proxy" && (me.role !== "member" || me.permissions.includes("ftp")) ? [{ id: "ftp", label: t("FTP hesapları"), icon: HardDriveUpload }] : []),
     ...(me.role === "admin" ? [{ id: "advanced", label: t("nginx yönergeleri"), icon: SlidersHorizontal }] : []),
   ];
   const active = sections.some((item) => item.id === section) ? section : "overview";
@@ -531,6 +533,7 @@ export function SiteDetailPage() {
           {active === "rules" && <ProxyRulesSection key={JSON.stringify(data.proxy_rules)} site={data} />}
           {active === "ssl" && <SslTab site={data} />}
           {active === "git" && <GitSection site={data} />}
+          {active === "ftp" && <FtpSection site={data} />}
           {active === "advanced" && <AdvancedTab key={data.nginx_custom} site={data} />}
         </div>
       </div>

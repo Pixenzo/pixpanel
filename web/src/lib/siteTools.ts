@@ -14,6 +14,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  HardDriveUpload,
   Mail,
   ShieldCheck,
   SlidersHorizontal,
@@ -109,6 +110,9 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
     tools.push({ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck, to: `${base}/ssl`, ...sslStatus(site, summary) });
   }
   tools.push({ id: "git", label: t("Git ile yayınlama"), icon: GitBranch, to: `${base}/git`, ...gitStatus(summary) });
+  if (can("ftp") && site.kind !== "proxy") {
+    tools.push({ id: "ftp", label: t("FTP hesapları"), icon: HardDriveUpload, to: `${base}/ftp`, status: t("Siteye özel hesaplar") });
+  }
   if (can("logs")) {
     tools.push({
       id: "logs",

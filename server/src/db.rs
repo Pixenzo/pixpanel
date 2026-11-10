@@ -239,6 +239,17 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE sites ADD COLUMN node_settings TEXT NOT NULL DEFAULT '{}';
     ALTER TABLE sites ADD COLUMN proxy_rules TEXT NOT NULL DEFAULT '[]';
     "#,
+    // 9: FTP hesapları
+    r#"
+    CREATE TABLE ftp_accounts (
+        id         INTEGER PRIMARY KEY,
+        site_id    INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL UNIQUE,
+        subdir     TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX ftp_accounts_site ON ftp_accounts(site_id);
+    "#,
 ];
 
 #[derive(Clone)]

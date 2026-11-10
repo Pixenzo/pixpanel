@@ -170,6 +170,15 @@ pub fn catalog() -> Vec<Component> {
             Repo::Distro,
         ),
         component(
+            "ftp",
+            "FTP sunucusu",
+            "pure-ftpd. Site başına, o sitenin klasörüne hapsedilmiş FTP hesapları açılır.",
+            "web",
+            &["pure-ftpd"],
+            Some("pure-ftpd.service"),
+            Repo::Distro,
+        ),
+        component(
             "roundcube",
             "Roundcube web postası",
             "Posta kutularına tarayıcıdan erişim. Panel adresinin /webmail/ yolunda yayınlanır.",

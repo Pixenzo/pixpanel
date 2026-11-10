@@ -418,6 +418,7 @@ async fn remove(
     user.require(AREA)?;
     let _guard = state.sys_lock.lock().await;
     let site = sites::get(&state.db, &user, id)?;
+    super::ftp::remove_for_site(&state, site.id).await;
     sites::deprovision(&site, query.delete_files).await?;
     sites::delete_row(&state.db, id)?;
     let detail = if query.delete_files { "dosyalarla birlikte" } else { "" };

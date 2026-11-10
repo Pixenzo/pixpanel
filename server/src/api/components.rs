@@ -55,6 +55,10 @@ postfix postfix/mailname string {}
             let _sys = job_state.sys_lock.lock().await;
             crate::dbtools::ensure_runtime(&job_state.cfg).await?;
         }
+        if component.id == "ftp" {
+            ctx.log("FTP sunucusu yapılandırılıyor");
+            crate::hosting::ftp::setup(&job_state.cfg).await?;
+        }
         if component.id == "mail" {
             ctx.log("Posta servisleri yapılandırılıyor");
             let _sys = job_state.sys_lock.lock().await;
