@@ -19,17 +19,23 @@ use crate::sys::{exec, services};
 
 const POLICIES: &[&str] =
     &["noeviction", "allkeys-lru", "allkeys-lfu", "allkeys-random", "volatile-lru", "volatile-lfu", "volatile-random", "volatile-ttl"];
-const SCAN_COUNT: &str = "300";
-const MAX_KEYS_PER_PAGE: usize = 200;
-const PREVIEW_ITEMS: &str = "199";
-const PREVIEW_BYTES: usize = 64 * 1024;
+const KEY_TYPES: &[&str] = &["string", "hash", "list", "set", "zset", "stream"];
+const SCAN_COUNT: &str = "500";
+/// Bir istekte dönen anahtar sayısı için hedef ve SCAN yineleme üst sınırı.
+const KEYS_PER_PAGE: usize = 200;
+const MAX_SCAN_ROUNDS: usize = 40;
+/// Koleksiyonlarda (list, zset) sayfa başına öğe.
+const PAGE_ITEMS: i64 = 200;
+const STRING_PREVIEW_BYTES: usize = 1024 * 1024;
+const MAX_VALUE_BYTES: usize = 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(overview))
         .route("/config", post(save_config))
         .route("/keys", get(list_keys))
-        .route("/key", get(show_key).delete(delete_key))
+        .route("/key", get(show_key).post(edit_key).delete(delete_key))
+        .route("/command", post(run_command))
         .route("/flush", post(flush))
 }
 
@@ -148,35 +154,57 @@ struct KeysQuery {
     pattern: String,
     #[serde(default)]
     cursor: String,
+    /// Yalnızca bu türdeki anahtarlar (`string`, `hash`, `list`, `set`, `zset`, `stream`).
+    #[serde(default, rename = "type")]
+    kind: String,
 }
 
 fn validate_db(db: u32) -> AppResult<String> {
     if db < 1024 { Ok(db.to_string()) } else { Err(AppError::bad("Geçersiz veritabanı numarası")) }
 }
 
+fn validate_kind(kind: &str) -> AppResult<()> {
+    if kind.is_empty() || KEY_TYPES.contains(&kind) { Ok(()) } else { Err(AppError::bad("Geçersiz anahtar türü")) }
+}
+
+/// Anahtarları tarar. Redis'in SCAN komutu tek adımda az (hatta hiç) sonuç
+/// dönebildiğinden, yeterince anahtar birikene ya da tarama bitene kadar yinelenir.
 async fn list_keys(user: AuthUser, Query(query): Query<KeysQuery>) -> AppResult<Json<Json_>> {
     user.require_admin()?;
-    let cursor = if query.cursor.is_empty() { "0".to_string() } else { query.cursor };
+    let mut cursor = if query.cursor.is_empty() { "0".to_string() } else { query.cursor };
     if !cursor.bytes().all(|b| b.is_ascii_digit()) || cursor.len() > 20 {
         return Err(AppError::bad("Geçersiz imleç"));
     }
     if query.pattern.len() > 200 {
         return Err(AppError::bad("Arama kalıbı çok uzun"));
     }
+    validate_kind(&query.kind)?;
     let pattern = if query.pattern.is_empty() { "*".to_string() } else { query.pattern };
     let mut client = Client::connect().await?;
     client.run(&["SELECT", &validate_db(query.db)?]).await?;
-    let reply = client.run(&["SCAN", &cursor, "MATCH", &pattern, "COUNT", SCAN_COUNT]).await?.items();
-    let next = reply.first().map(Value::text).unwrap_or_else(|| "0".into());
+
+    let mut names: Vec<Value> = Vec::new();
+    for _ in 0..MAX_SCAN_ROUNDS {
+        let mut args = vec!["SCAN", cursor.as_str(), "MATCH", pattern.as_str(), "COUNT", SCAN_COUNT];
+        if !query.kind.is_empty() {
+            args.extend(["TYPE", query.kind.as_str()]);
+        }
+        let reply = client.run(&args).await?.items();
+        cursor = reply.first().map(Value::text).unwrap_or_else(|| "0".into());
+        names.extend(reply.get(1).map(Value::items).unwrap_or_default());
+        if cursor == "0" || names.len() >= KEYS_PER_PAGE {
+            break;
+        }
+    }
     let mut keys = Vec::new();
-    for key in reply.get(1).map(Value::items).unwrap_or_default().into_iter().take(MAX_KEYS_PER_PAGE) {
+    for key in names {
         let Value::Bulk(Some(raw)) = &key else { continue };
         let kind = client.command(&[b"TYPE", raw]).await?.text();
         let ttl = client.command(&[b"TTL", raw]).await?.int();
         let size = client.command(&[b"MEMORY", b"USAGE", raw]).await.map(|value| value.int()).unwrap_or(0);
         keys.push(json!({ "key": key.text(), "type": kind, "ttl": ttl, "size": size }));
     }
-    Ok(Json(json!({ "cursor": next, "keys": keys })))
+    Ok(Json(json!({ "cursor": cursor, "keys": keys })))
 }
 
 #[derive(Deserialize)]
@@ -184,50 +212,277 @@ struct KeyQuery {
     #[serde(default)]
     db: u32,
     key: String,
+    /// Koleksiyonlarda kaçıncı öğeden başlanacağı (list, zset) ya da tarama imleci (hash, set).
+    #[serde(default)]
+    cursor: String,
+    /// Hash ve set içinde alan/üye araması.
+    #[serde(default)]
+    filter: String,
 }
 
 /// Uzun değerler panelde kırpılarak gösterilir.
 fn preview(value: &Value) -> Json_ {
     match value {
         Value::Bulk(Some(bytes)) => {
-            let cut = bytes.len().min(PREVIEW_BYTES);
-            json!({ "text": String::from_utf8_lossy(&bytes[..cut]), "truncated": bytes.len() > cut, "bytes": bytes.len() })
+            let cut = bytes.len().min(STRING_PREVIEW_BYTES);
+            json!({
+                "text": String::from_utf8_lossy(&bytes[..cut]),
+                "truncated": bytes.len() > cut,
+                "bytes": bytes.len(),
+                // Metin olarak gösterilemeyen (ikili) değerler düzenlenemez.
+                "binary": std::str::from_utf8(&bytes[..cut]).is_err() && bytes.len() == cut,
+            })
         }
-        other => json!({ "text": other.text(), "truncated": false, "bytes": other.text().len() }),
+        other => json!({ "text": other.text(), "truncated": false, "bytes": other.text().len(), "binary": false }),
     }
 }
 
+/// Anahtarın ayrıntısı. Koleksiyonlar sayfa sayfa okunur; yanıt bir sonraki
+/// sayfanın imlecini (`next`; bittiyse boş) içerir.
 async fn show_key(user: AuthUser, Query(query): Query<KeyQuery>) -> AppResult<Json<Json_>> {
     user.require_admin()?;
     let mut client = Client::connect().await?;
     client.run(&["SELECT", &validate_db(query.db)?]).await?;
     let key = query.key.as_str();
+    let cursor = if query.cursor.is_empty() { "0".to_string() } else { query.cursor.clone() };
+    if !cursor.bytes().all(|b| b.is_ascii_digit()) || cursor.len() > 20 {
+        return Err(AppError::bad("Geçersiz imleç"));
+    }
+    if query.filter.len() > 200 {
+        return Err(AppError::bad("Arama metni çok uzun"));
+    }
     let kind = client.run(&["TYPE", key]).await?.text();
+    if kind == "none" {
+        return Err(AppError::NotFound);
+    }
     let ttl = client.run(&["TTL", key]).await?.int();
+    let size = client.run(&["MEMORY", "USAGE", key]).await.map(|value| value.int()).unwrap_or(0);
+    let encoding = client.run(&["OBJECT", "ENCODING", key]).await.map(|value| value.text()).unwrap_or_default();
     let texts = |value: Value| value.items().iter().map(Value::text).collect::<Vec<_>>();
-    let (length, content) = match kind.as_str() {
-        "none" => return Err(AppError::NotFound),
-        "string" => (client.run(&["STRLEN", key]).await?.int(), json!({ "value": preview(&client.run(&["GET", key]).await?) })),
-        "list" => (client.run(&["LLEN", key]).await?.int(), json!({ "items": texts(client.run(&["LRANGE", key, "0", PREVIEW_ITEMS]).await?) })),
+    let pattern = if query.filter.is_empty() { "*".to_string() } else { format!("*{}*", query.filter) };
+    // Sıralı türlerde imleç, öğenin sırasıdır.
+    let offset: i64 = cursor.parse().unwrap_or(0);
+    let last = (offset + PAGE_ITEMS - 1).to_string();
+    let next_offset = |count: usize, total: i64| if offset + (count as i64) < total { (offset + count as i64).to_string() } else { String::new() };
+    let scan_next = |reply: &[Value]| reply.first().map(Value::text).filter(|next| next != "0").unwrap_or_default();
+
+    let (length, content, next) = match kind.as_str() {
+        "string" => (client.run(&["STRLEN", key]).await?.int(), json!({ "value": preview(&client.run(&["GET", key]).await?) }), String::new()),
+        "list" => {
+            let total = client.run(&["LLEN", key]).await?.int();
+            let items = texts(client.run(&["LRANGE", key, &cursor, &last]).await?);
+            let next = next_offset(items.len(), total);
+            (total, json!({ "items": items, "offset": offset }), next)
+        }
         "set" => {
-            let scan = client.run(&["SSCAN", key, "0", "COUNT", "200"]).await?.items();
-            (client.run(&["SCARD", key]).await?.int(), json!({ "items": scan.get(1).cloned().map(texts).unwrap_or_default() }))
+            let reply = client.run(&["SSCAN", key, &cursor, "MATCH", &pattern, "COUNT", "200"]).await?.items();
+            let next = scan_next(&reply);
+            (client.run(&["SCARD", key]).await?.int(), json!({ "items": reply.get(1).cloned().map(texts).unwrap_or_default() }), next)
         }
         "zset" => {
-            let flat = texts(client.run(&["ZRANGE", key, "0", PREVIEW_ITEMS, "WITHSCORES"]).await?);
+            let total = client.run(&["ZCARD", key]).await?.int();
+            let flat = texts(client.run(&["ZRANGE", key, &cursor, &last, "WITHSCORES"]).await?);
             let pairs: Vec<Json_> = flat.chunks(2).map(|pair| json!({ "member": pair[0], "score": pair.get(1) })).collect();
-            (client.run(&["ZCARD", key]).await?.int(), json!({ "pairs": pairs }))
+            let next = next_offset(pairs.len(), total);
+            (total, json!({ "pairs": pairs, "offset": offset }), next)
         }
         "hash" => {
-            let scan = client.run(&["HSCAN", key, "0", "COUNT", "200"]).await?.items();
-            let flat = scan.get(1).cloned().map(texts).unwrap_or_default();
+            let reply = client.run(&["HSCAN", key, &cursor, "MATCH", &pattern, "COUNT", "200"]).await?.items();
+            let flat = reply.get(1).cloned().map(texts).unwrap_or_default();
             let fields: Vec<Json_> = flat.chunks(2).map(|pair| json!({ "field": pair[0], "value": pair.get(1) })).collect();
-            (client.run(&["HLEN", key]).await?.int(), json!({ "fields": fields }))
+            let next = scan_next(&reply);
+            (client.run(&["HLEN", key]).await?.int(), json!({ "fields": fields }), next)
         }
-        "stream" => (client.run(&["XLEN", key]).await?.int(), json!({})),
-        _ => (0, json!({})),
+        "stream" => {
+            // En yeni kayıtlar önce; imleç bir önceki sayfanın son kimliğidir.
+            let entries = client.run(&["XREVRANGE", key, "+", "-", "COUNT", "100"]).await?.items();
+            let rows: Vec<Json_> = entries
+                .iter()
+                .map(|entry| {
+                    let parts = entry.items();
+                    let flat = parts.get(1).cloned().map(texts).unwrap_or_default();
+                    let fields: Vec<Json_> = flat.chunks(2).map(|pair| json!({ "field": pair[0], "value": pair.get(1) })).collect();
+                    json!({ "id": parts.first().map(Value::text).unwrap_or_default(), "fields": fields })
+                })
+                .collect();
+            (client.run(&["XLEN", key]).await?.int(), json!({ "entries": rows }), String::new())
+        }
+        _ => (0, json!({}), String::new()),
     };
-    Ok(Json(json!({ "key": key, "type": kind, "ttl": ttl, "length": length, "content": content })))
+    Ok(Json(json!({ "key": key, "type": kind, "ttl": ttl, "size": size, "encoding": encoding, "length": length, "content": content, "next": next })))
+}
+
+/// Anahtar üzerinde yapılabilen değişiklikler. Her biri tek bir Redis komutuna karşılık gelir.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum Edit {
+    /// Metin değeri yazar (anahtar yoksa oluşturur).
+    SetString { value: String },
+    /// Süreyi ayarlar; `null` süreyi kaldırır.
+    SetTtl { seconds: Option<i64> },
+    Rename { new_key: String },
+    HashSet { field: String, value: String },
+    HashDelete { field: String },
+    /// Listenin sonuna ekler.
+    ListPush { value: String },
+    ListSet { index: i64, value: String },
+    /// Değerin ilk geçtiği öğeyi siler.
+    ListRemove { value: String },
+    SetAdd { member: String },
+    SetRemove { member: String },
+    ZsetAdd { member: String, score: f64 },
+    ZsetRemove { member: String },
+}
+
+#[derive(Deserialize)]
+struct EditBody {
+    #[serde(default)]
+    db: u32,
+    key: String,
+    #[serde(flatten)]
+    edit: Edit,
+}
+
+async fn edit_key(State(state): State<AppState>, user: AuthUser, Json(body): Json<EditBody>) -> AppResult<Json<Json_>> {
+    user.require_admin()?;
+    if body.key.is_empty() || body.key.len() > 1024 {
+        return Err(AppError::bad("Anahtar adı boş olamaz ve 1024 baytı aşamaz"));
+    }
+    let mut client = Client::connect().await?;
+    client.run(&["SELECT", &validate_db(body.db)?]).await?;
+    let key = body.key.as_str();
+    let too_big = |value: &str| value.len() > MAX_VALUE_BYTES;
+    let (label, reply) = match &body.edit {
+        Edit::SetString { value } => {
+            if too_big(value) {
+                return Err(AppError::bad("Değer panelden yazılamayacak kadar büyük (en çok 1 MB)"));
+            }
+            // Var olan süre korunur.
+            ("set", client.run(&["SET", key, value, "KEEPTTL"]).await?)
+        }
+        Edit::SetTtl { seconds: Some(seconds) } => {
+            if !(1..=3_153_600_000).contains(seconds) {
+                return Err(AppError::bad("Süre 1 saniyeden kısa olamaz"));
+            }
+            ("expire", client.run(&["EXPIRE", key, &seconds.to_string()]).await?)
+        }
+        Edit::SetTtl { seconds: None } => ("persist", client.run(&["PERSIST", key]).await?),
+        Edit::Rename { new_key } => {
+            if new_key.is_empty() || new_key.len() > 1024 {
+                return Err(AppError::bad("Yeni ad boş olamaz ve 1024 baytı aşamaz"));
+            }
+            let renamed = client.run(&["RENAMENX", key, new_key]).await?;
+            if renamed.int() == 0 {
+                return Err(AppError::conflict("Bu adda bir anahtar zaten var"));
+            }
+            ("rename", renamed)
+        }
+        Edit::HashSet { field, value } if !too_big(value) => ("hset", client.run(&["HSET", key, field, value]).await?),
+        Edit::HashDelete { field } => ("hdel", client.run(&["HDEL", key, field]).await?),
+        Edit::ListPush { value } if !too_big(value) => ("rpush", client.run(&["RPUSH", key, value]).await?),
+        Edit::ListSet { index, value } if !too_big(value) => ("lset", client.run(&["LSET", key, &index.to_string(), value]).await?),
+        Edit::ListRemove { value } => ("lrem", client.run(&["LREM", key, "1", value]).await?),
+        Edit::SetAdd { member } if !too_big(member) => ("sadd", client.run(&["SADD", key, member]).await?),
+        Edit::SetRemove { member } => ("srem", client.run(&["SREM", key, member]).await?),
+        Edit::ZsetAdd { member, score } if !too_big(member) && score.is_finite() => ("zadd", client.run(&["ZADD", key, &score.to_string(), member]).await?),
+        Edit::ZsetRemove { member } => ("zrem", client.run(&["ZREM", key, member]).await?),
+        _ => return Err(AppError::bad("Değer geçersiz ya da çok büyük (en çok 1 MB)")),
+    };
+    auth::audit(&state.db, &user, &format!("redis.key.{label}"), &key.chars().take(120).collect::<String>(), "");
+    Ok(Json(json!({ "result": reply.text() })))
+}
+
+/// Konsoldan çalıştırılması engellenen komutlar: sunucuyu durduran, yapılandırmayı
+/// ya da kimlik doğrulamayı değiştiren, bağlantıyı süresiz meşgul eden ya da
+/// sunucuda kod çalıştıran komutlar. (Yapılandırma ve boşaltma için ayrı, onaylı uçlar var.)
+const BLOCKED_COMMANDS: &[&str] = &[
+    "SHUTDOWN", "DEBUG", "CONFIG", "ACL", "AUTH", "HELLO", "MODULE", "REPLICAOF", "SLAVEOF", "CLUSTER", "FAILOVER", "MIGRATE",
+    "MONITOR", "SUBSCRIBE", "PSUBSCRIBE", "SSUBSCRIBE", "SYNC", "PSYNC", "WAIT", "WAITAOF", "EVAL", "EVALSHA", "EVAL_RO",
+    "EVALSHA_RO", "FUNCTION", "FCALL", "FCALL_RO", "SCRIPT", "FLUSHALL", "FLUSHDB", "SWAPDB", "BGREWRITEAOF", "BGSAVE", "SAVE",
+    "RESTORE", "CLIENT", "SELECT", "MULTI", "EXEC", "WATCH", "RESET", "QUIT", "BLPOP", "BRPOP", "BLMOVE", "BRPOPLPUSH", "BZPOPMIN",
+    "BZPOPMAX", "BLMPOP", "BZMPOP", "XREAD", "XREADGROUP", "KEYS",
+];
+
+/// Komut satırını argümanlara ayırır; çift ve tek tırnak içindeki boşluklar korunur.
+fn split_command(line: &str) -> AppResult<Vec<String>> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut started = false;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some('"'), '\\') => current.push(chars.next().ok_or_else(|| AppError::bad("Komut eksik bitiyor"))?),
+            (Some(_), c) => current.push(c),
+            (None, '"' | '\'') => {
+                quote = Some(c);
+                started = true;
+            }
+            (None, c) if c.is_whitespace() => {
+                if started || !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            (None, c) => current.push(c),
+        }
+    }
+    if quote.is_some() {
+        return Err(AppError::bad("Kapanmamış tırnak"));
+    }
+    if started || !current.is_empty() {
+        args.push(current);
+    }
+    Ok(args)
+}
+
+/// Yanıtı arayüzün gösterebileceği iç içe yapıya çevirir.
+fn reply_json(value: &Value, depth: usize) -> Json_ {
+    match value {
+        Value::Simple(text) => json!({ "kind": "status", "value": text }),
+        Value::Int(number) => json!({ "kind": "integer", "value": number }),
+        Value::Bulk(None) | Value::Array(None) => json!({ "kind": "nil" }),
+        Value::Bulk(Some(bytes)) => {
+            let cut = bytes.len().min(16 * 1024);
+            json!({ "kind": "string", "value": String::from_utf8_lossy(&bytes[..cut]), "truncated": bytes.len() > cut })
+        }
+        Value::Array(Some(items)) => {
+            let shown: Vec<Json_> = if depth >= 6 { Vec::new() } else { items.iter().take(500).map(|item| reply_json(item, depth + 1)).collect() };
+            json!({ "kind": "array", "items": shown, "total": items.len() })
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct CommandBody {
+    #[serde(default)]
+    db: u32,
+    command: String,
+}
+
+/// Konsol: tek bir Redis komutu çalıştırır. Tehlikeli komutlar reddedilir, her komut denetim günlüğüne yazılır.
+async fn run_command(State(state): State<AppState>, user: AuthUser, Json(body): Json<CommandBody>) -> AppResult<Json<Json_>> {
+    user.require_admin()?;
+    if body.command.len() > 64 * 1024 {
+        return Err(AppError::bad("Komut çok uzun"));
+    }
+    let args = split_command(body.command.trim())?;
+    let name = args.first().map(|name| name.to_ascii_uppercase()).ok_or_else(|| AppError::bad("Bir komut yazın"))?;
+    if BLOCKED_COMMANDS.contains(&name.as_str()) {
+        return Err(AppError::bad(format!("{name} komutu konsoldan çalıştırılamaz")));
+    }
+    let mut client = Client::connect().await?;
+    client.run(&["SELECT", &validate_db(body.db)?]).await?;
+    let raw: Vec<&[u8]> = args.iter().map(|arg| arg.as_bytes()).collect();
+    // Redis'in hata yanıtı da bir sonuçtur; konsolda olduğu gibi gösterilir.
+    let reply = match client.command(&raw).await {
+        Ok(value) => reply_json(&value, 0),
+        Err(AppError::BadRequest(message)) => json!({ "kind": "error", "value": message.trim_start_matches("Redis: ") }),
+        Err(err) => return Err(err),
+    };
+    auth::audit(&state.db, &user, "redis.command", &name, &format!("db{}", body.db));
+    Ok(Json(json!({ "reply": reply })))
 }
 
 async fn delete_key(State(state): State<AppState>, user: AuthUser, Query(query): Query<KeyQuery>) -> AppResult<Json<Json_>> {

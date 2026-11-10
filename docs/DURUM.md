@@ -1,6 +1,6 @@
 # Durum
 
-Son güncelleme: 10.11.2026 (güvenlik duvarı, fail2ban ve iki adımlı doğrulama eklendi)
+Son güncelleme: 10.11.2026 (Redis tarayıcısı yeniden yazıldı; güvenlik duvarı ve saldırı engelleme sayfaları sadeleştirildi)
 
 ## Kararlar
 
@@ -49,7 +49,7 @@ Son güncelleme: 10.11.2026 (güvenlik duvarı, fail2ban ve iki adımlı doğrul
   - Kimliği doğrulanan kullanıcı yalnızca kendi adresinden (ve hedefi olduğu takma adlardan) gönderebilir.
 - Veritabanı araçları: MariaDB için phpMyAdmin, PostgreSQL için Adminer. Veritabanı satırından tek tıkla açılır; panel o veritabanına özel, 4 saat sonra silinen geçici bir hesap (`pxt_…`) oluşturur ve kimlik bilgisini tek kullanımlık bir anahtar dosyasıyla araca geçirir. Araçlar yalnızca 127.0.0.1:8446'da dinler; dışarıya panelin `/tools/` yolu üzerinden, panel oturumu denetlenerek açılır.
 - Web postası: Roundcube, panel adresinin `/webmail/` yolunda (kendi SQLite veritabanıyla). Kutu sahipleri panel hesabı olmadan girer.
-- Redis yönetimi (yalnızca yönetici): durum, bellek sınırı ve ilke, parola, AOF, anahtar tarayıcı, boşaltma. Redis ile panelin kendi küçük RESP istemcisi konuşur.
+- Redis yönetimi (yalnızca yönetici): durum, bellek sınırı ve ilke, parola, AOF, boşaltma. Anahtar tarayıcı: ad alanı ağacı (`:` ile), tür süzgeci, sayfalı yükleme, yan yana ayrıntı paneli; metin/hash/liste/küme/sıralı küme düzenleme, akışları okuma, süre (TTL), yeniden adlandırma, yeni anahtar. Konsol sekmesi: sunucuyu durduran ya da yapılandırmayı değiştiren komutlar (FLUSHALL, CONFIG, SHUTDOWN, EVAL, KEYS…) engelli. Redis ile panelin kendi küçük RESP istemcisi konuşur.
 - Node.js uygulamaları: sürümler nodejs.org'un resmî derlemelerinden (sağlama toplamı doğrulanarak) `/opt/pixpanel/node/<sürüm>` altına kurulur; site başına `pixpanel-node-<kimlik>.service`, başlatma komutu, ortam değişkenleri, bellek sınırı, npm komutları, uygulama günlüğü. Port = 20000 + site kimliği.
 - Yol bazlı vekil kuralları: sitenin bir yolunu başka bir adrese (ör. Docker konteyneri) iletme; önek atma ve WebSocket seçenekleri.
 - Alt alan adı ekleme: site kartından ya da çalışma alanından; listede üst sitenin altında gösterilir.
@@ -60,6 +60,7 @@ Son güncelleme: 10.11.2026 (güvenlik duvarı, fail2ban ve iki adımlı doğrul
   - Cloudflare: API anahtarıyla bağlanma, kayıtlarda vekil (turuncu bulut) seçeneği, SSL kipi, geliştirme kipi, önbellek temizleme; nginx'te gerçek ziyaretçi adresi (yalnızca Cloudflare aralıklarına güvenilir).
 - Güvenlik duvarı: nftables üzerinde panelin kendi tablosu (`inet pixpanel`); kurulu bileşenlere göre hazır kümeler, özel kurallar, engelli adresler, dinleyen portların durumu. İsteği yapanın panel erişimini kesen kurallar uygulanmaz; uygulanan kurallar 60 saniyede onaylanmazsa kendiliğinden geri alınır. Docker'ın yayınladığı portlar bu kurallardan etkilenmez (ayrı zincirden geçer).
 - fail2ban: SSH, panel girişi, IMAP, SMTP kimlik doğrulaması, FTP ve web postası için hapisler; engelli adresler, engel kaldırma, beyaz liste, hapis başına deneme sayısı ve süreler. Engeller fail2ban'in kendi nftables tablosunda, bütün portlar için. Süzgeçler, kullanıcı adına gömülen sahte adresin başkasını engelletmesine izin vermeyecek biçimde yazıldı.
+- Güvenlik arayüzü: iki sayfa ortak sekmelerle (`components/SecurityTabs.tsx`) bağlı. Güvenlik duvarı tek soru etrafında: hangi kapı kime açık (satır başına Herkes / Tek adres / Kapalı; hazır kümeler, açılan portlar ve dışarıya kapalı çalışan portlar aynı listede), “Port aç” penceresi, engelli adresler ekle/çıkar, uygulama sonrası geri sayımlı onay penceresi; kural sırası ve engelleme kuralları “Gelişmiş” altında. Saldırı engelleme: engelli adresler, üç hazır sıkılık seviyesi, güvenli liste, koruma anahtarları; her denetim hemen kaydeder, sayılar ve elle engelleme “Gelişmiş” altında. Arka uç API'leri değişmedi.
 - İki adımlı doğrulama (TOTP): kurulum (QR), kurtarma kodları, parola ile kapatma, yöneticinin sıfırlaması, komut satırından kapatma (`pixpanel disable-two-factor <kullanıcı>`); API anahtarları etkilenmez ama korumayı da kapatamaz. Yeni adresten girişte bildirim.
 - Panel sertifikası: panele alan adı verip Let's Encrypt (web ya da DNS doğrulamasıyla) alma, kendi sertifikasını yükleme, kendinden imzalıya dönme. Yeni sertifika panel yeniden başlamadan devreye girer; posta (SMTP, IMAP) ve FTP aynı sertifikaya geçirilir; kendiliğinden yenilenir.
 - Arayüz düzeni (Plesk "power user" görünümünden esinle): ana sayfa siteler; her site, araçlarını ve o anki durumlarını gösteren bir kart. Site çalışma alanında sol bölüm menüsü. Ctrl+K ile site/araç/sayfa araması. Koyu yan menü.
@@ -81,6 +82,7 @@ Son güncelleme: 10.11.2026 (güvenlik duvarı, fail2ban ve iki adımlı doğrul
 - Veritabanı araçları (`scripts/e2e/dbtools.sh`): phpMyAdmin ve Adminer'in parola sormadan açıldığı; panel oturumu olmadan 401, anahtarın ikinci kullanımda 403 verdiği; geçici hesabın yalnızca o veritabanında yetkili olduğu ve süresi dolunca silindiği; araç sunucusunun dışarıdan erişilemediği.
 - Web postası (`webmail.sh`): giriş sayfasının panel oturumu olmadan açıldığı, kutu adresi ve parolasıyla oturum açılıp gelen kutusunun göründüğü, yanlış parolanın reddedildiği.
 - Redis (`dbtools.sh`): ayarların uygulanıp dosyaya yazıldığı, parola koyup kaldırma, anahtar tarayıcı; anahtar adına gömülen komutun çalışmadığı.
+- Redis tarayıcısı (`redis.sh`): imleçle sayfalama, tür ve kalıp süzgeci, her türün ayrıntısı, bütün düzenleme işlemleri, sürenin korunması, konsol yanıtları, engelli komutlar, satır sonuyla komut sokuşturulamadığı.
 - Node.js ve vekil kuralları (`node.sh`): sürüm kurulumu, örnek uygulamanın yayına girmesi, ortam değişkenlerinin bozulmadan ulaşması, npm betiği, başlat/durdur, önekli iletim; satır sonu ve birim dosyasına sızma denemelerinin reddedildiği.
 - FTP (`ftp.sh`): bileşenin panelden sıfırdan kurulumu, FTPS ile oturum, hapis, yüklenen dosyanın sahipliği ve web'den sunulması, alt klasör hesabı; sistem kullanıcısının giremediği; kök dışını gösteren sembolik bağın reddedildiği.
 - DNS (`dns.sh`): yerel bölgede kayıtların gerçekten yayınlandığı (`dig` ile), otomatik site ve posta kayıtları, kayıt ekleme/güncelleme/silme, uzun DKIM kaydının parçalı yayını, joker sertifikanın DNS doğrulamasıyla Pebble'dan alındığı, gerçek ziyaretçi adresi ayarı. Cloudflare bölümü `mock_cloudflare.py` sahte API'sine karşı sınandı.

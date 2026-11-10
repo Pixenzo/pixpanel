@@ -1,13 +1,12 @@
 // Redis sayfası: sunucu geneli önbellek/kuyruk sunucusunun durumu, anahtar gezgini ve ayarları.
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Eye, EyeOff, Search, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy, Eye, EyeOff } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useFeedback } from "../components/feedback";
 import {
-  Badge,
   Button,
   Checkbox,
   EmptyState,
@@ -16,7 +15,6 @@ import {
   Input,
   LoadingBlock,
   Meter,
-  Modal,
   Mono,
   PageHeader,
   Panel,
@@ -30,16 +28,11 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDuration, formatPercent, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
+import type { KeyspaceEntry } from "./RedisBrowser";
+import { RedisBrowser } from "./RedisBrowser";
+import { RedisConsole } from "./RedisConsole";
 
 // ---- Türler ----
-
-type RedisType = "string" | "list" | "set" | "zset" | "hash" | "stream";
-
-interface KeyspaceEntry {
-  db: number;
-  keys: number;
-  expires: number;
-}
 
 interface RedisConfig {
   maxmemory_mb: number;
@@ -78,33 +71,6 @@ interface RedisOn {
 
 type RedisStatus = RedisOff | RedisOn;
 
-interface KeyRow {
-  key: string;
-  type: RedisType;
-  ttl: number;
-  size: number;
-}
-
-interface KeysPage {
-  cursor: string;
-  keys: KeyRow[];
-}
-
-interface KeyContent {
-  value?: { text: string; truncated: boolean; bytes: number };
-  items?: string[];
-  pairs?: { member: string; score: string }[];
-  fields?: { field: string; value: string }[];
-}
-
-interface KeyDetail {
-  key: string;
-  type: RedisType;
-  ttl: number;
-  length: number;
-  content: KeyContent;
-}
-
 interface ConfigRequest {
   maxmemory_mb: number;
   policy: string;
@@ -112,13 +78,14 @@ interface ConfigRequest {
   password?: string;
 }
 
-const TAB_IDS = ["status", "keys", "settings"] as const;
+const TAB_IDS = ["status", "keys", "console", "settings"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 /** Adres çubuğundaki `?sekme=` değerleri. */
 const TAB_SLUGS: Record<TabId, string> = {
   status: "durum",
   keys: "anahtarlar",
+  console: "konsol",
   settings: "ayarlar",
 };
 
@@ -158,10 +125,6 @@ function policyLabel(policy: string): string {
     default:
       return policy;
   }
-}
-
-function formatTtl(ttl: number): string {
-  return ttl < 0 ? t("Süresiz") : formatDuration(ttl);
 }
 
 /** Tarayıcının rastgele sayı üretecinden, harf ve rakamlardan oluşan parola üretir. */
@@ -232,6 +195,7 @@ export function RedisPage() {
   const tabs: { id: TabId; label: string }[] = [
     { id: "status", label: t("Durum") },
     { id: "keys", label: t("Anahtarlar") },
+    { id: "console", label: t("Konsol") },
     { id: "settings", label: t("Ayarlar") },
   ];
 
@@ -293,6 +257,7 @@ export function RedisPage() {
         <Tabs tabs={tabs} value={tab} onChange={selectTab} label={t("Redis bölümleri")} />
         {tab === "status" && <StatusTab info={data} onBrowse={browseDatabase} />}
         {tab === "keys" && <KeysTab info={data} />}
+        {tab === "console" && <RedisConsole info={data} />}
         {tab === "settings" && <SettingsTab info={data} />}
       </>
     );
@@ -403,343 +368,10 @@ function StatusTab({ info, onBrowse }: { info: RedisOn; onBrowse: (db: number) =
 
 // ---- Anahtarlar sekmesi ----
 
+/** Anahtar gezgini; boşaltma onayı bu sayfadaki ortak akıştan gelir. */
 function KeysTab({ info }: { info: RedisOn }) {
-  const feedback = useFeedback();
-  const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { flush, pending: flushing } = useFlush();
-
-  const rawDb = Number(searchParams.get("db") ?? "0");
-  const db = Number.isInteger(rawDb) && rawDb >= 0 && rawDb < info.databases ? rawDb : 0;
-  const pattern = searchParams.get("kalip") ?? "";
-  const [patternInput, setPatternInput] = useState(pattern);
-  const [viewKey, setViewKey] = useState<string | null>(null);
-
-  const keys = useInfiniteQuery({
-    queryKey: ["redis", "keys", db, pattern],
-    queryFn: ({ pageParam }) =>
-      api.get<KeysPage>(`/redis/keys?db=${db}&pattern=${encodeURIComponent(pattern || "*")}&cursor=${encodeURIComponent(pageParam)}`),
-    initialPageParam: "0",
-    getNextPageParam: (last) => (last.cursor !== "0" ? last.cursor : undefined),
-    refetchOnWindowFocus: false,
-  });
-
-  const remove = useMutation({
-    mutationFn: (key: string) => api.delete<{ removed: number }>(`/redis/key?db=${db}&key=${encodeURIComponent(key)}`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["redis", "keys"] });
-      void queryClient.invalidateQueries({ queryKey: ["redis", "info"] });
-    },
-    onError: (error) => feedback.error(error),
-  });
-
-  function updateParams(patch: { db?: number; kalip?: string }) {
-    const params = new URLSearchParams(searchParams);
-    if (patch.db !== undefined) params.set("db", String(patch.db));
-    if (patch.kalip !== undefined) {
-      if (patch.kalip) params.set("kalip", patch.kalip);
-      else params.delete("kalip");
-    }
-    setSearchParams(params, { replace: true });
-  }
-
-  function applyPattern(event: FormEvent) {
-    event.preventDefault();
-    updateParams({ kalip: patternInput.trim() });
-  }
-
-  async function removeKey(key: string, onDone?: () => void) {
-    const confirmed = await feedback.confirm({
-      title: t("Anahtar silinsin mi?"),
-      description: t("“{key}” anahtarı db{db} içinden silinir. Bu anahtarı kullanan uygulamalar etkilenebilir.", { key, db }),
-      confirmLabel: t("Sil"),
-      danger: true,
-    });
-    if (confirmed) remove.mutate(key, { onSuccess: onDone });
-  }
-
-  // Aynı anahtar SCAN sayfaları arasında tekrar gelebilir; yinelenenler atılır.
-  const rows: KeyRow[] = [];
-  const seen = new Set<string>();
-  for (const page of keys.data?.pages ?? []) {
-    for (const row of page.keys) {
-      if (seen.has(row.key)) continue;
-      seen.add(row.key);
-      rows.push(row);
-    }
-  }
-
-  const keyCount = (n: number) => info.keyspace.find((entry) => entry.db === n)?.keys;
-  const dbOptions = Array.from({ length: Math.max(1, info.databases) }, (_unused, n) => n);
-
-  return (
-    <>
-      <Panel flush>
-        <div className="flex flex-col gap-2 border-b border-line px-3 py-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="w-56">
-              <Select
-                label={t("Veritabanı")}
-                value={db}
-                onChange={(event) => {
-                  updateParams({ db: Number(event.target.value) });
-                }}
-              >
-                {dbOptions.map((n) => {
-                  const count = keyCount(n);
-                  return (
-                    <option key={n} value={n}>
-                      {count === undefined ? `db${n}` : t("db{n} ({keys} anahtar)", { n, keys: formatNumber(count) })}
-                    </option>
-                  );
-                })}
-              </Select>
-            </div>
-            <form onSubmit={applyPattern} className="flex items-end gap-2">
-              <div className="w-64">
-                <Input
-                  label={t("Kalıp")}
-                  placeholder="oturum:*"
-                  value={patternInput}
-                  spellCheck={false}
-                  autoComplete="off"
-                  className="font-mono text-[13px]"
-                  onChange={(event) => setPatternInput(event.target.value)}
-                />
-              </div>
-              <Button type="submit" icon={<Search className="size-4" />}>
-                {t("Ara")}
-              </Button>
-            </form>
-            <div className="ml-auto">
-              <Button variant="secondary" loading={flushing} className="text-bad" onClick={() => void flush(db)}>
-                {t("Bu veritabanını boşalt")}
-              </Button>
-            </div>
-          </div>
-          <p className="text-[12.5px] text-ink-3">{t("* her şeye uyar")}</p>
-        </div>
-
-        {keys.isPending && <LoadingBlock />}
-        {keys.isError && (
-          <div className="p-3">
-            <ErrorBlock message={errorMessage(keys.error)} onRetry={() => void keys.refetch()} />
-          </div>
-        )}
-        {keys.data && rows.length === 0 && !keys.hasNextPage && (
-          <EmptyState title={t("Bu veritabanında bu kalıba uyan anahtar yok")} />
-        )}
-        {keys.data && rows.length === 0 && keys.hasNextPage && (
-          <p className="px-4 py-4 text-ink-2">{t("Şu ana kadar taranan kısımda eşleşen anahtar çıkmadı; tarama sürüyor.")}</p>
-        )}
-        {rows.length > 0 && (
-          <Table>
-            <thead>
-              <tr>
-                <Th>{t("Anahtar")}</Th>
-                <Th>{t("Tür")}</Th>
-                <Th>{t("Kalan süre")}</Th>
-                <Th align="right">{t("Boyut")}</Th>
-                <Th align="right">
-                  <span className="sr-only">{t("İşlemler")}</span>
-                </Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.key}>
-                  <Td className="max-w-md min-w-40">
-                    <Mono className="block truncate">
-                      <span title={row.key}>{row.key}</span>
-                    </Mono>
-                  </Td>
-                  <Td>
-                    <Badge>{row.type}</Badge>
-                  </Td>
-                  <Td>{formatTtl(row.ttl)}</Td>
-                  <Td align="right">{formatBytes(row.size)}</Td>
-                  <Td align="right">
-                    <div className="flex justify-end gap-0.5">
-                      <IconButton label={t("Görüntüle")} onClick={() => setViewKey(row.key)}>
-                        <Eye className="size-4" />
-                      </IconButton>
-                      <IconButton
-                        label={t("Sil")}
-                        className="hover:text-bad"
-                        disabled={remove.isPending && remove.variables === row.key}
-                        onClick={() => void removeKey(row.key)}
-                      >
-                        <Trash2 className="size-4" />
-                      </IconButton>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-        {keys.data && (rows.length > 0 || keys.hasNextPage) && (
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-            {keys.hasNextPage && (
-              <Button size="sm" loading={keys.isFetchingNextPage} onClick={() => void keys.fetchNextPage()}>
-                {t("Daha fazla yükle")}
-              </Button>
-            )}
-            <span className="text-[12.5px] text-ink-3">
-              {keys.hasNextPage ? t("{n} anahtar listelendi; tarama sürüyor", { n: formatNumber(rows.length) }) : t("{n} anahtar listelendi", { n: formatNumber(rows.length) })}
-            </span>
-          </div>
-        )}
-      </Panel>
-
-      {viewKey !== null && (
-        <KeyViewerModal
-          db={db}
-          keyName={viewKey}
-          onClose={() => setViewKey(null)}
-          onRemove={() => void removeKey(viewKey, () => setViewKey(null))}
-        />
-      )}
-    </>
-  );
-}
-
-function KeyViewerModal({ db, keyName, onClose, onRemove }: { db: number; keyName: string; onClose: () => void; onRemove: () => void }) {
-  const detail = useQuery({
-    queryKey: ["redis", "key", db, keyName],
-    queryFn: () => api.get<KeyDetail>(`/redis/key?db=${db}&key=${encodeURIComponent(keyName)}`),
-    refetchOnWindowFocus: false,
-  });
-
-  return (
-    <Modal
-      open
-      wide
-      onClose={onClose}
-      title={t("Anahtar: db{n}", { n: db })}
-      footer={
-        <>
-          <Button onClick={onClose}>{t("Kapat")}</Button>
-          <Button variant="danger" onClick={onRemove}>
-            {t("Sil")}
-          </Button>
-        </>
-      }
-    >
-      {detail.isPending && <LoadingBlock />}
-      {detail.isError && <ErrorBlock message={errorMessage(detail.error)} onRetry={() => void detail.refetch()} />}
-      {detail.data && <KeyDetailView detail={detail.data} />}
-    </Modal>
-  );
-}
-
-function KeyDetailView({ detail }: { detail: KeyDetail }) {
-  const content = detail.content;
-  const isString = detail.type === "string";
-
-  // Gösterilen öğe sayısı; gerçek sayıdan azsa kullanıcıya not düşülür.
-  let shown = 0;
-  if (detail.type === "list" || detail.type === "set") shown = content.items?.length ?? 0;
-  else if (detail.type === "zset") shown = content.pairs?.length ?? 0;
-  else if (detail.type === "hash") shown = content.fields?.length ?? 0;
-  const partial = !isString && detail.type !== "stream" && detail.length > shown;
-
-  return (
-    <div className="flex flex-col gap-4">
-      <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-2">
-        <dt className="text-[13px] text-ink-2">{t("Anahtar")}</dt>
-        <dd className="min-w-0">
-          <Mono className="break-all">{detail.key}</Mono>
-        </dd>
-        <dt className="text-[13px] text-ink-2">{t("Tür")}</dt>
-        <dd>
-          <Badge>{detail.type}</Badge>
-        </dd>
-        <dt className="text-[13px] text-ink-2">{t("Kalan süre")}</dt>
-        <dd>{formatTtl(detail.ttl)}</dd>
-        <dt className="text-[13px] text-ink-2">{isString ? t("Boyut") : t("Öğe sayısı")}</dt>
-        <dd>{isString ? formatBytes(detail.length) : formatNumber(detail.length)}</dd>
-      </dl>
-
-      {isString && content.value && (
-        <div className="flex flex-col gap-2">
-          <pre className="max-h-[45vh] overflow-auto rounded-md border border-line bg-sunken/50 p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">
-            {content.value.text}
-          </pre>
-          {content.value.truncated && (
-            <p className="text-[12.5px] text-warn">{t("Değer büyük olduğu için kısaltıldı; toplam {size}.", { size: formatBytes(detail.length) })}</p>
-          )}
-        </div>
-      )}
-
-      {(detail.type === "list" || detail.type === "set") && content.items && (
-        <ol className="flex max-h-[45vh] flex-col gap-1 overflow-auto rounded-md border border-line bg-sunken/50 p-3">
-          {content.items.map((item, index) => (
-            <li key={index} className="flex gap-3">
-              <Mono className="w-10 shrink-0 text-right text-ink-3">{index + 1}</Mono>
-              <Mono className="min-w-0 break-all whitespace-pre-wrap">{item}</Mono>
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {detail.type === "zset" && content.pairs && (
-        <div className="max-h-[45vh] overflow-auto rounded-md border border-line">
-          <Table>
-            <thead>
-              <tr>
-                <Th>{t("Üye")}</Th>
-                <Th align="right">{t("Skor")}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {content.pairs.map((pair, index) => (
-                <tr key={index}>
-                  <Td>
-                    <Mono className="break-all whitespace-pre-wrap">{pair.member}</Mono>
-                  </Td>
-                  <Td align="right">
-                    <Mono>{pair.score}</Mono>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
-      )}
-
-      {detail.type === "hash" && content.fields && (
-        <div className="max-h-[45vh] overflow-auto rounded-md border border-line">
-          <Table>
-            <thead>
-              <tr>
-                <Th>{t("Alan")}</Th>
-                <Th>{t("Değer")}</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {content.fields.map((field, index) => (
-                <tr key={index}>
-                  <Td className="align-top">
-                    <Mono className="break-all">{field.field}</Mono>
-                  </Td>
-                  <Td>
-                    <Mono className="break-all whitespace-pre-wrap">{field.value}</Mono>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
-      )}
-
-      {detail.type === "stream" && (
-        <p className="text-ink-2">{t("Bu akışta {n} kayıt var. Akış içerikleri burada gösterilmez.", { n: formatNumber(detail.length) })}</p>
-      )}
-
-      {partial && <p className="text-[12.5px] text-ink-3">{t("İlk {n} öğe gösteriliyor.", { n: formatNumber(shown) })}</p>}
-    </div>
-  );
+  const { flush, pending } = useFlush();
+  return <RedisBrowser info={info} onFlush={(db) => void flush(db)} flushing={pending} />;
 }
 
 // ---- Ayarlar sekmesi ----
