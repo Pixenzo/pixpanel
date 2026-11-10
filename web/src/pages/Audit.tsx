@@ -17,6 +17,14 @@ const actionLabels: Record<string, string> = {
   "user.update": "Hesabı güncelledi",
   "user.delete": "Hesabı sildi",
   "service.action": "Servis işlemi yaptı",
+  "component.install": "Bileşen kurdu",
+  "site.create": "Site oluşturdu",
+  "site.update": "Site ayarlarını değiştirdi",
+  "site.delete": "Siteyi sildi",
+  "ssl.self_signed": "Kendinden imzalı sertifika üretti",
+  "ssl.custom": "Sertifika yükledi",
+  "ssl.letsencrypt": "Let's Encrypt sertifikası istedi",
+  "ssl.disable": "Sertifikayı kaldırdı",
   "process.signal": "Sürece sinyal gönderdi",
 };
 

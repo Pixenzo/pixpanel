@@ -8,6 +8,7 @@ mod auth;
 mod components;
 mod jobs;
 mod sites;
+pub mod ssl;
 mod system;
 mod users;
 
@@ -18,5 +19,5 @@ pub fn router() -> Router<AppState> {
         .nest("/system", system::router())
         .nest("/jobs", jobs::router())
         .nest("/components", components::router())
-        .nest("/sites", sites::router())
+        .nest("/sites", sites::router().merge(ssl::router()))
 }

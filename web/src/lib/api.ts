@@ -242,6 +242,22 @@ export interface Site {
   created_at: number;
 }
 
+export interface CertInfo {
+  subject: string;
+  issuer: string;
+  names: string[];
+  not_before: number;
+  not_after: number;
+  self_signed: boolean;
+}
+
+export interface SslStatus {
+  mode: "none" | "selfsigned" | "custom" | "letsencrypt";
+  force_https: boolean;
+  hsts: boolean;
+  certificate: CertInfo | null;
+}
+
 export interface SiteOptions {
   nginx_installed: boolean;
   php_versions: string[];

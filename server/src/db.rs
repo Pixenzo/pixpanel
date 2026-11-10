@@ -143,6 +143,27 @@ impl Db {
     }
 }
 
+impl Db {
+    /// `settings` tablosundan bir değer okur.
+    pub fn setting(&self, key: &str) -> AppResult<Option<String>> {
+        use rusqlite::OptionalExtension;
+        self.call(|conn| {
+            conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| row.get(0)).optional()
+        })
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
+        self.call(|conn| {
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [key, value],
+            )
+        })?;
+        Ok(())
+    }
+}
+
 fn migrate(conn: &mut Connection) -> anyhow::Result<()> {
     let current: usize = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(current) {

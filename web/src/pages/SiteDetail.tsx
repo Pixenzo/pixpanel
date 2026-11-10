@@ -25,8 +25,9 @@ import { formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { kindLabels, useSiteOptions } from "./Sites";
+import { SslTab } from "./SiteSsl";
 
-type TabId = "general" | "php" | "proxy" | "advanced";
+type TabId = "general" | "php" | "proxy" | "ssl" | "advanced";
 
 /** Sitenin bir bölümünü kaydeden ortak mutasyon. */
 function useSaveSite(site: Site, message: string) {
@@ -383,6 +384,7 @@ export function SiteDetailPage() {
     { id: "general", label: t("Genel") },
     ...(data.kind === "php" ? [{ id: "php" as const, label: "PHP" }] : []),
     ...(data.kind === "proxy" ? [{ id: "proxy" as const, label: t("Ters vekil") }] : []),
+    ...(me.role !== "member" || me.permissions.includes("ssl") ? [{ id: "ssl" as const, label: "SSL" }] : []),
     ...(me.role === "admin" ? [{ id: "advanced" as const, label: t("Gelişmiş") }] : []),
   ];
   const activeTab = tabs.some((item) => item.id === tab) ? tab : "general";
@@ -411,6 +413,7 @@ export function SiteDetailPage() {
       {activeTab === "general" && <GeneralTab key={JSON.stringify(data)} site={data} />}
       {activeTab === "php" && <PhpTab key={JSON.stringify(data.php_settings) + data.php_version} site={data} options={options.data} />}
       {activeTab === "proxy" && <ProxyTab key={data.proxy_target} site={data} />}
+      {activeTab === "ssl" && <SslTab site={data} />}
       {activeTab === "advanced" && <AdvancedTab key={data.nginx_custom} site={data} />}
     </>
   );

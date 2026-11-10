@@ -21,6 +21,10 @@ pub struct Config {
     pub tls: bool,
     /// Oturumun boşta kalma süresi (saniye).
     pub session_ttl_secs: i64,
+    /// Ücretsiz sertifikaların alındığı ACME sağlayıcısının dizin adresi.
+    pub acme_directory: String,
+    /// ACME sağlayıcısı özel bir kök sertifika kullanıyorsa (ör. sınama sunucusu) PEM dosyasının yolu.
+    pub acme_root_ca: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -31,6 +35,8 @@ impl Default for Config {
             data_dir: PathBuf::from("/var/lib/capsule"),
             tls: true,
             session_ttl_secs: 12 * 3600,
+            acme_directory: "https://acme-v02.api.letsencrypt.org/directory".into(),
+            acme_root_ca: None,
         }
     }
 }

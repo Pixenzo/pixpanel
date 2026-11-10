@@ -10,6 +10,7 @@ mod hosting;
 mod jobs;
 mod state;
 mod sys;
+mod tasks;
 mod web;
 
 use std::net::SocketAddr;
@@ -84,6 +85,8 @@ async fn serve(cfg: Config, db: Db) -> anyhow::Result<()> {
         apt_lock: Arc::default(),
     };
 
+    tasks::spawn_certificate_renewal(state.clone());
+
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();
     let addr = SocketAddr::new(cfg.listen_addr, cfg.listen_port);
 
@@ -118,7 +121,7 @@ fn ensure_panel_certificate(dir: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
     let names = vec![hostname, "localhost".to_string()];
     let generated = rcgen::generate_simple_self_signed(names).context("sertifika üretilemedi")?;
     std::fs::write(&cert_path, generated.cert.pem())?;
-    std::fs::write(&key_path, generated.key_pair.serialize_pem())?;
+    std::fs::write(&key_path, generated.signing_key.serialize_pem())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

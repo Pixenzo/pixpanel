@@ -11,7 +11,7 @@ use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::hosting::php::PhpSettings;
 use crate::hosting::sysuser::{self, SysUser};
-use crate::hosting::{domain, nginx, php};
+use crate::hosting::{domain, nginx, php, ssl};
 
 pub const KINDS: &[&str] = &["php", "static", "proxy"];
 
@@ -101,9 +101,9 @@ pub fn list(db: &Db, user: &AuthUser) -> AppResult<Vec<Site>> {
     })
 }
 
-/// Siteyi okur ve isteği yapanın ona erişimi olduğunu doğrular.
-pub fn get(db: &Db, user: &AuthUser, id: i64) -> AppResult<Site> {
-    let found = db.call(|conn| {
+/// Siteyi sahibinin üst hesabıyla birlikte okur (yetki denetimi yapmaz).
+fn load_with_parent(db: &Db, id: i64) -> AppResult<Option<(Site, Option<i64>)>> {
+    db.call(|conn| {
         let site = conn
             .query_row(
                 &format!("SELECT {SITE_COLUMNS}, u.parent_id FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = ?1"),
@@ -118,8 +118,32 @@ pub fn get(db: &Db, user: &AuthUser, id: i64) -> AppResult<Site> {
             }
             None => Ok(None),
         }
-    })?;
-    let (site, owner_parent) = found.ok_or(AppError::NotFound)?;
+    })
+}
+
+/// Siteyi yetki denetimi olmadan okur. Yalnızca panelin kendi başlattığı
+/// işlerde (arka plan görevleri, otomatik yenileme) kullanılmalıdır.
+pub fn load(db: &Db, id: i64) -> AppResult<Option<Site>> {
+    Ok(load_with_parent(db, id)?.map(|(site, _)| site))
+}
+
+/// Sertifikası olan bütün siteler (otomatik yenileme için).
+pub fn list_with_ssl(db: &Db) -> AppResult<Vec<Site>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SITE_COLUMNS} FROM sites s JOIN users u ON u.id = s.user_id WHERE s.ssl_mode != 'none'"
+        ))?;
+        let mut sites: Vec<Site> = stmt.query_map([], read_site)?.collect::<Result<_, _>>()?;
+        for site in &mut sites {
+            site.aliases = load_aliases(conn, site.id)?;
+        }
+        Ok(sites)
+    })
+}
+
+/// Siteyi okur ve isteği yapanın ona erişimi olduğunu doğrular.
+pub fn get(db: &Db, user: &AuthUser, id: i64) -> AppResult<Site> {
+    let (site, owner_parent) = load_with_parent(db, id)?.ok_or(AppError::NotFound)?;
     let allowed = user.is_admin()
         || site.user_id == user.owner_id()
         || (user.role == Role::Reseller && owner_parent == Some(user.id));
@@ -322,4 +346,26 @@ pub async fn deprovision(site: &Site, delete_files: bool) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+/// Sertifikayı kurar ve siteyi HTTPS ile yayınlar. nginx yeni sertifikayı
+/// kabul etmezse (ör. anahtar uyuşmuyorsa) eski sertifika ve ayarlar geri gelir.
+pub async fn activate_ssl(db: &Db, site: &Site, mode: &str, certificate: &str, private_key: &str) -> AppResult<Site> {
+    let installed = ssl::install(&site.domain, certificate, private_key)?;
+    let mut updated = site.clone();
+    updated.ssl_mode = mode.to_string();
+    let outcome = async {
+        save(db, &updated)?;
+        provision(&updated).await
+    }
+    .await;
+    if let Err(err) = outcome {
+        installed.rollback();
+        save(db, site)?;
+        if let Err(restore) = provision(site).await {
+            tracing::error!(error = %restore, domain = %site.domain, "site eski sertifikasına döndürülemedi");
+        }
+        return Err(err);
+    }
+    Ok(updated)
 }

@@ -35,7 +35,10 @@ rust-embed = { version = "8", features = ["debug-embed"] }
 mime_guess = "2"
 url = "2"
 idna = "1"
-rcgen = "0.13"
+rcgen = "0.14"
+instant-acme = { version = "0.8", default-features = false, features = ["ring", "hyper-rustls", "rcgen"] }
+x509-parser = "0.18"
+time = "0.3"
 regex = "1"
 
 [profile.release]
