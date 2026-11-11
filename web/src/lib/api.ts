@@ -583,3 +583,14 @@ export interface SiteStats {
   /** İçinde bulunulan ayda aktarılan veri (bayt). */
   month_bytes: number;
 }
+
+/** Sunucu yükünün geçmişindeki bir nokta: o aralığın ortalaması. */
+export interface ArchivePoint {
+  ts: number;
+  cpu: number;
+  /** Bellek kullanımı (yüzde). */
+  mem: number;
+  load1: number;
+  net_rx: number;
+  net_tx: number;
+}

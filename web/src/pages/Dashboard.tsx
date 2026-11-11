@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import { Trace } from "../components/Trace";
 import { ErrorBlock, LoadingBlock, Meter, Mono, Panel, Table, Td, Th } from "../components/ui";
-import type { Overview, Process, Sample } from "../lib/api";
+import type { ArchivePoint, Overview, Process, Sample } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { formatBytes, formatDuration, formatPercent, formatRate } from "../lib/format";
+import { classNames, formatBytes, formatDateTime, formatDuration, formatPercent, formatRate } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useFallbackInterval } from "../lib/live";
 
@@ -38,11 +39,7 @@ function Channel({
 function LiveChannels({ current, history }: { current: Sample; history: Sample[] }) {
   const memoryPercent = current.mem_total > 0 ? (current.mem_used / current.mem_total) * 100 : 0;
   return (
-    <Panel
-      flush
-      title={t("Canlı durum")}
-      actions={<span className="text-[12.5px] text-ink-3">{t("Son 5 dakika")}</span>}
-    >
+    <>
       <Channel
         name={t("İşlemci")}
         value={formatPercent(current.cpu, 1)}
@@ -80,7 +77,78 @@ function LiveChannels({ current, history }: { current: Sample; history: Sample[]
           slots={WINDOW_SAMPLES}
         />
       </Channel>
-    </Panel>
+    </>
+  );
+}
+
+type Range = "live" | "day" | "week" | "month" | "year";
+
+const RANGES: { id: Range; label: string }[] = [
+  { id: "live", label: "Canlı" },
+  { id: "day", label: "Gün" },
+  { id: "week", label: "Hafta" },
+  { id: "month", label: "Ay" },
+  { id: "year", label: "Yıl" },
+];
+
+function average(values: number[]): number {
+  return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+/** Geçmiş aralığının kanalları. Üç iz aynı zaman eksenini paylaşır; imleç hepsinde birlikte gezer. */
+function ArchiveChannels({ range }: { range: Exclude<Range, "live"> }) {
+  const [cursor, setCursor] = useState<number | null>(null);
+  const archive = useQuery({
+    queryKey: ["metrics-archive", range],
+    queryFn: () => api.get<ArchivePoint[]>(`/system/metrics/archive?range=${range}`),
+    refetchInterval: 60000,
+  });
+  if (archive.isPending) return <LoadingBlock />;
+  if (archive.isError) return <ErrorBlock message={errorMessage(archive.error)} onRetry={() => void archive.refetch()} />;
+  const points = archive.data;
+  if (points.length < 2) {
+    return (
+      <p className="px-4 py-8 text-ink-2">
+        {t("Bu aralık için henüz yeterli veri yok. Panel sunucu yükünü dakikada bir kaydeder; grafik zamanla dolar.")}
+      </p>
+    );
+  }
+  const at = cursor === null ? null : points[cursor];
+  const cpu = points.map((point) => point.cpu);
+  const memory = points.map((point) => point.mem);
+  const received = points.map((point) => point.net_rx);
+  const sent = points.map((point) => point.net_tx);
+  const shared = { slots: points.length, cursor, onHover: setCursor };
+
+  return (
+    <>
+      <Channel
+        name={t("İşlemci")}
+        value={formatPercent(at ? at.cpu : average(cpu), 1)}
+        detail={at ? t("Yük {load}", { load: at.load1.toFixed(2) }) : t("ortalama · en yüksek {peak}", { peak: formatPercent(Math.max(...cpu), 1) })}
+      >
+        <Trace label={t("İşlemci kullanımı")} values={cpu} max={100} {...shared} />
+      </Channel>
+      <Channel
+        name={t("Bellek")}
+        value={formatPercent(at ? at.mem : average(memory), 1)}
+        detail={at ? " " : t("ortalama · en yüksek {peak}", { peak: formatPercent(Math.max(...memory), 1) })}
+      >
+        <Trace label={t("Bellek kullanımı")} values={memory} max={100} color="--ok" {...shared} />
+      </Channel>
+      <Channel
+        name={t("Ağ")}
+        value={formatRate(at ? at.net_rx : average(received))}
+        detail={at ? t("Gönderilen {rate}", { rate: formatRate(at.net_tx) }) : t("ortalama alınan · en yüksek {peak}", { peak: formatRate(Math.max(...received)) })}
+      >
+        <Trace label={t("Ağ trafiği")} values={received} secondary={sent} color="--warn" {...shared} />
+      </Channel>
+      <div className="tabular flex justify-between gap-3 border-t border-line px-4 py-2 text-[12.5px] text-ink-3">
+        <span>{formatDateTime(points[0].ts)}</span>
+        <span className={at ? "font-medium text-ink" : undefined}>{at ? formatDateTime(at.ts) : t("Bir ana bakmak için grafiğin üzerinde gezin")}</span>
+        <span>{formatDateTime(points[points.length - 1].ts)}</span>
+      </div>
+    </>
   );
 }
 
@@ -195,6 +263,7 @@ function TopProcesses() {
 }
 
 export function DashboardPage() {
+  const [range, setRange] = useState<Range>("live");
   const fallbackInterval = useFallbackInterval(2000);
   const overview = useQuery({
     queryKey: ["overview"],
@@ -225,7 +294,27 @@ export function DashboardPage() {
           })}
         </p>
       </header>
-      <LiveChannels current={current} history={samples} />
+      <Panel
+        flush
+        title={range === "live" ? t("Canlı durum") : t("Sunucu yükü")}
+        actions={
+          <div role="group" aria-label={t("Aralık")} className="inline-flex rounded-md border border-line-strong p-0.5">
+            {RANGES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={range === item.id}
+                onClick={() => setRange(item.id)}
+                className={classNames("h-7 rounded px-2.5 text-[13px] font-medium transition-colors max-sm:h-9", range === item.id ? "bg-accent-soft text-accent" : "text-ink-2 hover:text-ink")}
+              >
+                {t(item.label)}
+              </button>
+            ))}
+          </div>
+        }
+      >
+        {range === "live" ? <LiveChannels current={current} history={samples} /> : <ArchiveChannels range={range} />}
+      </Panel>
       <div className="grid gap-4 lg:grid-cols-2">
         <Disks overview={overview.data} />
         <HostFacts overview={overview.data} />

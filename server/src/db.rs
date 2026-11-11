@@ -407,6 +407,27 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (site_id, day, path)
     ) WITHOUT ROWID;
     "#,
+    // 18: sunucu yükünün uzun dönem geçmişi (dakikalık ortalamalar ve saatlik özetler).
+    r#"
+    CREATE TABLE metrics_minutes (
+        ts        INTEGER PRIMARY KEY,
+        cpu       REAL NOT NULL,
+        mem_used  INTEGER NOT NULL,
+        mem_total INTEGER NOT NULL,
+        load1     REAL NOT NULL,
+        net_rx    INTEGER NOT NULL,
+        net_tx    INTEGER NOT NULL
+    ) WITHOUT ROWID;
+    CREATE TABLE metrics_hours (
+        ts        INTEGER PRIMARY KEY,
+        cpu       REAL NOT NULL,
+        mem_used  INTEGER NOT NULL,
+        mem_total INTEGER NOT NULL,
+        load1     REAL NOT NULL,
+        net_rx    INTEGER NOT NULL,
+        net_tx    INTEGER NOT NULL
+    ) WITHOUT ROWID;
+    "#,
 ];
 
 #[derive(Clone)]

@@ -115,6 +115,22 @@ pub fn spawn_stats_collector(state: AppState) {
     });
 }
 
+/// Sunucu yükünün dakikalık ortalamasını kalıcı geçmişe yazar (uzun dönem grafikler için).
+pub fn spawn_metrics_archive(state: AppState) {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(60));
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            // Örnekler iki saniyede bir alınır; son 30 örnek son dakikadır.
+            let samples = state.metrics.history(30);
+            if let Err(err) = crate::sys::metrics::archive_minute(&state.db, &samples) {
+                tracing::warn!(error = %err, "sunucu yükü geçmişe yazılamadı");
+            }
+        }
+    });
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {

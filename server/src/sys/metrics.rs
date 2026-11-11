@@ -234,3 +234,111 @@ pub async fn host_info() -> HostInfo {
         panel_version: env!("CARGO_PKG_VERSION"),
     }
 }
+
+// ---- Uzun dönem geçmiş ----
+
+/// Dakikalık kayıtlar bu kadar gün, saatlik özetler `HOUR_RETENTION_DAYS` gün saklanır.
+const MINUTE_RETENTION_DAYS: i64 = 14;
+const HOUR_RETENTION_DAYS: i64 = 400;
+
+/// Geçmiş grafiğindeki bir nokta: o aralığın ortalaması.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ArchivePoint {
+    pub ts: i64,
+    pub cpu: f64,
+    /// Bellek kullanımı (yüzde).
+    pub mem: f64,
+    pub load1: f64,
+    pub net_rx: i64,
+    pub net_tx: i64,
+}
+
+/// Son bir dakikanın örneklerinin ortalamasını kalıcı geçmişe yazar ve içinde bulunulan
+/// saatin özetini günceller. Dakikada bir çağrılır.
+pub fn archive_minute(db: &crate::db::Db, samples: &[Sample]) -> crate::error::AppResult<()> {
+    if samples.is_empty() {
+        return Ok(());
+    }
+    let count = samples.len() as f64;
+    let average = |value: fn(&Sample) -> f64| samples.iter().map(value).sum::<f64>() / count;
+    let ts = now() / 60 * 60;
+    let hour = ts / 3600 * 3600;
+    db.call(|conn| {
+        conn.execute(
+            "INSERT OR REPLACE INTO metrics_minutes (ts, cpu, mem_used, mem_total, load1, net_rx, net_tx) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                ts,
+                average(|sample| f64::from(sample.cpu)),
+                average(|sample| sample.mem_used as f64) as i64,
+                samples[samples.len() - 1].mem_total as i64,
+                average(|sample| f64::from(sample.load1)),
+                average(|sample| sample.net_rx as f64) as i64,
+                average(|sample| sample.net_tx as f64) as i64,
+            ],
+        )?;
+        // Saat dolmadan da o saatin noktası grafikte görünsün diye özet her dakika yeniden hesaplanır.
+        conn.execute(
+            "INSERT OR REPLACE INTO metrics_hours (ts, cpu, mem_used, mem_total, load1, net_rx, net_tx)
+             SELECT ?1, AVG(cpu), CAST(AVG(mem_used) AS INTEGER), MAX(mem_total), AVG(load1), CAST(AVG(net_rx) AS INTEGER), CAST(AVG(net_tx) AS INTEGER)
+             FROM metrics_minutes WHERE ts >= ?1 AND ts < ?1 + 3600",
+            rusqlite::params![hour],
+        )?;
+        conn.execute("DELETE FROM metrics_minutes WHERE ts < ?1", rusqlite::params![ts - MINUTE_RETENTION_DAYS * 86400])?;
+        conn.execute("DELETE FROM metrics_hours WHERE ts < ?1", rusqlite::params![ts - HOUR_RETENTION_DAYS * 86400])
+    })?;
+    Ok(())
+}
+
+/// Bir geçmiş aralığının kaynağı ve çözünürlüğü: (tablo, kapsanan süre, nokta başına saniye).
+fn archive_plan(range: &str) -> Option<(&'static str, i64, i64)> {
+    Some(match range {
+        "day" => ("metrics_minutes", 86400, 300),
+        "week" => ("metrics_minutes", 7 * 86400, 1800),
+        "month" => ("metrics_hours", 30 * 86400, 2 * 3600),
+        "year" => ("metrics_hours", 365 * 86400, 86400),
+        _ => return None,
+    })
+}
+
+/// İstenen aralığın noktaları, eskiden yeniye. Aralık adı geçersizse `None`.
+pub fn archive(db: &crate::db::Db, range: &str) -> crate::error::AppResult<Option<Vec<ArchivePoint>>> {
+    let Some((table, span, bucket)) = archive_plan(range) else { return Ok(None) };
+    let since = now() - span;
+    // Tablo adı yukarıdaki sabitlerden gelir; kullanıcı girdisi sorguya girmez.
+    let sql = format!(
+        "SELECT ts / ?1 * ?1 AS bucket, AVG(cpu), AVG(CASE WHEN mem_total > 0 THEN mem_used * 100.0 / mem_total ELSE 0 END), AVG(load1), AVG(net_rx), AVG(net_tx)
+         FROM {table} WHERE ts >= ?2 GROUP BY bucket ORDER BY bucket"
+    );
+    let points = db.call(|conn| {
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params![bucket, since], |row| {
+            Ok(ArchivePoint {
+                ts: row.get(0)?,
+                cpu: row.get(1)?,
+                mem: row.get(2)?,
+                load1: row.get(3)?,
+                net_rx: row.get::<_, f64>(4)? as i64,
+                net_tx: row.get::<_, f64>(5)? as i64,
+            })
+        })?;
+        rows.collect()
+    })?;
+    Ok(Some(points))
+}
+
+#[cfg(test)]
+mod archive_tests {
+    use super::*;
+
+    #[test]
+    fn every_range_stays_under_four_hundred_points() {
+        for range in ["day", "week", "month", "year"] {
+            let (_, span, bucket) = archive_plan(range).unwrap();
+            assert!(span / bucket <= 400, "{range}: {} nokta", span / bucket);
+        }
+        assert!(archive_plan("decade").is_none());
+        // Dakikalık kayıtlar, onlardan okunan en uzun aralığı (hafta) karşılar.
+        assert!(MINUTE_RETENTION_DAYS * 86400 >= archive_plan("week").unwrap().1);
+        assert!(HOUR_RETENTION_DAYS * 86400 >= archive_plan("year").unwrap().1);
+    }
+}

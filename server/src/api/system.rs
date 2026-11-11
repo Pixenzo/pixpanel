@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/overview", get(overview))
         .route("/metrics", get(metrics_history))
+        .route("/metrics/archive", get(metrics_archive))
         .route("/processes", get(list_processes))
         .route("/processes/{pid}/signal", post(signal_process))
         .route("/services", get(list_services))
@@ -50,6 +51,19 @@ async fn metrics_history(
 ) -> AppResult<Json<Vec<metrics::Sample>>> {
     user.require_admin()?;
     Ok(Json(state.metrics.history(query.count.unwrap_or(150).clamp(1, 900))))
+}
+
+#[derive(Deserialize)]
+struct ArchiveQuery {
+    /// `day`, `week`, `month` ya da `year`.
+    range: String,
+}
+
+/// Sunucu yükünün uzun dönem geçmişi (aralığa göre seyreltilmiş ortalamalar).
+async fn metrics_archive(State(state): State<AppState>, user: AuthUser, Query(query): Query<ArchiveQuery>) -> AppResult<Json<Vec<metrics::ArchivePoint>>> {
+    user.require_admin()?;
+    let points = metrics::archive(&state.db, &query.range)?.ok_or_else(|| crate::error::AppError::bad("Geçersiz aralık"))?;
+    Ok(Json(points))
 }
 
 async fn list_processes(user: AuthUser) -> AppResult<Json<Vec<procs::Process>>> {

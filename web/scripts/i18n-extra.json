@@ -405,5 +405,12 @@
     "Yönlendirme (3xx)",
     "Bulunamadı ya da reddedildi (4xx)",
     "Sunucu hatası (5xx)"
+  ],
+  "web/src/pages/Dashboard.tsx": [
+    "Canlı",
+    "Gün",
+    "Hafta",
+    "Ay",
+    "Yıl"
   ]
 }
