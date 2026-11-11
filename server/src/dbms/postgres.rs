@@ -166,10 +166,3 @@ pub fn dump_command(database: &str) -> Command {
     command
 }
 
-pub fn import_command(database: &str) -> Command {
-    // İçe aktarılan nesnelerin sahibi veritabanının ortak sahip rolü olur.
-    let set_role = format!("SET ROLE \"{}\"", owner_role(database));
-    let mut command = as_postgres("psql");
-    command.args(["-X", "-q", "-d", database, "-c", &set_role, "-f", "-"]);
-    command
-}

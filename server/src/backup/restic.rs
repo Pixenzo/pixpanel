@@ -389,7 +389,8 @@ pub async fn restore(ctx: &JobCtx, target: &Target, snapshot: &str, source: Opti
 }
 
 /// Anlık görüntüdeki tek dosyayı (SQL dökümü) verilen komutun girdisine akıtır.
-pub async fn pipe_file(ctx: &JobCtx, target: &Target, snapshot: &str, path: &str, sink: &mut Command, sink_name: &str) -> AppResult<()> {
+/// Yedekteki dökümü, sınırlı içe aktarma oturumuyla veritabanına yükler (bkz. `dbms::import`).
+pub async fn pipe_file_to_database(ctx: &JobCtx, target: &Target, snapshot: &str, path: &str, engine: crate::dbms::Engine, database: &str) -> AppResult<()> {
     let mut dump = command(target);
     dump.args(["dump", snapshot, "--", path]).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = dump.spawn().map_err(|err| AppError::internal(format!("restic başlatılamadı: {err}")))?;
@@ -403,8 +404,7 @@ pub async fn pipe_file(ctx: &JobCtx, target: &Target, snapshot: &str, path: &str
             err_ctx.log(line);
         }
     });
-    sink.stdin(stdout);
-    let loaded = ctx.run_streaming(sink, sink_name, None).await;
+    let loaded = crate::dbms::import::run(ctx, engine, database, stdout).await;
     let status = child.wait().await?;
     let _ = err_task.await;
     if !status.success() {

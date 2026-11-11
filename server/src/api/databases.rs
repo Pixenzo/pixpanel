@@ -611,12 +611,9 @@ async fn run_import(
     gzipped: bool,
 ) -> AppResult<()> {
     ctx.log(format!("{database} veritabanına aktarılıyor"));
-    let mut command = dbms::import_command(engine, database);
-    command.stdout(Stdio::null()).stderr(Stdio::piped());
-
-    // Sıkıştırılmış dosyada gzip'in çıktısı doğrudan istemcinin girdisine bağlanır.
-    let mut decompressor = None;
+    // Döküm güvenilmeyen girdidir: sınırlı hesapla ve yetkisiz kullanıcıyla yüklenir (bkz. `dbms::import`).
     if gzipped {
+        // Sıkıştırılmış dosyada gzip'in çıktısı doğrudan yükleme hattına bağlanır.
         let mut gzip = crate::sys::exec::base_command("gzip")
             .arg("-dc")
             .arg("--")
@@ -626,28 +623,13 @@ async fn run_import(
             .spawn()
             .map_err(|err| AppError::internal(format!("gzip başlatılamadı: {err}")))?;
         let stdout: Stdio = gzip.stdout.take().expect("stdout borusu").try_into()?;
-        command.stdin(stdout);
-        decompressor = Some(gzip);
-    } else {
-        command.stdin(std::fs::File::open(path)?);
-    }
-
-    let output = command
-        .spawn()
-        .map_err(|err| AppError::internal(format!("istemci başlatılamadı: {err}")))?
-        .wait_with_output()
-        .await?;
-    if let Some(mut gzip) = decompressor {
+        let loaded = dbms::import::run(ctx, engine, database, stdout).await;
         if !gzip.wait().await?.success() {
             return Err(AppError::bad("Dosya açılamadı; geçerli bir .gz dosyası değil"));
         }
-    }
-    let errors = String::from_utf8_lossy(&output.stderr);
-    for line in errors.lines().take(200) {
-        ctx.log(line);
-    }
-    if !output.status.success() {
-        return Err(AppError::bad("İçe aktarma hatayla sonlandı"));
+        loaded?;
+    } else {
+        dbms::import::run(ctx, engine, database, Stdio::from(std::fs::File::open(path)?)).await?;
     }
     ctx.log("İçe aktarma tamamlandı");
     Ok(())

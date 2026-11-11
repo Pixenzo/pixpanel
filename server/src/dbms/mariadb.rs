@@ -69,7 +69,31 @@ pub async fn create_database(name: &str) -> AppResult<()> {
 }
 
 pub async fn drop_database(name: &str) -> AppResult<()> {
-    run(&format!("DROP DATABASE IF EXISTS `{name}`;\n")).await?;
+    // Veritabanının içe aktarma hesabı da onunla birlikte kalkar.
+    let import_account = account(&crate::dbms::import::mariadb_account(name), "localhost");
+    run(&format!("DROP DATABASE IF EXISTS `{name}`;\nDROP USER IF EXISTS {import_account};\n")).await?;
+    Ok(())
+}
+
+/// Veritabanının içe aktarma hesabını (yoksa oluşturup) açar: yeni parola verilir, kilidi kaldırılır
+/// ve yalnızca o veritabanına tam yetki tanınır. Hesap genel yetki (FILE, SUPER, GRANT…) taşımaz.
+pub async fn open_import_account(database: &str, role: &str, password: &str) -> AppResult<()> {
+    let account = account(role, "localhost");
+    run(&format!(
+        "CREATE USER IF NOT EXISTS {account} IDENTIFIED BY {password};\n\
+         ALTER USER {account} IDENTIFIED BY {password} ACCOUNT UNLOCK;\n\
+         GRANT ALL PRIVILEGES ON {target} TO {account};\n",
+        password = quote(password),
+        target = grant_target(database),
+    ))
+    .await?;
+    Ok(())
+}
+
+/// İçe aktarma hesabını kilitler. Hesap silinmez: yüklenen görünüm ve yordamların tanımlayanı
+/// odur; kilitli olması onların çalışmasını engellemez, yalnızca kimse bu hesapla bağlanamaz.
+pub async fn lock_import_account(role: &str) -> AppResult<()> {
+    run(&format!("ALTER USER {} ACCOUNT LOCK;\n", account(role, "localhost"))).await?;
     Ok(())
 }
 
@@ -133,11 +157,6 @@ pub fn dump_command(database: &str) -> Command {
     command
 }
 
-pub fn import_command(database: &str) -> Command {
-    let mut command = base_command("mariadb");
-    command.args(["--default-character-set=utf8mb4", "--", database]);
-    command
-}
 
 #[cfg(test)]
 mod tests {

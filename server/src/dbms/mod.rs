@@ -4,6 +4,7 @@
 //! yönetici kimliğiyle sürülür. SQL metni istemciye standart girdiden verilir;
 //! böylece parolalar süreç listesinde görünmez.
 
+pub mod import;
 pub mod mariadb;
 pub mod postgres;
 
@@ -235,10 +236,4 @@ pub fn dump_command(engine: Engine, database: &str) -> Command {
     }
 }
 
-/// SQL dosyasını standart girdisinden okuyup veritabanına yükleyen süreci hazırlar.
-pub fn import_command(engine: Engine, database: &str) -> Command {
-    match engine {
-        Engine::Mariadb => mariadb::import_command(database),
-        Engine::Postgresql => postgres::import_command(database),
-    }
-}
+

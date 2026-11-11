@@ -487,8 +487,7 @@ async fn restore_database(state: &AppState, ctx: &JobCtx, target: &Target, snaps
     };
     dbms::validate_name(&destination, "Veritabanı adı")?;
     ctx.log(format!("Döküm {destination} veritabanına yükleniyor."));
-    let mut import = dbms::import_command(engine, &destination);
-    restic::pipe_file(ctx, target, &snapshot.id, &dump_file(&snapshot.engine, &snapshot.name), &mut import, "veritabanı istemcisi").await
+    restic::pipe_file_to_database(ctx, target, &snapshot.id, &dump_file(&snapshot.engine, &snapshot.name), engine, &destination).await
 }
 
 async fn restore_mail(state: &AppState, ctx: &JobCtx, target: &Target, snapshot: &Snapshot, options: &RestoreOptions) -> AppResult<()> {
