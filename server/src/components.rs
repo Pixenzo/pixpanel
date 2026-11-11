@@ -193,7 +193,7 @@ pub fn catalog() -> Vec<Component> {
         component(
             "restic",
             "Yedekleme (restic)",
-            "Şifreli ve artımlı yedekler; yerel klasöre, SFTP sunucusuna ya da S3 uyumlu depoya.",
+            "Şifreli ve artımlı yedekler; yerel klasöre, SFTP ya da FTP sunucusuna, S3 uyumlu depoya.",
             "web",
             &["restic", "openssh-client"],
             None,

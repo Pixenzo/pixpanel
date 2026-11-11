@@ -32,7 +32,7 @@ pub fn is_installed() -> bool {
 
 // ---- Hedefler ----
 
-pub const KINDS: &[&str] = &["local", "sftp", "s3"];
+pub const KINDS: &[&str] = &["local", "sftp", "s3", "ftp"];
 
 /// Hedefin bağlantı ayarları; türe göre yalnızca ilgili alanlar kullanılır.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -48,6 +48,10 @@ pub struct TargetConfig {
     pub bucket: String,
     pub region: String,
     pub access_key: String,
+    /// FTP: bağlantı TLS ile şifrelensin (FTPES). Kapalıysa parola ağda açık gider.
+    pub tls: bool,
+    /// FTP: sunucunun sertifikası doğrulanmasın (kendinden imzalı sertifikalı sunucular için).
+    pub tls_skip_verify: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +145,23 @@ impl TargetConfig {
                 out.region = region;
                 out.access_key = access_key;
                 out.path = if self.path.trim().trim_matches('/').is_empty() { String::new() } else { validate_path(self.path.trim().trim_start_matches('/'), "Önek")? };
+            }
+            "ftp" => {
+                let host = self.host.trim().to_ascii_lowercase();
+                if !plain(&host, ".-") || host.len() > 253 || host.starts_with('-') {
+                    return Err(AppError::bad("Sunucu adresi geçersiz"));
+                }
+                let user = self.user.trim().to_string();
+                // FTP kullanıcı adlarında `@` yaygındır (ör. `yedek@ornek.com`).
+                if !plain(&user, "._-@") || user.len() > 100 || user.starts_with('-') {
+                    return Err(AppError::bad("Kullanıcı adı geçersiz"));
+                }
+                out.host = host;
+                out.user = user;
+                out.port = if self.port == 0 { 21 } else { self.port };
+                out.path = validate_path(self.path.trim().trim_start_matches('/'), "Uzak klasör")?;
+                out.tls = self.tls;
+                out.tls_skip_verify = self.tls && self.tls_skip_verify;
             }
             _ => return Err(AppError::bad("Geçersiz hedef türü")),
         }

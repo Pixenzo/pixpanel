@@ -1,11 +1,11 @@
 // "Yedek yerleri" sekmesi: yedeklerin nerede durduğu (bu sunucu, SFTP, S3).
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Cloud, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { Cloud, FolderUp, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
-import { Badge, Button, IconButton, Input, LoadingBlock, Modal, Mono, Panel, Spinner, Status } from "../components/ui";
+import { Badge, Button, Checkbox, IconButton, Input, LoadingBlock, Modal, Mono, Panel, Spinner, Status } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
@@ -22,6 +22,8 @@ export function targetKindLabel(kind: TargetKind): string {
       return t("SFTP sunucusu");
     case "s3":
       return t("S3 uyumlu depolama");
+    case "ftp":
+      return t("FTP sunucusu");
   }
 }
 
@@ -37,6 +39,8 @@ function targetAddress(target: Target): string {
     }
     case "s3":
       return [config.endpoint.replace(/\/+$/, ""), config.bucket, config.path.replace(/^\/+/, "")].filter((part) => part !== "").join("/");
+    case "ftp":
+      return `${config.tls ? "ftpes" : "ftp"}://${config.user}@${config.host}:${config.port}/${config.path}`;
   }
 }
 
@@ -110,15 +114,18 @@ interface TargetForm {
   accessKey: string;
   secretKey: string;
   password: string;
+  tls: boolean;
+  tlsSkipVerify: boolean;
 }
 
 const KIND_CARDS: { id: TargetKind; description: string; icon: ReactNode }[] = [
   { id: "local", description: "En kolayı; ancak sunucu kaybedilirse yedekler de gider.", icon: <HardDrive aria-hidden className="size-4" /> },
   { id: "sftp", description: "Yedekleri SSH ile başka bir sunucuya gönderir.", icon: <Server aria-hidden className="size-4" /> },
   { id: "s3", description: "Amazon S3, Backblaze, MinIO gibi bulut depolamalar.", icon: <Cloud aria-hidden className="size-4" /> },
+  { id: "ftp", description: "Depolama kutusu ya da paylaşımlı hosting gibi yalnızca FTP veren yerler.", icon: <FolderUp aria-hidden className="size-4" /> },
 ];
 
-const DEFAULT_NAMES: Record<TargetKind, string> = { local: "Bu sunucu", sftp: "Uzak sunucu", s3: "Bulut depolama" };
+const DEFAULT_NAMES: Record<TargetKind, string> = { local: "Bu sunucu", sftp: "Uzak sunucu", s3: "Bulut depolama", ftp: "FTP sunucusu" };
 
 function formFromTarget(target: Target | null): TargetForm {
   const config = target?.config;
@@ -126,7 +133,7 @@ function formFromTarget(target: Target | null): TargetForm {
     name: target?.name ?? "",
     path: config?.path ?? "",
     host: config?.host ?? "",
-    port: String(config && config.port > 0 ? config.port : 22),
+    port: String(config && config.port > 0 ? config.port : target?.kind === "ftp" ? 21 : 22),
     user: config?.user ?? "",
     endpoint: config?.endpoint ?? "",
     bucket: config?.bucket ?? "",
@@ -134,6 +141,8 @@ function formFromTarget(target: Target | null): TargetForm {
     accessKey: config?.access_key ?? "",
     secretKey: "",
     password: "",
+    tls: config?.tls ?? true,
+    tlsSkipVerify: config?.tls_skip_verify ?? false,
   };
 }
 
@@ -141,13 +150,15 @@ function formFromTarget(target: Target | null): TargetForm {
 function buildConfig(kind: TargetKind, form: TargetForm): TargetConfig {
   return {
     path: form.path.trim(),
-    host: kind === "sftp" ? form.host.trim() : "",
-    port: kind === "sftp" ? Number(form.port) : 0,
-    user: kind === "sftp" ? form.user.trim() : "",
+    host: kind === "sftp" || kind === "ftp" ? form.host.trim() : "",
+    port: kind === "sftp" || kind === "ftp" ? Number(form.port) : 0,
+    user: kind === "sftp" || kind === "ftp" ? form.user.trim() : "",
     endpoint: kind === "s3" ? form.endpoint.trim() : "",
     bucket: kind === "s3" ? form.bucket.trim() : "",
     region: kind === "s3" ? form.region.trim() : "",
     access_key: kind === "s3" ? form.accessKey.trim() : "",
+    tls: kind === "ftp" && form.tls,
+    tls_skip_verify: kind === "ftp" && form.tls && form.tlsSkipVerify,
   };
 }
 
@@ -159,6 +170,12 @@ function validateForm(kind: TargetKind | null, form: TargetForm, editing: Target
     const port = Number(form.port);
     if (form.host.trim() === "" || form.user.trim() === "" || form.path.trim() === "") return t("Sunucu, kullanıcı ve klasör gerekli.");
     if (!Number.isInteger(port) || port < 1 || port > 65535) return t("Port 1 ile 65535 arasında olmalı.");
+  }
+  if (kind === "ftp") {
+    const port = Number(form.port);
+    if (form.host.trim() === "" || form.user.trim() === "" || form.path.trim() === "") return t("Sunucu, kullanıcı ve klasör gerekli.");
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return t("Port 1 ile 65535 arasında olmalı.");
+    if (form.secretKey === "" && !editing?.has_secret_key) return t("FTP parolasını yazın.");
   }
   if (kind === "s3") {
     if (form.endpoint.trim() === "" || form.bucket.trim() === "" || form.accessKey.trim() === "") return t("Uç nokta, kova ve erişim anahtarı gerekli.");
@@ -191,6 +208,7 @@ export function TargetModal({ editing, targets, onClose }: { editing: Target | n
 
   function pickKind(next: TargetKind) {
     setKind(next);
+    setForm((current) => ({ ...current, port: next === "ftp" ? "21" : next === "sftp" ? "22" : current.port }));
     // Ad boşsa türe uygun bir öneri konur.
     setForm((current) => (current.name.trim() === "" ? { ...current, name: t(DEFAULT_NAMES[next]) } : current));
   }
@@ -210,7 +228,7 @@ export function TargetModal({ editing, targets, onClose }: { editing: Target | n
         name: form.name.trim(),
         kind,
         config,
-        ...(kind === "s3" ? { secret_key: form.secretKey } : {}),
+        ...(kind === "s3" || kind === "ftp" ? { secret_key: form.secretKey } : {}),
         ...(form.password !== "" ? { password: form.password } : {}),
       });
     },
@@ -362,6 +380,51 @@ export function TargetModal({ editing, targets, onClose }: { editing: Target | n
                   onChange={(event) => set("secretKey", event.target.value)}
                   autoComplete="new-password"
                 />
+              </div>
+            )}
+
+            {kind === "ftp" && (
+              <div className="grid gap-3 sm:grid-cols-[1fr_6rem]">
+                <Input label={t("Sunucu")} placeholder="ftp.example.com" value={form.host} onChange={(event) => set("host", event.target.value)} spellCheck={false} autoComplete="off" />
+                <Input label={t("Port")} type="number" inputMode="numeric" min={1} max={65535} value={form.port} onChange={(event) => set("port", event.target.value)} />
+                <Input label={t("Kullanıcı")} value={form.user} onChange={(event) => set("user", event.target.value)} spellCheck={false} autoComplete="off" />
+                <div className="sm:col-span-2">
+                  <Input
+                    label={t("Parola")}
+                    type="password"
+                    placeholder={editing?.has_secret_key ? t("değiştirmek için yazın") : undefined}
+                    value={form.secretKey}
+                    onChange={(event) => set("secretKey", event.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Input
+                    label={t("Klasör")}
+                    placeholder="yedekler/pixpanel"
+                    hint={t("FTP hesabının açıldığı klasöre göredir; yoksa oluşturulur.")}
+                    value={form.path}
+                    onChange={(event) => set("path", event.target.value)}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="flex flex-col gap-2 sm:col-span-2">
+                  <Checkbox
+                    label={t("Bağlantıyı şifrele (TLS)")}
+                    hint={t("Kapatırsanız FTP parolası ağda açık gider. Yedeklerin içeriği her durumda şifrelidir.")}
+                    checked={form.tls}
+                    onChange={(event) => set("tls", event.target.checked)}
+                  />
+                  {form.tls && (
+                    <Checkbox
+                      label={t("Sunucunun sertifikasını doğrulama")}
+                      hint={t("Yalnızca sunucu kendinden imzalı sertifika kullanıyorsa işaretleyin.")}
+                      checked={form.tlsSkipVerify}
+                      onChange={(event) => set("tlsSkipVerify", event.target.checked)}
+                    />
+                  )}
+                </div>
               </div>
             )}
 

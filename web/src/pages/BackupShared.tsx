@@ -13,7 +13,7 @@ import { JobLog } from "./Jobs";
 
 // ---- Türler ----
 
-export type TargetKind = "local" | "sftp" | "s3";
+export type TargetKind = "local" | "sftp" | "s3" | "ftp";
 export type Frequency = "manual" | "daily" | "weekly" | "monthly";
 export type SnapshotKind = "site" | "db" | "mail" | "panel";
 
@@ -26,6 +26,10 @@ export interface TargetConfig {
   bucket: string;
   region: string;
   access_key: string;
+  /** FTP: bağlantı TLS ile şifrelensin. */
+  tls: boolean;
+  /** FTP: sunucunun sertifikası doğrulanmasın. */
+  tls_skip_verify: boolean;
 }
 
 export interface Target {

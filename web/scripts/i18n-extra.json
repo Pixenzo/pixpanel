@@ -137,7 +137,9 @@
     "Bulut depolama",
     "En kolayı; ancak sunucu kaybedilirse yedekler de gider.",
     "Yedekleri SSH ile başka bir sunucuya gönderir.",
-    "Amazon S3, Backblaze, MinIO gibi bulut depolamalar."
+    "Amazon S3, Backblaze, MinIO gibi bulut depolamalar.",
+    "FTP sunucusu",
+    "Depolama kutusu ya da paylaşımlı hosting gibi yalnızca FTP veren yerler."
   ],
   "web/src/pages/Components.tsx": [
     "Web sunucusu",

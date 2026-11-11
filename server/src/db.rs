@@ -428,6 +428,31 @@ const MIGRATIONS: &[&str] = &[
         net_tx    INTEGER NOT NULL
     ) WITHOUT ROWID;
     "#,
+    // 19: yedek hedefi türlerine "ftp" eklenir. SQLite denetim kısıtını yerinde değiştiremez;
+    // tablo yeniden kurulur. Planlar hedefe bağlı olduğundan (ON DELETE RESTRICT) geçici
+    // olarak kenara alınır.
+    r#"
+    CREATE TABLE backup_plans_keep AS SELECT * FROM backup_plans;
+    DELETE FROM backup_plans;
+    CREATE TABLE backup_targets_new (
+        id               INTEGER PRIMARY KEY,
+        name             TEXT NOT NULL UNIQUE,
+        kind             TEXT NOT NULL CHECK (kind IN ('local', 'sftp', 's3', 'ftp')),
+        config           TEXT NOT NULL,
+        secret           TEXT NOT NULL DEFAULT '',
+        password         TEXT NOT NULL,
+        public_key       TEXT NOT NULL DEFAULT '',
+        last_check_at    INTEGER,
+        last_check_ok    INTEGER NOT NULL DEFAULT 0,
+        last_check_error TEXT NOT NULL DEFAULT '',
+        created_at       INTEGER NOT NULL
+    );
+    INSERT INTO backup_targets_new SELECT id, name, kind, config, secret, password, public_key, last_check_at, last_check_ok, last_check_error, created_at FROM backup_targets;
+    DROP TABLE backup_targets;
+    ALTER TABLE backup_targets_new RENAME TO backup_targets;
+    INSERT INTO backup_plans SELECT * FROM backup_plans_keep;
+    DROP TABLE backup_plans_keep;
+    "#,
 ];
 
 #[derive(Clone)]

@@ -35,6 +35,25 @@ fn ensure_installed() -> AppResult<()> {
     if backup::is_installed() { Ok(()) } else { Err(AppError::bad("restic kurulu değil; önce Bileşenler sayfasından kurun")) }
 }
 
+/// FTP hedefleri rclone ister; kurulu değilse kurar (başka bir kurulum sürüyorsa bitmesini bekler).
+async fn ensure_rclone(state: &AppState) -> AppResult<()> {
+    if crate::sys::exec::binary_exists("rclone") {
+        return Ok(());
+    }
+    let _guard = state.apt_lock.lock().await;
+    let install = crate::sys::exec::run_with_timeout(
+        "apt-get",
+        &["install", "-y", "--no-install-recommends", "-o", "DPkg::Lock::Timeout=120", "--", "rclone"],
+        std::time::Duration::from_secs(300),
+    )
+    .await?;
+    if install.success() && crate::sys::exec::binary_exists("rclone") {
+        Ok(())
+    } else {
+        Err(AppError::bad("FTP hedefi için gereken rclone kurulamadı; sunucunun paket deposuna erişebildiğini denetleyin"))
+    }
+}
+
 // ---- Genel görünüm ----
 
 #[derive(Serialize)]
@@ -140,7 +159,14 @@ async fn create_target(State(state): State<AppState>, user: AuthUser, Json(body)
     }
     let name = backup::validate_name(&body.name)?;
     let config = body.config.normalized(&body.kind)?;
-    let secret = if body.kind == "s3" { backup::validate_secret(&body.secret_key)? } else { String::new() };
+    let secret = match body.kind.as_str() {
+        "s3" => backup::validate_secret(&body.secret_key)?,
+        "ftp" => {
+            ensure_rclone(&state).await?;
+            restic::obscure_ftp_password(&body.secret_key).await?
+        }
+        _ => String::new(),
+    };
     let password = if body.password.is_empty() {
         auth::random_password(40)
     } else if body.password.len() > 200 || body.password.chars().any(char::is_control) {
@@ -165,6 +191,10 @@ async fn update_target(State(state): State<AppState>, user: AuthUser, Path(id): 
     target.config = body.config.normalized(&target.kind)?;
     if target.kind == "s3" && !body.secret_key.is_empty() {
         target.secret = backup::validate_secret(&body.secret_key)?;
+    }
+    if target.kind == "ftp" && !body.secret_key.is_empty() {
+        ensure_rclone(&state).await?;
+        target.secret = restic::obscure_ftp_password(&body.secret_key).await?;
     }
     backup::update_target(&state.db, &target)?;
     auth::audit(&state.db, &user, "backup.target.update", &target.name, "");

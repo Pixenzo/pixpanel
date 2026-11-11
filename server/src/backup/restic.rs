@@ -69,6 +69,19 @@ fn command(target: &Target) -> Command {
             let prefix = if config.path.is_empty() { String::new() } else { format!("/{}", config.path) };
             format!("s3:{}/{}{}", config.endpoint, config.bucket, prefix)
         }
+        "ftp" => {
+            // restic FTP'yi kendisi konuşmaz; rclone aracılık eder. Bağlantı bilgisi rclone'a
+            // ortam değişkenleriyle verilir; parola rclone'un beklediği gizlenmiş biçimde saklanır.
+            cmd.env("RCLONE_FTP_HOST", &config.host)
+                .env("RCLONE_FTP_PORT", config.port.to_string())
+                .env("RCLONE_FTP_USER", &config.user)
+                .env("RCLONE_FTP_PASS", &target.secret)
+                .env("RCLONE_FTP_EXPLICIT_TLS", if config.tls { "true" } else { "false" })
+                .env("RCLONE_FTP_NO_CHECK_CERTIFICATE", if config.tls_skip_verify { "true" } else { "false" })
+                .env("RCLONE_CONFIG", "/dev/null")
+                .env("RCLONE_CONTIMEOUT", "20s");
+            format!("rclone::ftp:{}", config.path)
+        }
         _ => config.path.clone(),
     };
     cmd.env("RESTIC_REPOSITORY", repository);
@@ -427,4 +440,29 @@ mod tests {
         assert_eq!(tag(&tags, "plan"), "7");
         assert_eq!(tag(&tags, "owner"), "");
     }
+}
+
+/// FTP parolasını rclone'un yapılandırmada beklediği gizlenmiş biçime çevirir. Parola
+/// komut satırına değil, `rclone obscure -` komutunun girdisine yazılır.
+pub async fn obscure_ftp_password(password: &str) -> AppResult<String> {
+    use tokio::io::AsyncWriteExt;
+    if password.is_empty() || password.len() > 200 || password.chars().any(char::is_control) {
+        return Err(AppError::bad("FTP parolası geçersiz"));
+    }
+    let mut cmd = base_command("rclone");
+    cmd.args(["obscure", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|_| AppError::bad("rclone kurulu değil; FTP hedefi için gerekir"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(password.as_bytes()).await.map_err(|err| AppError::internal(err.to_string()))?;
+        let _ = stdin.shutdown().await;
+    }
+    let output = tokio::time::timeout(Duration::from_secs(20), child.wait_with_output())
+        .await
+        .map_err(|_| AppError::internal("rclone zaman aşımına uğradı"))?
+        .map_err(|err| AppError::internal(err.to_string()))?;
+    let obscured = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || obscured.is_empty() {
+        return Err(AppError::internal("FTP parolası hazırlanamadı"));
+    }
+    Ok(obscured)
 }

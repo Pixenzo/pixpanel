@@ -2236,4 +2236,12 @@ export const en: Record<string, string> = {
   "ortalama · en yüksek {peak}": "average · peak {peak}",
   "ortalama alınan · en yüksek {peak}": "average received · peak {peak}",
   "Bir ana bakmak için grafiğin üzerinde gezin": "Hover over the chart to inspect a moment",
+  "FTP sunucusu": "FTP server",
+  "FTP parolasını yazın.": "Enter the FTP password.",
+  "FTP hesabının açıldığı klasöre göredir; yoksa oluşturulur.": "Relative to the folder the FTP account opens in; created if missing.",
+  "Bağlantıyı şifrele (TLS)": "Encrypt the connection (TLS)",
+  "Kapatırsanız FTP parolası ağda açık gider. Yedeklerin içeriği her durumda şifrelidir.": "If turned off, the FTP password travels over the network unencrypted. Backup contents are encrypted either way.",
+  "Sunucunun sertifikasını doğrulama": "Do not verify the server's certificate",
+  "Yalnızca sunucu kendinden imzalı sertifika kullanıyorsa işaretleyin.": "Tick only if the server uses a self-signed certificate.",
+  "Depolama kutusu ya da paylaşımlı hosting gibi yalnızca FTP veren yerler.": "Places that only offer FTP, such as a storage box or shared hosting.",
 };
