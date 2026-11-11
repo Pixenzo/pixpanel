@@ -358,6 +358,20 @@ const MIGRATIONS: &[&str] = &[
         measured_at INTEGER NOT NULL
     );
     "#,
+    // 16: hesapların SFTP/kabuk erişimi ve açık anahtarları.
+    r#"
+    ALTER TABLE users ADD COLUMN ssh_mode TEXT NOT NULL DEFAULT 'none' CHECK (ssh_mode IN ('none', 'sftp', 'shell'));
+    ALTER TABLE users ADD COLUMN ssh_password_set INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE ssh_keys (
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        key_line    TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        UNIQUE (user_id, fingerprint)
+    );
+    "#,
 ];
 
 #[derive(Clone)]

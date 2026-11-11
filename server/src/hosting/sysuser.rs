@@ -46,7 +46,7 @@ impl SysUser {
 }
 
 /// Linux kullanıcı adı kuralı; panel kullanıcı adı kuralıyla aynıdır.
-fn validate_name(name: &str) -> AppResult<()> {
+pub fn validate_name(name: &str) -> AppResult<()> {
     let mut chars = name.chars();
     let valid = (3..=32).contains(&name.len())
         && chars.next().is_some_and(|c| c.is_ascii_lowercase())

@@ -7,6 +7,7 @@ pub mod nginx;
 pub mod node;
 pub mod php;
 pub mod sites;
+pub mod sshaccess;
 pub mod ssl;
 pub mod sysuser;
 

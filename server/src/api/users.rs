@@ -222,7 +222,20 @@ async fn update(
     Path(id): Path<i64>,
     Json(body): Json<UpdateBody>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let target = load_manageable(&state, &user, id)?;
+    // Hesap kendi kaydında yalnızca arayüz dilini değiştirebilir; parola ve e-posta için ayrı
+    // uçlar vardır, durum, yetki ve paket ise hesabı yönetenin işidir.
+    let own_language_only = id == user.id
+        && body.language.is_some()
+        && body.email.is_none()
+        && body.password.is_none()
+        && body.status.is_none()
+        && body.permissions.is_none()
+        && body.package_id.is_none();
+    let target = if own_language_only {
+        Target { username: user.username.clone(), role: user.role.as_str().to_string(), parent_id: user.parent_id }
+    } else {
+        load_manageable(&state, &user, id)?
+    };
 
     if let Some(status) = &body.status {
         if !matches!(status.as_str(), "active" | "suspended") {
@@ -307,6 +320,8 @@ async fn remove(
         }
     }
     state.db.call(|conn| conn.execute("DELETE FROM users WHERE id = ?1", params![id]))?;
+    // Hesabın SSH anahtar dosyası geride kalmasın (aynı adla yeni hesap açılırsa eski anahtarlar geçerli olurdu).
+    crate::hosting::sshaccess::remove_keys(&target.username);
     auth::audit(&state.db, &user, "user.delete", &target.username, "");
     Ok(Json(json!({ "ok": true })))
 }
