@@ -110,6 +110,20 @@ check "başka siteye yükleme müşteriye kapalı (alan yok sayılır, yerine y�
 sleep 3
 check "yöneticinin sitesine dokunulmadı" "$(ls /home/$PX_USER/sites/*/public/fazla.txt 2>/dev/null | wc -l)" 0
 
+say "Sembolik bağla dışarı yazdırma denemesi"
+# Müşteri, yedek alındıktan sonra bir klasörünü sistemdeki başka bir yere bağlar ve yalnızca
+# onun altındaki bir yolu geri yükletir. Geri yükleme root olarak o bağı izlememelidir.
+SROOT=/home/$CUSTOMER/sites/$DOMAIN
+rm -rf /tmp/geri-hedef; mkdir -p /tmp/geri-hedef
+mv $SROOT/public $SROOT/public.asil; ln -s /tmp/geri-hedef $SROOT/public; chown -h $CUSTOMER $SROOT/public
+JOB=$(call $JC POST /backup/mine/restore -d "{\"target_id\":${SITE_SNAP%/*},\"snapshot\":\"${SITE_SNAP#*/}\",\"paths\":[\"$SROOT/public/index.html\"]}" | jget 'd["job_id"]')
+wait_job $JC "$JOB" >/dev/null
+check "geri yükleme site klasörünün dışına dosya yazmaz" "$(ls -A /tmp/geri-hedef | wc -l)" 0
+check "ara klasör geride kalmaz" "$(ls -A /var/lib/pixpanel/restore 2>/dev/null | wc -l)" 0
+rm -f $SROOT/public; mv $SROOT/public.asil $SROOT/public; rm -rf /tmp/geri-hedef
+JOB=$(call $JC POST /backup/mine/restore -d "{\"target_id\":${SITE_SNAP%/*},\"snapshot\":\"${SITE_SNAP#*/}\",\"paths\":[\"$SROOT/public/index.html\"]}" | jget 'd["job_id"]')
+check "tek dosya geri yükleme (bağ yokken) çalışır; dosya hesabın" "$(wait_job $JC "$JOB") $(stat -c %U $SROOT/public/index.html) $(stat -c %a $SROOT)" "success $CUSTOMER $(stat -c %a /home/$CUSTOMER/sites/$DOMAIN)"
+
 say "El değiştiren kaynak"
 # Site silinirse eski yedeği müşteriye görünmez olur: silinmiş siteyi yeniden kurmak yöneticinin işidir.
 check "siteyi sil" "$(status $JC DELETE "/sites/$S?delete_files=true")" 200

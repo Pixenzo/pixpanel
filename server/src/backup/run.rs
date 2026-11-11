@@ -18,7 +18,7 @@ use crate::hosting::{domain, sysuser};
 use crate::jobs::JobCtx;
 use crate::mail;
 use crate::state::AppState;
-use crate::sys::exec;
+use crate::sys::{exec, runas};
 
 fn backup_dir(state: &AppState) -> PathBuf {
     state.cfg.data_dir.join("backup")
@@ -370,6 +370,75 @@ async fn recreate_site(state: &AppState, ctx: &JobCtx, manifest: &SiteManifest) 
     Ok(site)
 }
 
+/// Sitenin dosyalarını yedekten geri yükler.
+///
+/// Site klasörünün içi müşterinin denetimindedir: araya konmuş bir sembolik bağ, root olarak
+/// çalışan geri yüklemeyi sistemin başka bir yerine yazdırabilir. Bu yüzden yedek önce panele ait,
+/// kimsenin erişemediği bir ara klasöre açılır; site klasörüne ise hesabın kendi kullanıcısıyla
+/// kopyalanır. O adımda izlenen bir sembolik bağ, kullanıcının zaten yazabildiği yerden öteye geçemez.
+///
+/// `relative`: site klasörüne göreli, `/` ile başlayan yollar; boşsa sitenin tamamı.
+/// `delete`: yüklenen yolların hedefteki eski içeriği önce silinir (yedekte olmayan dosyalar kalmaz).
+#[allow(clippy::too_many_arguments)]
+async fn restore_site_tree(
+    state: &AppState,
+    ctx: &JobCtx,
+    target: &Target,
+    snapshot_id: &str,
+    source_root: &str,
+    destination: &Path,
+    owner: &sysuser::SysUser,
+    relative: &[String],
+    delete: bool,
+) -> AppResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let base = state.cfg.data_dir.join("restore");
+    std::fs::create_dir_all(&base)?;
+    // Üst klasörden yalnızca geçilebilir; içindeki ad rastgeledir ve listelenemez.
+    std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o711))?;
+    let staging = base.join(crate::auth::random_token(16));
+    std::fs::create_dir(&staging)?;
+    std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o700))?;
+    let data = staging.join("data");
+
+    let outcome = async {
+        restic::restore(ctx, target, snapshot_id, Some(source_root), &text(&data), relative, false).await?;
+        if !data.is_dir() {
+            return Err(AppError::bad("Seçilen yollar yedekte bulunamadı"));
+        }
+        // Ara klasör yalnız root'undur; içindeki ağaç güvenle hedef sitenin sahibine devredilir
+        // (yedek başka bir hesaptan alınmış olabilir). Grup yedekteki gibi kalır.
+        exec::run_ok("chown", &["-R", "-h", &owner.uid.to_string(), "--", &text(&staging)]).await?;
+
+        let destination_text = text(destination);
+        if delete {
+            // Yedekte olmayan dosyalar kalmasın diye yüklenecek yolların eski hâli önce silinir.
+            let targets: Vec<String> = if relative.is_empty() {
+                Vec::new()
+            } else {
+                relative.iter().map(|path| format!("{destination_text}{path}")).collect()
+            };
+            let mut cmd = if targets.is_empty() {
+                runas::command(owner, destination, "find", &[".", "-mindepth", "1", "-maxdepth", "1", "-not", "-name", "logs", "-exec", "rm", "-rf", "--", "{}", "+"])
+            } else {
+                let mut args: Vec<&str> = vec!["-rf", "--"];
+                args.extend(targets.iter().map(String::as_str));
+                runas::command(owner, destination, "rm", &args)
+            };
+            ctx.run_streaming(&mut cmd, "rm", None).await?;
+        }
+        // Kopyalama hesabın kendi kimliğiyle yapılır. Hedef klasörün kendi izinlerine dokunulmaz;
+        // yalnızca içindekiler taşınır.
+        let mut copy = runas::command(owner, &data, "find", &[".", "-mindepth", "1", "-maxdepth", "1", "-exec", "cp", "-a", "-t", &destination_text, "--", "{}", "+"]);
+        ctx.run_streaming(&mut copy, "cp", None).await
+    }
+    .await;
+    if let Err(err) = std::fs::remove_dir_all(&staging) {
+        tracing::warn!(error = %err, path = %staging.display(), "geri yükleme ara klasörü silinemedi");
+    }
+    outcome
+}
+
 async fn restore_site(state: &AppState, ctx: &JobCtx, target: &Target, snapshot: &Snapshot, options: &RestoreOptions) -> AppResult<()> {
     let source_root = snapshot.paths.iter().find(|path| path.starts_with("/home/")).cloned().ok_or_else(|| AppError::bad("Yedekte site klasörü yok"))?;
     let existing = site_by_domain(state, &snapshot.name)?;
@@ -380,13 +449,7 @@ async fn restore_site(state: &AppState, ctx: &JobCtx, target: &Target, snapshot:
         let user = sysuser::lookup(&destination.owner).ok_or_else(|| AppError::internal("hedef sitenin kullanıcısı bulunamadı"))?;
         let root = destination.root();
         ctx.log(format!("Dosyalar {} sitesinin klasörüne yükleniyor.", destination.domain));
-        restic::restore(ctx, target, &snapshot.id, Some(&source_root), &text(&root), &[], options.delete_extra).await?;
-        // Dosyalar yedekteki sahibin kimliğiyle gelir; hedef sitenin sahibine devredilir.
-        exec::run_ok("chown", &["-R", "-h", &user.uid.to_string(), "--", &text(&root)]).await?;
-        let logs = root.join("logs");
-        if logs.is_dir() {
-            std::os::unix::fs::lchown(&logs, Some(user.uid), Some(user.gid))?;
-        }
+        restore_site_tree(state, ctx, target, &snapshot.id, &source_root, &root, &user, &[], options.delete_extra).await?;
         return restart_app(ctx, &destination).await;
     }
 
@@ -408,14 +471,19 @@ async fn restore_site(state: &AppState, ctx: &JobCtx, target: &Target, snapshot:
     }
 
     let ssl_dir = Path::new(nginx::SSL_DIR).join(&site.domain);
-    let (includes, delete) = if recreated {
-        // Yeniden kurulan sitede karşılama sayfası yerine yedekteki her şey gelir.
-        (vec![source_root.clone(), text(&ssl_dir)], true)
-    } else {
-        (validate_includes(&options.paths, &root)?, options.delete_extra)
-    };
+    let owner = sysuser::lookup(&site.owner).ok_or_else(|| AppError::internal("sitenin kullanıcısı bulunamadı"))?;
     ctx.log("Dosyalar geri yükleniyor.");
-    restic::restore(ctx, target, &snapshot.id, None, "/", &includes, delete).await?;
+    if recreated {
+        // Yeniden kurulan sitede karşılama sayfası yerine yedekteki her şey gelir.
+        restore_site_tree(state, ctx, target, &snapshot.id, &source_root, &root, &owner, &[], true).await?;
+        // Sertifika klasörü panelindir (kullanıcı yazamaz); doğrudan yerine yüklenir.
+        restic::restore(ctx, target, &snapshot.id, None, "/", &[text(&ssl_dir)], true).await?;
+    } else {
+        let includes = validate_includes(&options.paths, &root)?;
+        // Seçilen yollar site klasörüne göreli hâle getirilir; hiçbiri seçilmediyse sitenin tamamı gelir.
+        let relative: Vec<String> = includes.iter().filter_map(|path| path.strip_prefix(&source_root).map(str::to_string)).filter(|path| !path.is_empty()).collect();
+        restore_site_tree(state, ctx, target, &snapshot.id, &source_root, &root, &owner, &relative, options.delete_extra).await?;
+    }
 
     if let Some(manifest) = manifest {
         // Sertifika dosyaları da geri geldiyse HTTPS eski ayarlarıyla açılır.
