@@ -183,14 +183,14 @@ export function OverviewPage() {
   const age = Math.max(0, now - report.checked_at);
 
   return (
-    <div className="flex flex-col gap-5">
-      <section className="flex flex-wrap items-center gap-x-5 gap-y-4 rounded-xl border border-line bg-surface px-4 sm:px-6 py-5 shadow-card sm:px-6">
-        <span className={classNames("flex size-12 shrink-0 items-center justify-center rounded-full", toneSoft[state.tone], toneText[state.tone])}>
-          <state.icon aria-hidden className="size-6" />
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-wrap items-center gap-x-6 gap-y-5 rounded-2xl border border-line bg-surface px-5 py-6 shadow-card sm:px-8 sm:py-8">
+        <span className={classNames("flex size-14 shrink-0 items-center justify-center rounded-2xl", toneSoft[state.tone], toneText[state.tone])}>
+          <state.icon aria-hidden className="size-7" />
         </span>
         <div className="min-w-0 flex-1 basis-64">
-          <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.015em] sm:text-[26px]">{waiting ? t("İlk denetim yapılıyor") : state.title}</h1>
-          <p className="mt-1 text-ink-2">{waiting ? t("Panel yeni başladı; sonuçlar birkaç saniye içinde burada olacak.") : state.subtitle}</p>
+          <h1 className="text-[24px] leading-[1.15] font-semibold tracking-[-0.02em] sm:text-[30px]">{waiting ? t("İlk denetim yapılıyor") : state.title}</h1>
+          <p className="mt-2 text-[15.5px] text-ink-2">{waiting ? t("Panel yeni başladı; sonuçlar birkaç saniye içinde burada olacak.") : state.subtitle}</p>
           {!waiting && (
             <p className="tabular mt-2 text-[13.5px] text-ink-3">
               {t("{count} denetim yapıldı", { count: report.checks })} · {age < 5 ? t("az önce") : t("{seconds} sn önce", { seconds: age })} ·{" "}
@@ -203,7 +203,7 @@ export function OverviewPage() {
         </Button>
       </section>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
         <Panel flush title={report.findings.length > 0 ? t("Bulgular") : undefined}>
           {report.findings.length === 0 ? (
             <div className="px-4 sm:px-6 py-10 sm:text-center">

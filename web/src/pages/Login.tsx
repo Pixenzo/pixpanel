@@ -56,16 +56,16 @@ export function LoginPage() {
 
   return (
     <main className="grid min-h-dvh place-items-center px-4 sm:px-6 py-10">
-      <div className="w-full max-w-sm">
-        <div className="mb-7 flex items-center gap-3">
-          <BrandLogo className="size-8" />
+      <div className="w-full max-w-[26rem]">
+        <div className="mb-8 flex items-center gap-4">
+          <BrandLogo className="size-11" />
           <div className="min-w-0">
-            <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] break-words">{brandName(branding)}</h1>
-            <p className="font-mono text-[13px] text-ink-3">{window.location.hostname}</p>
+            <h1 className="text-[27px] leading-[1.1] font-semibold tracking-[-0.02em] break-words">{brandName(branding)}</h1>
+            <p className="mt-1 font-mono text-[13.5px] text-ink-3">{window.location.hostname}</p>
           </div>
         </div>
 
-        <form onSubmit={submit} className="flex flex-col gap-5 rounded-xl border border-line bg-surface p-6">
+        <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 shadow-card sm:p-8">
           {needsCode ? (
             <>
               <p className="text-ink-2">

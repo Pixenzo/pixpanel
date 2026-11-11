@@ -314,11 +314,13 @@ export function SiteToolGrid({ site, summary, options }: { site: Site; summary?:
     <ul className="-mr-px -mb-px grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {tools.map((tool) => (
         <li key={tool.id} className="border-r border-b border-line">
-          <Link to={tool.to} className="group flex h-full items-start gap-3 px-4 sm:px-6 py-3 outline-offset-[-2px] transition-colors hover:bg-accent-soft/50">
-            <tool.icon aria-hidden className="mt-0.5 size-[18px] shrink-0 text-ink-3 transition-colors group-hover:text-accent" />
+          <Link to={tool.to} className="group flex h-full items-center gap-3.5 px-4 py-3.5 outline-offset-[-2px] transition-colors hover:bg-accent-soft/40 sm:px-5 sm:py-4">
+            <span className="grid size-9.5 shrink-0 place-items-center rounded-xl bg-sunken text-ink-2 transition-colors group-hover:bg-accent-soft group-hover:text-accent">
+              <tool.icon aria-hidden className="size-[18px]" />
+            </span>
             <span className="min-w-0">
-              <span className="block font-medium group-hover:text-accent">{tool.label}</span>
-              <span className={classNames("block truncate text-[13px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status || " "}</span>
+              <span className="block font-medium transition-colors group-hover:text-accent">{tool.label}</span>
+              <span className={classNames("mt-0.5 block truncate text-[13px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status || " "}</span>
             </span>
           </Link>
         </li>
@@ -360,26 +362,26 @@ function SiteCard({
   const lamp = site.status !== "active" ? "bg-warn" : worst === "critical" ? "bg-bad" : worst === "warning" ? "bg-warn" : "bg-ok";
   const lampTitle = site.status !== "active" ? t("Askıda") : issues.length > 0 ? issues.map((issue) => t(issue.label)).join(", ") : t("Yayında");
   return (
-    <li className={classNames("overflow-hidden rounded-lg border border-line bg-surface", nested && "ml-4 sm:ml-9")}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:gap-x-4">
+    <li className={classNames("overflow-hidden rounded-2xl border border-line bg-surface shadow-card", nested && "ml-4 sm:ml-10")}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-3 py-3.5 sm:gap-x-4 sm:px-4 sm:py-4">
         <button
           type="button"
           aria-expanded={expanded}
           aria-controls={panelId}
           aria-label={expanded ? t("{domain} araçlarını gizle", { domain: site.domain }) : t("{domain} araçlarını göster", { domain: site.domain })}
           onClick={onToggle}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-sunken hover:text-ink max-sm:size-9"
+          className="inline-flex size-8.5 shrink-0 items-center justify-center rounded-lg text-ink-3 transition-colors hover:bg-sunken hover:text-ink max-sm:size-9.5"
         >
           <ChevronRight className={classNames("size-4 transition-transform", expanded && "rotate-90")} />
         </button>
         <span
           aria-hidden
           title={lampTitle}
-          className={classNames("size-2 shrink-0 rounded-full", lamp)}
+          className={classNames("size-2.5 shrink-0 rounded-full ring-4", lamp, lamp === "bg-ok" ? "ring-ok-soft" : lamp === "bg-bad" ? "ring-bad-soft" : "ring-warn-soft")}
         />
         <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-5rem)]">
           <div className="flex items-center gap-2">
-            <Link to={`/sites/${site.id}`} className="truncate font-mono text-[14.5px] font-medium hover:text-accent hover:underline">
+            <Link to={`/sites/${site.id}`} className="truncate font-mono text-[16px] font-medium tracking-[-0.01em] hover:text-accent">
               {site.domain}
             </Link>
             <a
@@ -439,7 +441,7 @@ function SiteCard({
         </dl>
         <Link
           to={`/sites/${site.id}`}
-          className="inline-flex h-7 items-center rounded-md border border-line-strong px-2.5 text-[13.5px] font-medium hover:bg-sunken"
+          className="inline-flex h-8.5 items-center rounded-lg border border-line-strong bg-surface px-3.5 text-[13.5px] font-medium shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors hover:bg-sunken"
         >
           {t("Yönet")}
         </Link>
@@ -638,7 +640,7 @@ export function SitesPage() {
                 <EmptyState title={t("Aramanıza uyan site yok")} description={t("Alan adının bir bölümünü ya da hesabın adını yazmayı deneyin.")} />
               </Panel>
             ) : (
-              <ul className="flex flex-col gap-3">
+              <ul className="flex flex-col gap-4">
                 {visible.map((site) => (
                   <SiteCard
                     key={site.id}
