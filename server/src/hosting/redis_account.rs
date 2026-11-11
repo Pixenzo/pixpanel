@@ -158,10 +158,12 @@ pub fn render_unit(instance: &Instance) -> String {
          ProtectSystem=strict\n\
          ProtectHome=yes\n\
          ReadWritePaths={data}\n\
-         LimitNOFILE=10032\n\n\
+         LimitNOFILE=10032\n\
+         {port_rule}\n\
          [Install]\n\
          WantedBy=multi-user.target\n",
         config = config_path(name).display(),
+        port_rule = crate::hosting::portguard::deny_line(),
         memory = instance.memory_mb * 2 + 64,
         data = data_dir(name).display(),
     )

@@ -55,6 +55,10 @@ postfix postfix/mailname string {}
             let _sys = job_state.sys_lock.lock().await;
             crate::dbtools::ensure_runtime(&job_state.cfg).await?;
         }
+        if component.id.starts_with("php-") {
+            // Yeni PHP havuz servisi de uygulama portlarını bağlayamamalı.
+            crate::hosting::portguard::apply().await;
+        }
         if component.id == "fail2ban" {
             ctx.log("fail2ban yapılandırılıyor");
             crate::fail2ban::apply(&job_state.db, &crate::fail2ban::load(&job_state.db)).await?;

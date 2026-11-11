@@ -79,6 +79,9 @@ enum Command {
     /// Dosya yöneticisinin yardımcı süreci; panel tarafından başlatılır
     #[command(hide = true)]
     FsHelper,
+    /// Port bağlama kısıtının çalıştığını deneyen yardımcı; panel tarafından başlatılır
+    #[command(hide = true)]
+    ProbeBind { port: u16 },
     /// Panelin eklediği IP adreslerini kurar; açılışta web sunucusundan önce çalışır
     #[command(hide = true)]
     ApplyAddresses,
@@ -93,6 +96,9 @@ fn main() -> anyhow::Result<()> {
     // başlar: ne eşzamansız çalışma zamanı kurulur ne de veritabanı açılır.
     if matches!(cli.command, Some(Command::FsHelper)) {
         std::process::exit(fsop::run_helper());
+    }
+    if let Some(Command::ProbeBind { port }) = cli.command {
+        std::process::exit(hosting::portguard::run_probe(port));
     }
 
     tracing_subscriber::fmt()
@@ -129,7 +135,7 @@ fn main() -> anyhow::Result<()> {
             println!("{added} adres kuruldu.");
             Ok(())
         }
-        Command::FsHelper | Command::UpdateWatchdog => unreachable!("yardımcı süreçler yukarıda ele alındı"),
+        Command::FsHelper | Command::UpdateWatchdog | Command::ProbeBind { .. } => unreachable!("yardımcı süreçler yukarıda ele alındı"),
     }
 }
 
@@ -174,6 +180,8 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_stats_collector(state.clone());
     tasks::spawn_metrics_archive(state.clone());
     tasks::spawn_dns_cluster_sync(state.clone());
+    // Uygulama portlarının korunması arka planda kurulur; panelin açılışını bekletmez.
+    tokio::spawn(hosting::portguard::apply());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");

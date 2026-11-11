@@ -627,7 +627,20 @@ fn check_backups(state: &AppState, batch: &mut Batch, has_content: bool) -> AppR
 }
 
 async fn check_security(state: &AppState, batch: &mut Batch) {
-    batch.checks += 3;
+    batch.checks += 4;
+    // Uygulama sitesi varsa ve port kısıtı bu ortamda çalışmıyorsa yönetici bilmelidir.
+    if crate::hosting::portguard::supported() == Some(false) {
+        let apps: i64 = state.db.call(|conn| conn.query_row("SELECT count(*) FROM sites WHERE kind IN ('node', 'python')", [], |row| row.get(0))).unwrap_or(0);
+        if apps > 0 {
+            batch.push(Finding::new(
+                "security.app_ports",
+                "server",
+                Severity::Info,
+                "Uygulama portları korunamıyor",
+                "Bu sunucunun sanallaştırması (ör. yetkisiz konteyner) port bağlama kısıtını desteklemiyor. Bir Node.js ya da Python uygulaması durmuşken sunucudaki başka bir hesap onun portunu açıp ziyaretçi isteklerini alabilir. Birden çok müşteriye uygulama barındırıyorsanız sanal makine ya da fiziksel sunucu kullanın.",
+            ));
+        }
+    }
     if crate::firewall::is_available() && !crate::firewall::load(&state.db, &state.cfg).enabled {
         batch.push(
             Finding::new(

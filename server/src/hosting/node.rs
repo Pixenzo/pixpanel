@@ -199,13 +199,16 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
          NoNewPrivileges=yes\n\
          PrivateTmp=yes\n\
          ProtectSystem=full\n\
-         SyslogIdentifier=pixpanel-node-{site_id}\n",
+         SyslogIdentifier=pixpanel-node-{site_id}\n\
+         {port_rules}",
         name = user.name,
         root = root.display(),
         port = port(site_id),
         home = user.home.display(),
         bin = bin.display(),
         runtime = runtime_name(kind),
+        // Uygulama yalnızca kendi portunu açabilir; başka sitelerin portlarını bağlayamaz.
+        port_rules = crate::hosting::portguard::unit_lines(port(site_id)),
         env = config_file(site_id, "env").display(),
         script = config_file(site_id, "sh").display(),
     );
