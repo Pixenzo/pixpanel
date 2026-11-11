@@ -15,7 +15,7 @@ use crate::hosting::php::PhpSettings;
 use crate::hosting::sysuser::{self, SysUser};
 use crate::hosting::{domain, nginx, php, ssl};
 
-pub const KINDS: &[&str] = &["php", "static", "proxy", "node"];
+pub const KINDS: &[&str] = &["php", "static", "proxy", "node", "python"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Site {
@@ -376,8 +376,8 @@ pub async fn provision(site: &Site) -> AppResult<()> {
     let docroot = site.docroot();
     let socket = site.php_version.as_deref().map(|version| php::socket_path(site.id, version)).unwrap_or_default();
     let node_target = format!("http://127.0.0.1:{}", node::port(site.id));
-    if site.kind != "node" {
-        // Tür değiştiyse eski Node.js servisi kaldırılır.
+    if !node::is_app(&site.kind) {
+        // Tür değiştiyse eski uygulama servisi kaldırılır.
         node::remove(site.id).await?;
     }
 
@@ -391,10 +391,10 @@ pub async fn provision(site: &Site) -> AppResult<()> {
             let target = site.proxy_target.as_deref().ok_or_else(|| AppError::bad("Hedef adres girilmedi"))?;
             nginx::Backend::Proxy { target, websocket: site.proxy_websocket }
         }
-        "node" => {
+        "node" | "python" => {
             // Askıdaki sitenin uygulaması çalıştırılmaz.
             if site.status == "active" {
-                node::apply(site.id, &site.domain, &user, &root, &site.node).await?;
+                node::apply(site.id, &site.domain, &user, &root, &site.node, &site.kind).await?;
             } else {
                 let _ = node::action(site.id, "stop").await;
             }

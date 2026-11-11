@@ -476,6 +476,10 @@ async fn run(
         // Betikteki `node` ve `npm` sitenin Node.js sürümünü kullanır.
         path = format!("{}:{path}", crate::hosting::node::bin_dir(&site.node.version).display());
     }
+    if site.kind == "python" {
+        // Betikteki `python` ve `pip` sitenin sanal ortamını kullanır.
+        path = format!("{}:{path}", site.root().join(crate::hosting::node::VENV_DIR).join("bin").display());
+    }
     let runner = Runner {
         ctx,
         user,
@@ -546,7 +550,7 @@ async fn run(
 
 /// Node.js sitelerinde yeni kodun devreye girmesi için uygulama yeniden başlatılır.
 async fn restart_node(ctx: &JobCtx, site: &Site) -> AppResult<()> {
-    if site.kind == "node" && site.status == "active" {
+    if crate::hosting::node::is_app(&site.kind) && site.status == "active" {
         ctx.log("Uygulama yeniden başlatılıyor");
         crate::hosting::node::action(site.id, "restart").await?;
     }

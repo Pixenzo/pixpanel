@@ -170,6 +170,7 @@ suite impersonate
 suite rules php-8.3
 suite clone php-8.3 mariadb
 suite branding
+suite python python
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"

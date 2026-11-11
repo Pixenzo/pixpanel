@@ -139,6 +139,8 @@ struct Options {
     /// Sürüm başına genel PHP ayarları; site formunda devralınan değerleri göstermek için.
     php_defaults: std::collections::BTreeMap<String, php::PhpGlobal>,
     node_versions: Vec<String>,
+    /// Sistemdeki Python sürümü; kurulu değilse boş (Python sitesi açılamaz).
+    python_versions: Vec<String>,
     /// Hesabın sitelerini bağlayabileceği sunucu adresleri (yöneticide hepsi, diğerlerinde ayrılmış olanlar).
     ips: Vec<IpOption>,
 }
@@ -232,7 +234,7 @@ async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
         .into_iter()
         .map(|item| IpOption { address: item.address, label: item.label, user_id: item.user_id })
         .collect();
-    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults, node_versions: node::installed_versions(), ips }))
+    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults, node_versions: node::installed_versions(), python_versions: node::python_versions(), ips }))
 }
 
 #[derive(Deserialize)]
@@ -306,9 +308,10 @@ async fn create(
     let node_settings = match body.kind.as_str() {
         "node" => {
             let settings = NodeSettings { version: body.node_version.ok_or_else(|| AppError::bad("Node.js sürümü seçin"))?, ..NodeSettings::default() };
-            settings.validate()?;
+            settings.validate("node")?;
             settings
         }
+        "python" => node::python_defaults()?,
         _ => NodeSettings::default(),
     };
 
@@ -441,14 +444,20 @@ async fn update(
         site.status = status;
     }
     if let Some(settings) = body.node {
-        settings.validate()?;
+        if node::is_app(&site.kind) {
+            settings.validate(&site.kind)?;
+        }
         site.node = settings;
     }
     if let Some(rules) = &body.proxy_rules {
         site.proxy_rules = sites::validate_proxy_rules(rules)?;
     }
-    if site.kind == "node" {
-        site.node.validate()?;
+    if node::is_app(&site.kind) {
+        // Tür yeni değiştiyse ayarlar öteki çalışma ortamından kalmış olabilir; yenisinin başlangıç değerleri verilir.
+        if site.kind == "python" && !node::python_versions().contains(&site.node.version) {
+            site.node = NodeSettings { env: site.node.env.clone(), memory_mb: site.node.memory_mb, ..node::python_defaults()? };
+        }
+        site.node.validate(&site.kind)?;
     }
     if site.kind == "php" && site.php_version.is_none() {
         return Err(AppError::bad("PHP sürümü seçin"));
@@ -485,7 +494,7 @@ async fn update(
 /// Node.js sitesini okur; site başka türdeyse hata döner.
 fn node_site(state: &AppState, user: &AuthUser, id: i64) -> AppResult<Site> {
     let site = sites::get(&state.db, user, id)?;
-    if site.kind == "node" { Ok(site) } else { Err(AppError::bad("Bu site bir Node.js uygulaması değil")) }
+    if node::is_app(&site.kind) { Ok(site) } else { Err(AppError::bad("Bu site bir uygulama sitesi değil")) }
 }
 
 async fn node_status(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<node::Status>> {
@@ -503,6 +512,31 @@ async fn node_action(State(state): State<AppState>, user: AuthUser, Path((id, ac
     node::action(site.id, &action).await?;
     auth::audit(&state.db, &user, &format!("node.{action}"), &site.domain, "");
     Ok(Json(node::status(site.id).await?))
+}
+
+/// Python sitesinin bağımlılıklarını sanal ortama kurar (`pip install -r requirements.txt`).
+fn python_install(state: &AppState, user: &AuthUser, site: Site, restart: bool) -> AppResult<Json<serde_json::Value>> {
+    let account = crate::hosting::sysuser::lookup(&site.owner).ok_or_else(|| AppError::bad("Hesabın Linux kullanıcısı bulunamadı"))?;
+    let root = site.root();
+    if !root.join("requirements.txt").is_file() {
+        return Err(AppError::bad("Site klasöründe requirements.txt yok; bağımlılıklarınızı bu dosyaya yazın"));
+    }
+    let venv_bin = root.join(node::VENV_DIR).join("bin");
+    let title = format!("pip install ({})", site.domain);
+    let site_id = site.id;
+    let job_id = state.jobs.start("python.pip", &title, Some(user.id), move |ctx| async move {
+        ctx.log("$ pip install -r requirements.txt");
+        let mut command = runas::command(&account, &root, "pip", &["install", "--no-input", "--disable-pip-version-check", "-r", "requirements.txt"]);
+        command.env("PATH", format!("{}:{}", venv_bin.display(), runas::USER_PATH)).env("VIRTUAL_ENV", venv_bin.parent().unwrap_or(&root));
+        ctx.run_streaming(&mut command, "pip", None).await?;
+        if restart {
+            ctx.log("Uygulama yeniden başlatılıyor");
+            node::action(site_id, "restart").await?;
+        }
+        Ok(())
+    })?;
+    auth::audit(&state.db, user, "python.pip", &site.domain, "");
+    Ok(Json(serde_json::json!({ "job_id": job_id })))
 }
 
 #[derive(Deserialize)]
@@ -523,6 +557,9 @@ async fn node_run(
 ) -> AppResult<Json<serde_json::Value>> {
     user.require(AREA)?;
     let site = node_site(&state, &user, id)?;
+    if site.kind == "python" {
+        return python_install(&state, &user, site, body.restart);
+    }
     let args: Vec<String> = match body.script.as_str() {
         "install" => vec!["install".into()],
         "ci" => vec!["ci".into()],

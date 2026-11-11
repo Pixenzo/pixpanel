@@ -50,7 +50,7 @@ async fn sources(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
     for site in sites::list(&state.db, &user)? {
         list.push(Source { id: format!("site:{}:access", site.id), label: format!("{} erişim", site.domain), group: "site" });
         list.push(Source { id: format!("site:{}:error", site.id), label: format!("{} hata", site.domain), group: "site" });
-        if site.kind == "node" {
+        if crate::hosting::node::is_app(&site.kind) {
             list.push(Source { id: format!("site:{}:app", site.id), label: format!("{} uygulama", site.domain), group: "site" });
         }
     }

@@ -137,6 +137,15 @@ pub fn catalog() -> Vec<Component> {
             Repo::Distro,
         ),
         component(
+            "python",
+            "Python",
+            "Python uygulamaları (Flask, Django, FastAPI) için sanal ortam desteği. Her site kendi bağımlılıklarını ayrı kurar.",
+            "node",
+            &["python3", "python3-venv", "python3-pip"],
+            None,
+            Repo::Distro,
+        ),
+        component(
             "redis",
             "Redis",
             "Bellek içi önbellek ve kuyruk sunucusu.",

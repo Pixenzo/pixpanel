@@ -1,4 +1,7 @@
-//! Node.js uygulamaları: kurulu sürümler ve site başına systemd servisi.
+//! Uygulama siteleri (Node.js ve Python): kurulu sürümler ve site başına systemd servisi.
+//!
+//! İki tür aynı düzeni paylaşır; farkları çalışma ortamındadır: Node.js sitesi panelin
+//! kurduğu Node.js sürümünü, Python sitesi site klasöründeki sanal ortamı (`.venv`) kullanır.
 //!
 //! Her Node.js sitesi, sitenin sahibi olan Linux kullanıcısıyla çalışan ayrı
 //! bir servistir (`pixpanel-node-<kimlik>.service`). Uygulama panelin verdiği
@@ -22,6 +25,34 @@ const PORT_BASE: i64 = 20000;
 
 const STARTER_SERVER: &str = include_str!("templates/node-server.js");
 const STARTER_PACKAGE: &str = include_str!("templates/node-package.json");
+const STARTER_PYTHON: &str = include_str!("templates/python-app.py");
+/// Python sitelerinin sanal ortamı; site klasörünün içindedir ve sitenin kullanıcısına aittir.
+pub const VENV_DIR: &str = ".venv";
+const PYTHON_DEFAULT_COMMAND: &str = "python app.py";
+
+/// Site türü bir uygulama mı (kendi süreciyle çalışan, isteklerin porta iletildiği site)?
+pub fn is_app(kind: &str) -> bool {
+    matches!(kind, "node" | "python")
+}
+
+/// Türün kullanıcıya gösterilen adı.
+pub fn runtime_name(kind: &str) -> &'static str {
+    if kind == "python" { "Python" } else { "Node.js" }
+}
+
+/// Sistemdeki Python sürümü (ör. `3.13`); sanal ortam desteği (python3-venv) kurulu değilse boş.
+pub fn python_versions() -> Vec<String> {
+    let Ok(target) = std::fs::canonicalize("/usr/bin/python3") else { return Vec::new() };
+    let Some(version) = target.file_name().and_then(|name| name.to_str()).and_then(|name| name.strip_prefix("python")).map(str::to_string) else { return Vec::new() };
+    let valid = !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit() || byte == b'.');
+    if valid && Path::new(&format!("/usr/lib/python{version}/ensurepip")).is_dir() { vec![version] } else { Vec::new() }
+}
+
+/// Yeni bir Python sitesinin başlangıç ayarları.
+pub fn python_defaults() -> AppResult<NodeSettings> {
+    let version = python_versions().into_iter().next().ok_or_else(|| AppError::bad("Python kurulu değil; önce Bileşenler sayfasından kurun"))?;
+    Ok(NodeSettings { version, command: PYTHON_DEFAULT_COMMAND.into(), ..NodeSettings::default() })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnvVar {
@@ -74,10 +105,18 @@ pub fn bin_dir(version: &str) -> PathBuf {
 }
 
 impl NodeSettings {
-    pub fn validate(&self) -> AppResult<()> {
-        validate_version(&self.version)?;
-        if !installed_versions().contains(&self.version) {
-            return Err(AppError::bad(format!("Node.js {} kurulu değil; önce Bileşenler sayfasından kurun", self.version)));
+    /// `kind`: sitenin türü (`node` ya da `python`); sürüm ona göre denetlenir.
+    pub fn validate(&self, kind: &str) -> AppResult<()> {
+        if kind == "python" {
+            // Python sürümü sistemden gelir; ayardaki değer bilgi içindir ve kurulu olanla eşleşmelidir.
+            if !python_versions().contains(&self.version) {
+                return Err(AppError::bad("Python kurulu değil; önce Bileşenler sayfasından kurun"));
+            }
+        } else {
+            validate_version(&self.version)?;
+            if !installed_versions().contains(&self.version) {
+                return Err(AppError::bad(format!("Node.js {} kurulu değil; önce Bileşenler sayfasından kurun", self.version)));
+            }
         }
         let command = self.command.trim();
         if command.is_empty() || command.len() > 500 || command.chars().any(char::is_control) {
@@ -94,7 +133,7 @@ impl NodeSettings {
             if !key_ok {
                 return Err(AppError::bad(format!("Geçersiz ortam değişkeni adı: {}", variable.key)));
             }
-            if matches!(variable.key.as_str(), "PORT" | "HOST" | "PATH" | "HOME") {
+            if matches!(variable.key.as_str(), "PORT" | "HOST" | "PATH" | "HOME" | "VIRTUAL_ENV") {
                 return Err(AppError::bad(format!("{} değişkenini panel belirler; elle tanımlanamaz", variable.key)));
             }
             if variable.value.len() > 4096 || variable.value.chars().any(char::is_control) {
@@ -130,18 +169,25 @@ fn env_line(variable: &EnvVar) -> String {
     format!("{}=\"{}\"\n", variable.key, variable.value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings: &NodeSettings) -> String {
+fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings: &NodeSettings, kind: &str) -> String {
+    // Çalışma ortamına özel satırlar: Node.js'te panelin kurduğu sürüm, Python'da sitenin sanal ortamı.
+    let (bin, runtime_env) = if kind == "python" {
+        let venv = root.join(VENV_DIR);
+        (venv.join("bin"), format!("Environment=PYTHONUNBUFFERED=1\nEnvironment=VIRTUAL_ENV={}", venv.display()))
+    } else {
+        (bin_dir(&settings.version), "Environment=NODE_ENV=production".to_string())
+    };
     let mut unit = format!(
         "# PixPanel tarafından üretildi ({domain}). Elle yapılan değişiklikler kaybolur.\n\
          [Unit]\n\
-         Description=PixPanel Node.js uygulaması: {domain}\n\
+         Description=PixPanel {runtime} uygulaması: {domain}\n\
          After=network.target\n\n\
          [Service]\n\
          Type=simple\n\
          User={name}\n\
          Group={name}\n\
          WorkingDirectory={root}\n\
-         Environment=NODE_ENV=production\n\
+         {runtime_env}\n\
          Environment=PORT={port}\n\
          Environment=HOST=127.0.0.1\n\
          Environment=HOME={home}\n\
@@ -158,7 +204,8 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
         root = root.display(),
         port = port(site_id),
         home = user.home.display(),
-        bin = bin_dir(&settings.version).display(),
+        bin = bin.display(),
+        runtime = runtime_name(kind),
         env = config_file(site_id, "env").display(),
         script = config_file(site_id, "sh").display(),
     );
@@ -170,12 +217,24 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
 }
 
 /// Klasörde henüz bir uygulama yoksa, hemen çalışan küçük bir örnek bırakır.
-async fn write_starter(user: &SysUser, root: &Path, domain: &str) -> AppResult<()> {
-    if root.join("package.json").exists() || root.join("server.js").exists() {
-        return Ok(());
-    }
+async fn write_starter(user: &SysUser, root: &Path, domain: &str, kind: &str) -> AppResult<()> {
+    let files: Vec<(&str, String)> = if kind == "python" {
+        // Sanal ortam yoksa kurulur; uygulamanın bağımlılıkları sistemin Python'una karışmaz.
+        if !root.join(VENV_DIR).join("bin/python").exists() {
+            let output = runas::output(runas::command(user, root, "python3", &["-m", "venv", VENV_DIR]), Duration::from_secs(180)).await?;
+            if !output.success() {
+                return Err(AppError::internal(format!("Python sanal ortamı kurulamadı: {}", output.stderr.trim())));
+            }
+        }
+        let has_app = ["app.py", "main.py", "manage.py", "wsgi.py", "asgi.py", "requirements.txt", "pyproject.toml"].iter().any(|name| root.join(name).exists());
+        if has_app { Vec::new() } else { vec![("app.py", STARTER_PYTHON.replace("{{domain}}", domain))] }
+    } else if root.join("package.json").exists() || root.join("server.js").exists() {
+        Vec::new()
+    } else {
+        vec![("server.js", STARTER_SERVER.replace("{{domain}}", domain)), ("package.json", STARTER_PACKAGE.replace("{{domain}}", domain))]
+    };
     // Site klasörü kullanıcıya aittir; dosyalar onun kimliğiyle yazılır.
-    for (name, content) in [("server.js", STARTER_SERVER.replace("{{domain}}", domain)), ("package.json", STARTER_PACKAGE.replace("{{domain}}", domain))] {
+    for (name, content) in files {
         use tokio::io::AsyncWriteExt;
         let mut cmd = runas::command(user, root, "tee", &["--", name]);
         cmd.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
@@ -190,16 +249,16 @@ async fn write_starter(user: &SysUser, root: &Path, domain: &str) -> AppResult<(
 }
 
 /// Sitenin servisini yazar ve (yeniden) başlatır.
-pub async fn apply(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings: &NodeSettings) -> AppResult<()> {
-    settings.validate()?;
-    write_starter(user, root, domain).await?;
+pub async fn apply(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings: &NodeSettings, kind: &str) -> AppResult<()> {
+    settings.validate(kind)?;
+    write_starter(user, root, domain, kind).await?;
     std::fs::create_dir_all(CONFIG_DIR)?;
     // Ortam değişkenleri parola içerebildiğinden dosyayı yalnızca root okur (systemd root olarak okur).
     let env: String = settings.env.iter().map(env_line).collect();
     atomic_write(&config_file(site_id, "env"), env.as_bytes(), 0o600)?;
     let script = format!("#!/bin/sh\n# PixPanel tarafından üretildi ({domain}).\n{}\n", settings.command.trim());
     atomic_write(&config_file(site_id, "sh"), script.as_bytes(), 0o755)?;
-    atomic_write(&unit_path(site_id), render_unit(site_id, domain, user, root, settings).as_bytes(), 0o644)?;
+    atomic_write(&unit_path(site_id), render_unit(site_id, domain, user, root, settings, kind).as_bytes(), 0o644)?;
 
     let unit = unit_name(site_id);
     exec::run_ok("systemctl", &["daemon-reload"]).await?;
@@ -253,7 +312,7 @@ pub async fn action(site_id: i64, action: &str) -> AppResult<()> {
         return Err(AppError::bad("Geçersiz işlem"));
     }
     if !unit_path(site_id).exists() {
-        return Err(AppError::bad("Bu sitenin Node.js servisi henüz oluşturulmadı"));
+        return Err(AppError::bad("Bu sitenin uygulama servisi henüz oluşturulmadı"));
     }
     exec::run_with_timeout("systemctl", &[action, "--", &unit_name(site_id)], Duration::from_secs(60)).await.and_then(|output| {
         if output.success() { Ok(()) } else { Err(AppError::bad(format!("Servis {action} işlemi başarısız: {}", output.stderr.trim()))) }

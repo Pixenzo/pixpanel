@@ -246,7 +246,7 @@ export interface ComponentStatus {
   running: boolean;
 }
 
-export type SiteKind = "php" | "static" | "proxy" | "node";
+export type SiteKind = "php" | "static" | "proxy" | "node" | "python";
 
 export interface NodeSettings {
   version: string;
@@ -382,6 +382,8 @@ export interface SiteOptions {
   owners: { id: number; username: string }[];
   php_defaults: Record<string, PhpGlobal>;
   node_versions: string[];
+  /** Sistemdeki Python sürümü; kurulu değilse boş. */
+  python_versions: string[];
   /** Hesabın sitelerini bağlayabileceği sunucu adresleri. */
   ips: { address: string; label: string; user_id: number | null }[];
 }

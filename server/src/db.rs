@@ -511,6 +511,17 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE account_usage ADD COLUMN warned_level INTEGER NOT NULL DEFAULT 0;
     "#,
+    // 27: site türlerine "python" eklenir. SQLite denetim kısıtını yerinde değiştiremez; tabloyu
+    //     yeniden kurmak ise ona bağlı dokuz tabloyu taşımayı gerektirirdi. Diskteki veriyi
+    //     etkilemeyen bu tür değişiklikler için SQLite'ın belgelediği yol izlenir: tablonun
+    //     kayıtlı tanımı düzeltilir (göç yürütücüsü ardından şema sürümünü artırır).
+    r#"
+    PRAGMA writable_schema = ON;
+    UPDATE sqlite_master
+       SET sql = replace(sql, 'CHECK (kind IN (''php'', ''static'', ''proxy'', ''node''))', 'CHECK (kind IN (''php'', ''static'', ''proxy'', ''node'', ''python''))')
+     WHERE type = 'table' AND name = 'sites';
+    PRAGMA writable_schema = OFF;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";
@@ -586,8 +597,20 @@ fn migrate(conn: &mut Connection) -> anyhow::Result<()> {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)
             .with_context(|| format!("şema göçü {} uygulanamadı", index + 1))?;
+        if sql.contains("writable_schema") {
+            // Tablo tanımı elle düzeltildi: bağlantıların şemayı yeniden okuması için sürüm artırılır
+            // ve düzeltmenin gerçekten uygulandığı, veritabanının sağlam kaldığı doğrulanır.
+            let version: i64 = tx.pragma_query_value(None, "schema_version", |row| row.get(0))?;
+            tx.pragma_update(None, "schema_version", version + 1)?;
+            let definition: String = tx.query_row("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sites'", [], |row| row.get(0))?;
+            anyhow::ensure!(definition.contains("'python'"), "şema göçü {}: sites tablosunun tanımı beklenen biçimde değil", index + 1);
+        }
         tx.pragma_update(None, "user_version", index + 1)?;
         tx.commit()?;
+        if sql.contains("writable_schema") {
+            let check: String = conn.pragma_query_value(None, "integrity_check", |row| row.get(0))?;
+            anyhow::ensure!(check == "ok", "şema göçü {} sonrası bütünlük denetimi başarısız: {check}", index + 1);
+        }
         tracing::info!(version = index + 1, "şema göçü uygulandı");
     }
     Ok(())

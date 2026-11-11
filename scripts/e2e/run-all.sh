@@ -9,7 +9,7 @@ HOST=root@192.168.1.25
 HERE="$ROOT/scripts/e2e"
 
 # Test makinesinin içinde koşanlar (panele yerel adresten bağlanırlar).
-REMOTE=(features mail dbtools webmail node ftp dns twofactor panelcert redis backup events health wordpress packages backup-mine access stats metrics backup-ftp templates cli ips redis-account impersonate rules clone branding)
+REMOTE=(features mail dbtools webmail node ftp dns twofactor panelcert redis backup events health wordpress packages backup-mine access stats metrics backup-ftp templates cli ips redis-account impersonate rules clone branding python)
 # Geliştirme makinesinde koşanlar (bağlantıları dışarıdan denerler).
 LOCAL=(firewall fail2ban update)
 

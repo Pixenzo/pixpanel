@@ -209,7 +209,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 - SSH ile başka sunucudan çekme (rsync + döküm); Plesk, cPanel ve HestiaCP yedeklerinden içe aktarma; posta kutularını IMAP ile taşıma (`imapsync`).
 - **Not:** kaynak biçimlerinin her biri ayrı bir araştırma işidir; önce SSH ile çekme yapılır.
 
-### 16. Python uygulamaları — O (devre uygun)
+### 16. Python uygulamaları — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: `uv` ile çoklu sürüm)
 
 - Node.js modülünün eşleniği: sürüm (pyenv yerine `uv` ile yönetilen sürümler), sanal ortam, gunicorn/uvicorn, systemd servisi.
 - **Örnek al:** `hosting/node.rs`, `api/sites.rs` içindeki Node.js uçları, `web/src/pages/SiteNode.tsx`.

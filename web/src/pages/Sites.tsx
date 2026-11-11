@@ -33,11 +33,13 @@ export const kindLabels: Record<SiteKind, string> = {
   static: "Statik",
   proxy: "Ters vekil",
   node: "Node.js",
+  python: "Python",
 };
 
 const kindChoices: { id: SiteKind; title: string; description: string }[] = [
   { id: "php", title: "PHP", description: "WordPress, Laravel ve diğer PHP uygulamaları" },
   { id: "node", title: "Node.js", description: "Express, Next.js, NestJS gibi Node.js uygulamaları" },
+  { id: "python", title: "Python", description: "Flask, Django, FastAPI gibi Python uygulamaları" },
   { id: "static", title: "Statik", description: "Yalnızca HTML, CSS ve JavaScript dosyaları" },
   { id: "proxy", title: "Ters vekil", description: "Başka bir adreste ya da portta çalışan uygulamaya yönlendirir" },
 ];
@@ -107,6 +109,7 @@ function CreateSiteModal({
 
   const phpMissing = kind === "php" && options.php_versions.length === 0;
   const nodeMissing = kind === "node" && options.node_versions.length === 0;
+  const pythonMissing = kind === "python" && options.python_versions.length === 0;
 
   return (
     <Modal
@@ -117,7 +120,7 @@ function CreateSiteModal({
       footer={
         <>
           <Button onClick={onClose}>{t("Vazgeç")}</Button>
-          <Button variant="primary" type="submit" form="create-site" loading={create.isPending} disabled={phpMissing || nodeMissing}>
+          <Button variant="primary" type="submit" form="create-site" loading={create.isPending} disabled={phpMissing || nodeMissing || pythonMissing}>
             {t("Siteyi ekle")}
           </Button>
         </>
@@ -245,6 +248,22 @@ function CreateSiteModal({
             </Select>
           ))}
 
+        {kind === "python" &&
+          (pythonMissing ? (
+            <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+              {t("Python henüz kurulu değil.")}{" "}
+              <Link to="/components" className="font-medium underline">
+                {t("Bileşenler sayfasından kurun")}
+              </Link>
+            </p>
+          ) : (
+            <p className="text-[13px] text-ink-2">
+              {t("Site, Python {version} ve kendi sanal ortamıyla açılır; hemen çalışan örnek bir uygulama bırakılır. Başlatma komutunu ve bağımlılıkları sonra ayarlarsınız.", {
+                version: options.python_versions[0],
+              })}
+            </p>
+          ))}
+
         {kind === "proxy" && (
           <Input
             label={t("Hedef adres")}
@@ -311,6 +330,7 @@ export function SiteToolGrid({ site, summary, options }: { site: Site; summary?:
 export function siteKindLabel(site: Site): string {
   if (site.kind === "php") return `PHP ${site.php_version}`;
   if (site.kind === "node") return `Node.js ${site.node.version}`;
+  if (site.kind === "python") return `Python ${site.node.version}`;
   return t(kindLabels[site.kind]);
 }
 

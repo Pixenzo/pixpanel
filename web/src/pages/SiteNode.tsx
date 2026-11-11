@@ -148,13 +148,17 @@ function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) 
     <Panel title={t("Uygulama ayarları")}>
       <form onSubmit={submit} className="flex max-w-2xl flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Select label={t("Node.js sürümü")} value={settings.version} onChange={(event) => set("version", event.target.value)}>
-            {versions.map((version) => (
-              <option key={version} value={version}>
-                Node.js {version}
-              </option>
-            ))}
-          </Select>
+          {site.kind === "python" ? (
+            <Input label={t("Python sürümü")} value={`Python ${settings.version}`} readOnly disabled hint={t("Sunucudaki Python; site kendi sanal ortamını (.venv) kullanır.")} />
+          ) : (
+            <Select label={t("Node.js sürümü")} value={settings.version} onChange={(event) => set("version", event.target.value)}>
+              {versions.map((version) => (
+                <option key={version} value={version}>
+                  Node.js {version}
+                </option>
+              ))}
+            </Select>
+          )}
           <Input
             label={t("Bellek sınırı (MB)")}
             type="number"
@@ -168,7 +172,11 @@ function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) 
           label={t("Başlatma komutu")}
           value={settings.command}
           onChange={(event) => set("command", event.target.value)}
-          hint={t("Site klasöründe, sitenin kullanıcısıyla çalışır. Örnek: npm start ya da node dist/server.js")}
+          hint={
+            site.kind === "python"
+              ? t("Site klasöründe, sanal ortam etkinken çalışır. Örnek: gunicorn app:app --bind 127.0.0.1:$PORT ya da uvicorn app:app --host 127.0.0.1 --port $PORT")
+              : t("Site klasöründe, sitenin kullanıcısıyla çalışır. Örnek: npm start ya da node dist/server.js")
+          }
           className="font-mono text-[13px]"
           spellCheck={false}
           required
@@ -203,7 +211,9 @@ function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) 
             </Button>
           </div>
           <p className="max-w-[75ch] text-[12.5px] text-ink-3">
-            {t("PORT ve HOST değişkenlerini panel belirler; uygulamanız PORT değişkenindeki portu dinlemelidir. NODE_ENV tanımlamazsanız production olur.")}
+            {site.kind === "python"
+              ? t("PORT ve HOST değişkenlerini panel belirler; uygulamanız PORT değişkenindeki portu dinlemelidir.")
+              : t("PORT ve HOST değişkenlerini panel belirler; uygulamanız PORT değişkenindeki portu dinlemelidir. NODE_ENV tanımlamazsanız production olur.")}
           </p>
         </fieldset>
         {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
@@ -286,12 +296,53 @@ function NpmPanel({ site }: { site: Site }) {
   );
 }
 
+/** Python sitesinin bağımlılıklarını (requirements.txt) sanal ortama kurar. */
+function PipPanel({ site }: { site: Site }) {
+  const feedback = useFeedback();
+  const queryClient = useQueryClient();
+  const [restart, setRestart] = useState(true);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const run = useMutation({
+    mutationFn: () => api.post<{ job_id: number }>(`/sites/${site.id}/node/run`, { script: "install", restart }),
+    onSuccess: (result) => {
+      setJobId(result.job_id);
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error) => feedback.error(error),
+  });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["site-node", site.id] });
+  return (
+    <Panel title={t("Bağımlılıklar")}>
+      <p className="mb-3 max-w-[75ch] text-ink-2">
+        {t("Uygulamanızın gereksinimlerini site klasöründeki requirements.txt dosyasına yazın. Paketler yalnızca bu sitenin sanal ortamına kurulur; sunucudaki öteki uygulamaları etkilemez.")}
+      </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button loading={run.isPending} onClick={() => run.mutate()} className="font-mono text-[13px]">
+          pip install -r requirements.txt
+        </Button>
+        <Checkbox label={t("Komut bitince uygulamayı yeniden başlat")} checked={restart} onChange={(event) => setRestart(event.target.checked)} />
+      </div>
+      <Modal
+        open={jobId !== null}
+        onClose={() => {
+          setJobId(null);
+          refresh();
+        }}
+        title="pip install"
+        wide
+      >
+        {jobId !== null && <JobLog jobId={jobId} onDone={refresh} />}
+      </Modal>
+    </Panel>
+  );
+}
+
 export function NodeSection({ site, options }: { site: Site; options: SiteOptions }) {
   return (
     <div className="flex flex-col gap-4">
       <StatusPanel site={site} />
       <SettingsPanel key={JSON.stringify(site.node)} site={site} options={options} />
-      <NpmPanel site={site} />
+      {site.kind === "python" ? <PipPanel site={site} /> : <NpmPanel site={site} />}
     </div>
   );
 }

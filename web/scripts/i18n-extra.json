@@ -164,7 +164,8 @@
     "Şifreli ve artımlı yedekler; yerel klasöre, SFTP sunucusuna ya da S3 uyumlu depoya.",
     "pure-ftpd. Site başına, o sitenin klasörüne hapsedilmiş FTP hesapları açılır.",
     "Posta kutularına tarayıcıdan erişim. Panel adresinin /webmail/ yolunda yayınlanır.",
-    "Postfix (SMTP), Dovecot (IMAP, filtreler) ve Rspamd (istenmeyen posta süzgeci, DKIM)."
+    "Postfix (SMTP), Dovecot (IMAP, filtreler) ve Rspamd (istenmeyen posta süzgeci, DKIM).",
+    "Python uygulamaları (Flask, Django, FastAPI) için sanal ortam desteği. Her site kendi bağımlılıklarını ayrı kurar."
   ],
   "server/src/notify.rs (bildirim olayları, NotificationSettings.tsx içinde t(item.label))": [
     "Yayınlama başarısız olduğunda",
@@ -353,7 +354,9 @@
     "WordPress, Laravel ve diğer PHP uygulamaları",
     "Express, Next.js, NestJS gibi Node.js uygulamaları",
     "Yalnızca HTML, CSS ve JavaScript dosyaları",
-    "Başka bir adreste ya da portta çalışan uygulamaya yönlendirir"
+    "Başka bir adreste ya da portta çalışan uygulamaya yönlendirir",
+    "Python",
+    "Flask, Django, FastAPI gibi Python uygulamaları"
   ],
   "web/src/pages/SiteWordPress.tsx": [
     "Yalnızca güvenlik ve bakım sürümleri",

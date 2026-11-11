@@ -96,10 +96,10 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
       status: memory ? t("Sürüm {version} · {memory} bellek", { version: site.php_version ?? "", memory }) : t("Sürüm {version}", { version: site.php_version ?? "" }),
     });
   }
-  if (site.kind === "node") {
+  if (site.kind === "node" || site.kind === "python") {
     tools.push({
       id: "node",
-      label: t("Node.js uygulaması"),
+      label: site.kind === "python" ? t("Python uygulaması") : t("Node.js uygulaması"),
       icon: Hexagon,
       to: `${base}/node`,
       status: t("Sürüm {version} · {command}", { version: site.node.version, command: site.node.command }),

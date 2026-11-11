@@ -566,6 +566,7 @@ async fn check_site_responses(state: &AppState, batch: &mut Batch, sites: &[Site
         let Some(site) = sites.iter().find(|site| site.id == id) else { continue };
         let hint = match site.kind.as_str() {
             "node" => "Node.js uygulaması çalışmıyor ya da yanıt vermiyor olabilir.",
+            "python" => "Python uygulaması çalışmıyor ya da yanıt vermiyor olabilir.",
             "proxy" => "Yönlendirilen uygulama çalışmıyor ya da yanıt vermiyor olabilir.",
             "php" => "PHP uygulaması hata veriyor olabilir; sitenin hata günlüğüne bakın.",
             _ => "Web sunucusu bu siteyi sunamıyor.",

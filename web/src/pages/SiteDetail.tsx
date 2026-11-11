@@ -543,6 +543,7 @@ export function SiteDetailPage() {
     ...(data.kind === "php" ? [{ id: "wordpress", label: "WordPress", icon: PenLine }] : []),
     { id: "stats", label: t("İstatistikler"), icon: ChartColumn },
     ...(data.kind === "node" ? [{ id: "node", label: t("Node.js uygulaması"), icon: Hexagon }] : []),
+    ...(data.kind === "python" ? [{ id: "node", label: t("Python uygulaması"), icon: Hexagon }] : []),
     ...(data.kind === "proxy" ? [{ id: "proxy", label: t("Ters vekil"), icon: ArrowRightLeft }] : []),
     ...(data.kind !== "proxy" ? [{ id: "rules", label: t("Vekil kuralları"), icon: Route }] : []),
     ...(me.role !== "member" || me.permissions.includes("ssl") ? [{ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck }] : []),

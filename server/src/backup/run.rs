@@ -339,8 +339,8 @@ async fn recreate_site(state: &AppState, ctx: &JobCtx, manifest: &SiteManifest) 
         ("proxy", None) => return Err(AppError::bad("Yedekteki site ayarlarında hedef adres yok")),
         _ => None,
     };
-    if manifest.kind == "node" {
-        manifest.node.validate()?;
+    if node::is_app(&manifest.kind) {
+        manifest.node.validate(&manifest.kind)?;
     }
     let proxy_rules = sites::validate_proxy_rules(&manifest.proxy_rules)?;
 
@@ -443,7 +443,7 @@ async fn restore_site(state: &AppState, ctx: &JobCtx, target: &Target, snapshot:
 
 /// Node.js sitelerinde uygulama yeni dosyalarla yeniden başlatılır.
 async fn restart_app(ctx: &JobCtx, site: &Site) -> AppResult<()> {
-    if site.kind == "node" && site.status == "active" {
+    if node::is_app(&site.kind) && site.status == "active" {
         if let Err(err) = node::action(site.id, "restart").await {
             ctx.log(format!("UYARI: uygulama yeniden başlatılamadı: {err}"));
         }
