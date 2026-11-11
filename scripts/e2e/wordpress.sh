@@ -63,6 +63,10 @@ check "wp-config yalnızca sahibine ve web sunucusuna açık" "$(stat -c '%a %U 
 check "veritabanı parolası süreç listesine düşmedi" "$(grep -c "DB_PASSWORD" /home/$PX_USER/sites/$DOMAIN/public/wp-config.php)" 1
 check "panelden dosya düzenleme kapalı" "$(grep -c "DISALLOW_FILE_EDIT" /home/$PX_USER/sites/$DOMAIN/public/wp-config.php)" 1
 check "karşılama sayfası kaldırıldı" "$([ -e /home/$PX_USER/sites/$DOMAIN/public/index.html ] || echo yok)" yok
+check "WordPress şablonu kendiliğinden seçildi" "$(api GET /sites/$S | jget 'd["template"]')" wordpress
+check "xmlrpc kapalı" "$(site /xmlrpc.php -o /dev/null -w '%{http_code}')" 403
+mkdir -p /home/$PX_USER/sites/$DOMAIN/public/wp-content/uploads && echo '<?php echo "calisti";' > /home/$PX_USER/sites/$DOMAIN/public/wp-content/uploads/kabuk.php && chown -R $PX_USER:www-data /home/$PX_USER/sites/$DOMAIN/public/wp-content/uploads
+check "yüklenen dosyalar arasındaki PHP çalışmaz" "$(site /wp-content/uploads/kabuk.php -o /dev/null -w '%{http_code}')" 403
 check "veritabanı panelde kayıtlı" "$(api GET /databases | jget 'any(x["name"]=="wp_wp_e2e_test" for x in d["databases"])')" True
 check "ikinci kurulum reddedilir" "$(code POST /sites/$S/wordpress/install -d "$(body yonetici ali@ornek.com "$WP_PASS")")" 409
 

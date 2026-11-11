@@ -453,6 +453,10 @@ const MIGRATIONS: &[&str] = &[
     INSERT INTO backup_plans SELECT * FROM backup_plans_keep;
     DROP TABLE backup_plans_keep;
     "#,
+    // 20: site şablonu (uygulamaya göre hazır web sunucusu ayarı).
+    r#"
+    ALTER TABLE sites ADD COLUMN template TEXT NOT NULL DEFAULT 'default';
+    "#,
 ];
 
 #[derive(Clone)]

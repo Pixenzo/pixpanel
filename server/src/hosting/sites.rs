@@ -42,6 +42,8 @@ pub struct Site {
     pub node: NodeSettings,
     /// Yol bazlı vekil kuralları (ör. `/api/` → bir Docker konteyneri).
     pub proxy_rules: Vec<ProxyRule>,
+    /// Uygulamaya göre hazır web sunucusu ayarı (`default`, `wordpress`, `laravel`, `spa`, `clean_urls`).
+    pub template: String,
 }
 
 impl Site {
@@ -56,7 +58,7 @@ impl Site {
 
 const SITE_COLUMNS: &str = "s.id, s.user_id, u.username, s.domain, s.kind, s.public_dir, s.php_version,
      s.php_settings, s.proxy_target, s.proxy_websocket, s.ssl_mode, s.force_https, s.hsts,
-     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules";
+     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template";
 
 fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
     let php_settings: String = row.get(7)?;
@@ -80,6 +82,7 @@ fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
         created_at: row.get(15)?,
         node: serde_json::from_str(&row.get::<_, String>(16)?).unwrap_or_default(),
         proxy_rules: serde_json::from_str(&row.get::<_, String>(17)?).unwrap_or_default(),
+        template: row.get(18)?,
     })
 }
 
@@ -114,9 +117,10 @@ fn load_with_parent(db: &Db, id: i64) -> AppResult<Option<(Site, Option<i64>)>> 
     db.call(|conn| {
         let site = conn
             .query_row(
-                &format!("SELECT {SITE_COLUMNS}, u.parent_id FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = ?1"),
+                // Ek sütun adıyla okunur: sıra numarası, site sütunlarına ekleme yapıldıkça kayar.
+                &format!("SELECT {SITE_COLUMNS}, u.parent_id AS owner_parent_id FROM sites s JOIN users u ON u.id = s.user_id WHERE s.id = ?1"),
                 params![id],
-                |row| Ok((read_site(row)?, row.get::<_, Option<i64>>(18)?)),
+                |row| Ok((read_site(row)?, row.get::<_, Option<i64>>("owner_parent_id")?)),
             )
             .optional()?;
         match site {
@@ -326,12 +330,12 @@ pub fn save(db: &Db, site: &Site) -> AppResult<()> {
         tx.execute(
             "UPDATE sites SET kind = ?1, public_dir = ?2, php_version = ?3, php_settings = ?4, proxy_target = ?5,
                     proxy_websocket = ?6, ssl_mode = ?7, force_https = ?8, hsts = ?9, nginx_custom = ?10, status = ?11,
-                    node_settings = ?12, proxy_rules = ?13
-             WHERE id = ?14",
+                    node_settings = ?12, proxy_rules = ?13, template = ?14
+             WHERE id = ?15",
             params![
                 site.kind, site.public_dir, site.php_version, settings, site.proxy_target, site.proxy_websocket,
                 site.ssl_mode, site.force_https, site.hsts, site.nginx_custom, site.status, node_settings, proxy_rules,
-                site.id
+                site.template, site.id
             ],
         )?;
         tx.execute("DELETE FROM site_aliases WHERE site_id = ?1", params![site.id])?;
@@ -400,6 +404,8 @@ pub async fn provision(site: &Site) -> AppResult<()> {
         suspended: site.status != "active",
         custom: &site.nginx_custom,
         proxy_rules: &site.proxy_rules,
+        // Türü değişmiş bir sitede eski türün şablonu kalmış olabilir; geçersizse varsayılan uygulanır.
+        template: if nginx::template_allowed(&site.kind, &site.template) { &site.template } else { "default" },
     })
     .await?;
 

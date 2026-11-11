@@ -278,6 +278,7 @@ struct UpdateBody {
     status: Option<String>,
     node: Option<NodeSettings>,
     proxy_rules: Option<Vec<ProxyRule>>,
+    template: Option<String>,
 }
 
 async fn update(
@@ -320,6 +321,12 @@ async fn update(
     }
     if let Some(hsts) = body.hsts {
         site.hsts = hsts;
+    }
+    if let Some(template) = body.template {
+        if !crate::hosting::nginx::template_allowed(&site.kind, &template) {
+            return Err(AppError::bad("Bu şablon bu site türünde kullanılamaz"));
+        }
+        site.template = template;
     }
     if let Some(custom) = body.nginx_custom {
         // Ham nginx yönergeleri sunucunun tamamını etkileyebilir.

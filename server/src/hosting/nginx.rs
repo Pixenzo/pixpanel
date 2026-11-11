@@ -46,6 +46,45 @@ pub struct SiteConfig<'a> {
     /// Yöneticinin eklediği ham nginx yönergeleri.
     pub custom: &'a str,
     pub proxy_rules: &'a [ProxyRule],
+    /// Uygulamaya göre hazır ayar (bkz. `TEMPLATES`).
+    pub template: &'a str,
+}
+
+/// Site şablonları: (kimlik, geçerli olduğu site türü). Şablon, sitenin sahibinin seçebildiği
+/// hazır ve denetlenmiş bir ayar kümesidir; serbest metin içermez.
+pub const TEMPLATES: &[(&str, &str)] = &[
+    ("default", "php"),
+    ("wordpress", "php"),
+    ("laravel", "php"),
+    ("default", "static"),
+    ("spa", "static"),
+    ("clean_urls", "static"),
+];
+
+/// Şablon bu site türünde kullanılabilir mi?
+pub fn template_allowed(kind: &str, template: &str) -> bool {
+    template == "default" || TEMPLATES.iter().any(|(id, for_kind)| *id == template && *for_kind == kind)
+}
+
+/// Şablonun PHP sitelerine eklediği kurallar. PHP'yi çalıştıran konumdan önce yazılır:
+/// nginx düzenli ifadeli konumlardan ilk eşleşeni kullanır.
+fn php_template_rules(template: &str) -> &'static str {
+    match template {
+        "wordpress" => {
+            "    # WordPress: yüklenen dosyalar arasına bırakılan PHP çalıştırılmaz.\n\
+             \x20   location ~* ^/wp-content/(?:uploads|files)/.*\\.php$ {\n        return 403;\n    }\n\
+             \x20   # Parola deneme ve yükseltme saldırılarının başlıca kapısı; modern eklentiler kullanmaz.\n\
+             \x20   location = /xmlrpc.php {\n        return 403;\n    }\n\
+             \x20   # Sürümü ve yapılandırmayı ele veren dosyalar.\n\
+             \x20   location ~* ^/(?:wp-config-sample\\.php|readme\\.html|license\\.txt|wp-content/debug\\.log)$ {\n        return 404;\n    }\n"
+        }
+        "laravel" => {
+            "    # Laravel: yayın klasörü yanlışlıkla proje kökü seçilirse uygulamanın iç klasörleri sunulmaz.\n\
+             \x20   location ~* ^/(?:storage|vendor|bootstrap|database|config|resources|tests)/ {\n        return 404;\n    }\n\
+             \x20   location ~* ^/(?:artisan|\\.env.*)$ {\n        return 404;\n    }\n"
+        }
+        _ => "",
+    }
 }
 
 pub enum Backend<'a> {
@@ -342,12 +381,19 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
             );
             match php_socket {
                 Some(socket) => {
+                    out.push_str(php_template_rules(site.template));
                     out.push_str("    location / {\n        try_files $uri $uri/ /index.php?$args;\n    }\n");
                     out.push_str("    location ~ [^/]\\.php(/|$) {\n        include snippets/fastcgi-php.conf;\n");
                     let _ = writeln!(out, "        fastcgi_pass unix:{socket};");
                     out.push_str("        fastcgi_read_timeout 300s;\n    }\n");
                 }
-                None => out.push_str("    location / {\n        try_files $uri $uri/ =404;\n    }\n"),
+                None => out.push_str(match site.template {
+                    // Tek sayfalık uygulama: bilinmeyen her adres uygulamanın kendisine düşer.
+                    "spa" => "    location / {\n        try_files $uri $uri/ /index.html;\n    }\n",
+                    // Uzantısız adresler: /hakkinda isteği hakkinda.html dosyasını sunar.
+                    "clean_urls" => "    location / {\n        try_files $uri $uri.html $uri/ =404;\n    }\n",
+                    _ => "    location / {\n        try_files $uri $uri/ =404;\n    }\n",
+                }),
             }
             out.push_str(
                 "    location ~* \\.(?:css|js|mjs|jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$ {\n        expires 30d;\n    }\n",

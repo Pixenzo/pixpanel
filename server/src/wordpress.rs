@@ -489,6 +489,22 @@ pub async fn install(ctx: &JobCtx, state: &AppState, site: &Site, request: &Inst
     ctx.log(format!("Veritabanı: {database}"));
 
     let outcome = install_files(ctx, site, &wp, request, &database, &db_user, &db_password).await;
+    if outcome.is_ok() {
+        // Site WordPress'e özgü korumalarla sunulur (yüklenen dosyalarda PHP çalışmaz, xmlrpc kapalıdır).
+        let mut updated = site.clone();
+        updated.template = "wordpress".into();
+        let _guard = state.sys_lock.lock().await;
+        let applied = async {
+            crate::hosting::sites::save(&state.db, &updated)?;
+            crate::hosting::sites::provision(&updated).await
+        }
+        .await;
+        match applied {
+            Ok(()) => ctx.log("WordPress şablonu uygulandı"),
+            // Şablon uygulanamasa da kurulum geçerlidir; elle seçilebilir.
+            Err(err) => ctx.log(format!("UYARI: WordPress şablonu uygulanamadı: {err}")),
+        }
+    }
     if outcome.is_err() {
         // Yarım kurulum, sonraki denemenin "zaten kurulu" ya da "klasör boş değil" diye
         // reddedilmesine yol açmasın. Klasör kurulumdan önce boştu (karşılama sayfası dışında);

@@ -308,6 +308,8 @@ export interface Site {
   created_at: number;
   node: NodeSettings;
   proxy_rules: ProxyRule[];
+  /** Uygulamaya göre hazır web sunucusu ayarı. */
+  template: string;
 }
 
 export type DbEngine = "mariadb" | "postgresql";

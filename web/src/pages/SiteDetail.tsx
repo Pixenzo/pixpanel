@@ -88,6 +88,9 @@ function GeneralTab({ site }: { site: Site }) {
   const navigate = useNavigate();
   const [aliases, setAliases] = useState(site.aliases.join("\n"));
   const [publicDir, setPublicDir] = useState(site.public_dir);
+  const templates = SITE_TEMPLATES.filter((item) => item.kind === site.kind);
+  // Site türü değişmişse eski türün şablonu kalmış olabilir; o durumda varsayılan gösterilir.
+  const [template, setTemplate] = useState(templates.some((item) => item.id === site.template) ? site.template : "default");
   const save = useSaveSite(site, t("Site ayarları kaydedildi"));
   const status = useSaveSite(site, site.status === "active" ? t("Site askıya alındı") : t("Site yeniden yayında"));
 
@@ -126,6 +129,7 @@ function GeneralTab({ site }: { site: Site }) {
           save.mutate({
             aliases: aliases.split(/[\s,]+/).filter(Boolean),
             public_dir: site.kind === "php" || site.kind === "static" ? publicDir : undefined,
+            template: templates.length > 0 ? template : undefined,
           })
         }
       >
@@ -147,6 +151,20 @@ function GeneralTab({ site }: { site: Site }) {
             spellCheck={false}
             required
           />
+        )}
+        {templates.length > 0 && (
+          <Select
+            label={t("Uygulama şablonu")}
+            value={template}
+            onChange={(event) => setTemplate(event.target.value)}
+            hint={t(templates.find((item) => item.id === template)?.hint ?? "")}
+          >
+            {templates.map((item) => (
+              <option key={item.id} value={item.id}>
+                {t(item.label)}
+              </option>
+            ))}
+          </Select>
         )}
       </SectionForm>
 
@@ -456,6 +474,21 @@ function OverviewSection({ site, options }: { site: Site; options: SiteOptions }
     </div>
   );
 }
+
+/** Site şablonları: sunucudaki listeyle (`nginx::TEMPLATES`) aynı kimlikler. */
+const SITE_TEMPLATES: { id: string; kind: string; label: string; hint: string }[] = [
+  { id: "default", kind: "php", label: "Genel PHP uygulaması", hint: "Bulunamayan adresler index.php dosyasına yönlenir; çoğu PHP uygulaması için uygundur." },
+  {
+    id: "wordpress",
+    kind: "php",
+    label: "WordPress",
+    hint: "Yüklenen dosyalar arasındaki PHP çalıştırılmaz, xmlrpc.php kapatılır, sürümü ele veren dosyalar gizlenir.",
+  },
+  { id: "laravel", kind: "php", label: "Laravel / Symfony", hint: "Uygulamanın iç klasörleri (storage, vendor, config…) ve .env dosyası hiçbir koşulda sunulmaz." },
+  { id: "default", kind: "static", label: "Durağan site", hint: "Dosyalar olduğu gibi sunulur; olmayan adres 404 döner." },
+  { id: "spa", kind: "static", label: "Tek sayfalık uygulama (React, Vue…)", hint: "Bilinmeyen her adres index.html dosyasına düşer; yönlendirmeyi uygulama yapar." },
+  { id: "clean_urls", kind: "static", label: "Uzantısız adresler", hint: "/hakkinda adresi hakkinda.html dosyasını sunar." },
+];
 
 interface Section {
   id: string;

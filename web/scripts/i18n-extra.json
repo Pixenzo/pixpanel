@@ -414,5 +414,19 @@
     "Hafta",
     "Ay",
     "Yıl"
+  ],
+  "web/src/pages/SiteDetail.tsx": [
+    "Genel PHP uygulaması",
+    "Bulunamayan adresler index.php dosyasına yönlenir; çoğu PHP uygulaması için uygundur.",
+    "WordPress",
+    "Yüklenen dosyalar arasındaki PHP çalıştırılmaz, xmlrpc.php kapatılır, sürümü ele veren dosyalar gizlenir.",
+    "Laravel / Symfony",
+    "Uygulamanın iç klasörleri (storage, vendor, config…) ve .env dosyası hiçbir koşulda sunulmaz.",
+    "Durağan site",
+    "Dosyalar olduğu gibi sunulur; olmayan adres 404 döner.",
+    "Tek sayfalık uygulama (React, Vue…)",
+    "Bilinmeyen her adres index.html dosyasına düşer; yönlendirmeyi uygulama yapar.",
+    "Uzantısız adresler",
+    "/hakkinda adresi hakkinda.html dosyasını sunar."
   ]
 }
