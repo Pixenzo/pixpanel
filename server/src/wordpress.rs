@@ -403,12 +403,16 @@ async fn create_database(state: &AppState, site: &Site) -> AppResult<(String, St
     let password = auth::random_password(24);
 
     dbms::create_database(engine, &name).await?;
+    // Sunucuda panelin bilmediği aynı adlı bir kullanıcı varsa oluşturma başarısız olur;
+    // geri alma o yabancı kullanıcıyı silmemeli. Bu yüzden neyin oluşturulduğu izlenir.
+    let mut user_created = false;
     let created = async {
         let database_id = state.db.call(|conn| {
             conn.execute("INSERT INTO databases (user_id, engine, name, created_at) VALUES (?1, 'mariadb', ?2, ?3)", params![site.user_id, name, now()])?;
             Ok(conn.last_insert_rowid())
         })?;
         dbms::create_user(engine, &name, "localhost", &password).await?;
+        user_created = true;
         let user_id = state.db.call(|conn| {
             conn.execute(
                 "INSERT INTO database_users (user_id, engine, name, host, created_at) VALUES (?1, 'mariadb', ?2, 'localhost', ?3)",
@@ -422,15 +426,17 @@ async fn create_database(state: &AppState, site: &Site) -> AppResult<(String, St
     }
     .await;
     if let Err(err) = created {
-        drop_database(state, &name).await;
+        drop_database(state, &name, user_created).await;
         return Err(err);
     }
     Ok((name.clone(), name, password))
 }
 
-/// Yarım kalan kurulumun veritabanını ve kullanıcısını geri alır.
-async fn drop_database(state: &AppState, name: &str) {
-    let _ = dbms::drop_user(Engine::Mariadb, name, "localhost").await;
+/// Yarım kalan kurulumun veritabanını ve (bu kurulum oluşturduysa) kullanıcısını geri alır.
+async fn drop_database(state: &AppState, name: &str, drop_user: bool) {
+    if drop_user {
+        let _ = dbms::drop_user(Engine::Mariadb, name, "localhost").await;
+    }
     let _ = dbms::drop_database(Engine::Mariadb, name).await;
     let _ = state.db.call(|conn| {
         conn.execute("DELETE FROM database_users WHERE engine = 'mariadb' AND name = ?1", params![name])?;
@@ -452,6 +458,30 @@ pub async fn check_installable(site: &Site) -> AppResult<()> {
     Ok(())
 }
 
+/// Aynı sitede aynı anda tek bir kurulum ya da güncelleme yürür: iki wp-cli süreci aynı
+/// dosyaları değiştirirse site bozulur, her biri ayrıca tam yedek alır.
+static BUSY_SITES: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+
+/// Sitenin meşgul işaretini tutar; düşünce işaret kalkar (görev paniklese bile).
+pub struct SiteLock(i64);
+
+impl SiteLock {
+    pub fn acquire(site: &Site) -> AppResult<Self> {
+        let mut busy = BUSY_SITES.lock().unwrap_or_else(|p| p.into_inner());
+        if busy.contains(&site.id) {
+            return Err(AppError::conflict("Bu sitede süren bir WordPress işlemi var; bitmesini bekleyin"));
+        }
+        busy.push(site.id);
+        Ok(Self(site.id))
+    }
+}
+
+impl Drop for SiteLock {
+    fn drop(&mut self) {
+        BUSY_SITES.lock().unwrap_or_else(|p| p.into_inner()).retain(|id| *id != self.0);
+    }
+}
+
 pub async fn install(ctx: &JobCtx, state: &AppState, site: &Site, request: &InstallRequest) -> AppResult<()> {
     let wp = Wp::for_site(site)?;
     ctx.log("Veritabanı oluşturuluyor");
@@ -460,9 +490,13 @@ pub async fn install(ctx: &JobCtx, state: &AppState, site: &Site, request: &Inst
 
     let outcome = install_files(ctx, site, &wp, request, &database, &db_user, &db_password).await;
     if outcome.is_err() {
-        // Yarım kurulum, sonraki denemenin "klasör boş değil" diye reddedilmesine yol açmasın.
-        ctx.log("Kurulum tamamlanamadı; veritabanı geri alınıyor");
-        drop_database(state, &database).await;
+        // Yarım kurulum, sonraki denemenin "zaten kurulu" ya da "klasör boş değil" diye
+        // reddedilmesine yol açmasın. Klasör kurulumdan önce boştu (karşılama sayfası dışında);
+        // bu yüzden içindeki her şey bu kurulumun bıraktığıdır.
+        ctx.log("Kurulum tamamlanamadı; indirilen dosyalar ve veritabanı geri alınıyor");
+        let clean = runas::command(&wp.user, &wp.docroot, "find", &[".", "-mindepth", "1", "-not", "-name", "index.html", "-delete"]);
+        let _ = runas::output(clean, Duration::from_secs(120)).await;
+        drop_database(state, &database, true).await;
     }
     outcome
 }
@@ -505,7 +539,9 @@ async fn install_files(ctx: &JobCtx, site: &Site, wp: &Wp, request: &InstallRequ
 pub fn start_update_job(state: &AppState, user_id: Option<i64>, site: Site, what: String) -> AppResult<i64> {
     let title = format!("WordPress güncellemesi: {}", site.domain);
     let job_state = state.clone();
+    let lock = SiteLock::acquire(&site)?;
     state.jobs.start("wordpress.update", &title, user_id, move |ctx| async move {
+        let _lock = lock;
         backup_before_update(&ctx, &job_state, &site).await?;
         update(&ctx, &site, &what).await?;
         let outcome = verify_after_update(&ctx, &site).await;
@@ -541,18 +577,12 @@ async fn backup_before_update(ctx: &JobCtx, state: &AppState, site: &Site) -> Ap
 /// Güncellemeden sonra siteyi sunucunun içinden yoklar; sunucu hatası dönüyorsa görev
 /// başarısız sayılır ki yönetici hemen fark edip az önce alınan yedeğe dönebilsin.
 async fn verify_after_update(ctx: &JobCtx, site: &Site) -> AppResult<()> {
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|err| AppError::internal(err.to_string()))?;
-    match client.get("http://127.0.0.1/").header("Host", site.domain.as_str()).send().await {
-        Ok(response) if response.status().is_server_error() => Err(AppError::internal(format!(
-            "Site güncellemeden sonra hata veriyor (HTTP {}). Yedekler sayfasından az önce alınan yedeğe dönebilirsiniz.",
-            response.status().as_u16()
+    match crate::uptime::probe(&site.domain, site.force_https && site.ssl_mode != "none", Duration::from_secs(20)).await {
+        Ok(status) if status >= 500 => Err(AppError::internal(format!(
+            "Site güncellemeden sonra hata veriyor (HTTP {status}). Yedekler sayfasından az önce alınan yedeğe dönebilirsiniz."
         ))),
-        Ok(response) => {
-            ctx.log(format!("Site yanıt veriyor (HTTP {}).", response.status().as_u16()));
+        Ok(status) => {
+            ctx.log(format!("Site yanıt veriyor (HTTP {status})."));
             Ok(())
         }
         Err(_) => {
@@ -695,8 +725,27 @@ pub async fn login_url(site: &Site) -> AppResult<String> {
         "user": admin_id,
     });
     wp.run_with_input(&["option", "update", LOGIN_OPTION, "--format=json", "--autoload=no", "--skip-plugins", "--skip-themes"], &record.to_string()).await?;
-    let base = wp.run_ok(&["option", "get", "siteurl", "--skip-plugins", "--skip-themes"]).await?;
-    Ok(format!("{}/?pixpanel_login={token}", base.trim_end_matches('/')))
+    let stored = wp.run_ok(&["option", "get", "siteurl", "--skip-plugins", "--skip-themes"]).await.unwrap_or_default();
+    Ok(format!("{}/?pixpanel_login={token}", login_base(&site.domain, &site.aliases, site.ssl_mode != "none", &stored)))
+}
+
+/// Giriş adresinin kökü. `siteurl` sitenin veritabanından gelir ve site sahibi onu
+/// istediği gibi değiştirebilir; adres panelde açıldığı için yalnızca sitenin kendi alan
+/// adlarından birini gösteren http(s) adresi kabul edilir (yoksa `javascript:` gibi bir
+/// değer, düğmeye basan yöneticinin oturumunda betik çalıştırırdı). Uymuyorsa adres
+/// panelin bildiği alan adından kurulur.
+fn login_base(domain: &str, aliases: &[String], secure: bool, stored: &str) -> String {
+    let stored = stored.trim().trim_end_matches('/');
+    let host_and_path = stored.strip_prefix("https://").or_else(|| stored.strip_prefix("http://"));
+    let trusted = host_and_path.is_some_and(|rest| {
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let plain = stored.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '/' | '.' | '-' | '_' | '~'));
+        plain && (host == domain || aliases.iter().any(|alias| alias == host))
+    });
+    if trusted {
+        return stored.to_string();
+    }
+    format!("{}://{domain}", if secure { "https" } else { "http" })
 }
 
 /// Dosyayı sitenin kullanıcısı olarak yazar (içerik `tee`nin girdisinden verilir).
@@ -785,6 +834,20 @@ mod tests {
         assert_eq!(auto_core_level("false\n"), "off");
         assert_eq!(auto_core_level("\"minor\""), "minor");
         assert_eq!(auto_core_level(""), "minor");
+    }
+
+    #[test]
+    fn login_address_never_trusts_foreign_or_script_urls() {
+        let aliases = vec!["www.ornek.com".to_string()];
+        let base = |stored: &str| login_base("ornek.com", &aliases, true, stored);
+        assert_eq!(base("https://ornek.com"), "https://ornek.com");
+        assert_eq!(base("https://www.ornek.com/"), "https://www.ornek.com");
+        assert_eq!(base("http://ornek.com/blog"), "http://ornek.com/blog", "alt klasöre kurulu site");
+        // Site sahibinin veritabanına yazabileceği zararlı değerler panelin bildiği adrese düşer.
+        for stored in ["javascript:alert(1)//", "https://kotu.example", "https://ornek.com.kotu.example", "data:text/html,x", "https://ornek.com/\"><script>", "https://ornek.com@kotu.example", ""] {
+            assert_eq!(base(stored), "https://ornek.com", "{stored}");
+        }
+        assert_eq!(login_base("ornek.com", &[], false, "ftp://ornek.com"), "http://ornek.com");
     }
 
     #[test]

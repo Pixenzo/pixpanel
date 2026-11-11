@@ -35,11 +35,13 @@ async fn install(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
     let site = sites::get(&state.db, &user, id)?;
     let request = body.validated()?;
     wordpress::check_installable(&site).await?;
+    let lock = wordpress::SiteLock::acquire(&site)?;
 
     auth::audit(&state.db, &user, "wordpress.install", &site.domain, "");
     let job_state = state.clone();
     let title = format!("WordPress kurulumu: {}", site.domain);
     let job_id = state.jobs.start("wordpress.install", &title, Some(user.id), move |ctx| async move {
+        let _lock = lock;
         wordpress::install(&ctx, &job_state, &site, &request).await
     })?;
     Ok(Json(json!({ "job_id": job_id })))

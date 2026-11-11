@@ -43,8 +43,12 @@ DNSStubListener=no
     atomic_write(Path::new(DROP_IN), CONTENT.as_bytes(), 0o644)?;
     // resolv.conf yerel dinleyiciyi gösteriyorsa gerçek sunucu listesine çevrilir.
     let resolv = Path::new("/etc/resolv.conf");
-    let points_to_stub = std::fs::read_link(resolv).map(|target| target.ends_with("stub-resolv.conf")).unwrap_or(false);
-    if points_to_stub {
+    let links_to_stub = std::fs::read_link(resolv).map(|target| target.ends_with("stub-resolv.conf")).unwrap_or(false);
+    // Düz dosya da yerel dinleyiciyi (127.0.0.53) gösterebilir; dinleyici kapanınca ad çözümlemesi kesilirdi.
+    let names_stub = std::fs::read_to_string(resolv)
+        .map(|content| content.lines().any(|line| line.split_whitespace().collect::<Vec<_>>() == ["nameserver", "127.0.0.53"]))
+        .unwrap_or(false);
+    if links_to_stub || names_stub {
         let temporary = Path::new("/etc/resolv.conf.pixpanel");
         let _ = std::fs::remove_file(temporary);
         std::os::unix::fs::symlink("/run/systemd/resolve/resolv.conf", temporary)?;

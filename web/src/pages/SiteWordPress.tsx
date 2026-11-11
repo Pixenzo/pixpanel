@@ -293,6 +293,12 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
     const tab = window.open("", "_blank");
     login.mutate(undefined, {
       onSuccess: (result) => {
+        // Adres sunucuda doğrulanır; yine de http(s) dışındaki bir adres hiçbir koşulda açılmaz.
+        if (!/^https?:\/\//i.test(result.url)) {
+          tab?.close();
+          feedback.error(new Error(t("Giriş adresi geçersiz")));
+          return;
+        }
         if (tab) {
           tab.opener = null;
           tab.location.href = result.url;

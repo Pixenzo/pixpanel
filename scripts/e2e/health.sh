@@ -116,6 +116,11 @@ check "sorunsuz sitenin geçmişi temiz" "$(api GET /sites/1/uptime | jget '(d["
 check "özet erişilebilirliği taşır" "$(api GET /sites/summary | jget "next(x for x in d if x['site_id']==$S)['uptime_day']")" 0.0
 check "site kartında sorun görünür" "$(api GET /sites/summary | jget "[(i['severity'], i['label']) for i in next(x for x in d if x['site_id']==$S)['issues']]")" "[('critical', 'Yanıt vermiyor')]"
 check "sorunsuz sitenin kartı temiz" "$(api GET /sites/summary | jget "[i['label'] for i in next(x for x in d if x['site_id']==1)['issues'] if i['severity']=='critical']")" "[]"
+# HTTPS'e zorlayan sitede 80. port hep yönlendirme döner; yoklama asıl içeriği 443'ten istemeli.
+check "sertifika ve HTTPS zorlaması" "$(code POST /sites/$S/ssl/self-signed) $(code PATCH /sites/$S -d '{"force_https":true}')" "200 200"
+check "80. port yönlendiriyor" "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: saglik-e2e.test' http://127.0.0.1/)" 301
+R=$(recheck)
+check "HTTPS'e zorlayan sitede de sorun yakalanır" "$(finding "$R" site.down:$S severity) $(api GET /sites/$S/uptime | jget 'd["last_status"]')" "critical 502"
 api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":false,"notify":false,"security_updates":false,"update_wordpress":false}' >/dev/null
 R=$(recheck)
 check "site yoklaması kapatılabilir" "$(finding "$R" site.down:$S severity)" yok

@@ -27,6 +27,23 @@ impl Check {
     }
 }
 
+/// Siteyi sunucunun içinden yoklar ve HTTP durum kodunu döner.
+///
+/// `https`: site ziyaretçileri HTTPS'e zorluyorsa 80. port her zaman yönlendirme döner
+/// ve uygulama çökse de "çalışıyor" görünür; bu yüzden asıl içerik 443. porttan istenir.
+/// İstek yerel adrese gittiğinden sertifikanın adı ve geçerliliği burada doğrulanmaz
+/// (sertifika ayrı bir denetimin konusudur).
+pub async fn probe(domain: &str, https: bool, timeout: std::time::Duration) -> Result<u16, reqwest::Error> {
+    let builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(timeout);
+    if https {
+        let address = std::net::SocketAddr::from(([127, 0, 0, 1], 443));
+        let client = builder.resolve(domain, address).danger_accept_invalid_certs(true).build()?;
+        return Ok(client.get(format!("https://{domain}/")).send().await?.status().as_u16());
+    }
+    let client = builder.build()?;
+    Ok(client.get("http://127.0.0.1/").header("Host", domain).send().await?.status().as_u16())
+}
+
 /// Bir turun yoklamalarını kaydeder ve süresi geçmiş kayıtları siler.
 pub fn record(db: &Db, checks: &[Check]) -> AppResult<()> {
     let at = now();

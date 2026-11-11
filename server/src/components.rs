@@ -450,10 +450,12 @@ pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
         return install_node(ctx, major).await;
     }
     ctx.log(format!("{} kuruluyor", component.name));
+    // Depo bu kurulumdan önce de varsa, başarısız bir güncelleme (geçici ağ hatası) onu silmemeli.
+    let repo_existed = repo_list(component.repo).is_some_and(|path| std::path::Path::new(path).exists());
     ensure_repo(ctx, component.repo).await?;
     if let Err(err) = ctx.exec("apt-get", &["update", "-o", "DPkg::Lock::Timeout=180"]).await {
-        // Erişilemeyen bir ek depo bırakılırsa sonraki bütün kurulumlar da durur; geri alınır.
-        if let Some(list) = repo_list(component.repo).filter(|path| std::path::Path::new(path).exists()) {
+        // Yeni eklenen ek depo erişilemezse bırakılmaz; yoksa sonraki bütün kurulumlar da durur.
+        if let Some(list) = repo_list(component.repo).filter(|path| !repo_existed && std::path::Path::new(path).exists()) {
             let _ = std::fs::remove_file(list);
             ctx.log(format!("Ek paket deposu kullanılamadığı için kaldırıldı: {list}"));
         }

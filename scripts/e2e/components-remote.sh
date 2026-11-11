@@ -152,6 +152,9 @@ suite features php-8.3 docker redis
 # Panel sertifikası sınaması ACME sınama sunucusu (Pebble) ister; o yalnızca geliştirme makinesinde var.
 [ -f /etc/systemd/system/pebble-test.service ] && suite panelcert
 suite twofactor
+suite events
+suite health ftp
+suite wordpress php-8.3 mariadb restic
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"

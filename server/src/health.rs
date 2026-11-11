@@ -207,6 +207,8 @@ pub struct Monitor {
     site_issues: Arc<RwLock<HashMap<i64, Vec<SiteIssue>>>>,
     /// WordPress sitelerinin bekleyen güncellemeleri (site kimliğine göre).
     wordpress: Arc<RwLock<HashMap<i64, crate::wordpress::Pending>>>,
+    /// Güvenlik güncellemesi paketinin en son kurulmaya çalışıldığı an.
+    upgrades_attempt: Arc<Mutex<i64>>,
     /// Aynı anda tek denetim turu yürür.
     running: Arc<tokio::sync::Mutex<()>>,
 }
@@ -522,19 +524,15 @@ async fn check_site_responses(state: &AppState, batch: &mut Batch, sites: &[Site
     if !crate::sys::services::is_active("nginx.service").await {
         return;
     }
-    let Ok(client) = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(SITE_CHECK_TIMEOUT).build() else {
-        return;
-    };
-    let targets: Vec<(i64, String)> = sites.iter().map(|site| (site.id, site.domain.clone())).collect();
-    let results: Vec<(i64, Option<String>, crate::uptime::Check)> = stream::iter(targets.into_iter().map(|(id, domain)| {
-        let client = client.clone();
+    let targets: Vec<(i64, String, bool)> = sites.iter().map(|site| (site.id, site.domain.clone(), site.force_https && site.ssl_mode != "none")).collect();
+    let results: Vec<(i64, Option<String>, crate::uptime::Check)> = stream::iter(targets.into_iter().map(|(id, domain, https)| {
         async move {
             let started = std::time::Instant::now();
-            let outcome = client.get("http://127.0.0.1/").header("Host", domain).send().await;
+            let outcome = crate::uptime::probe(&domain, https, SITE_CHECK_TIMEOUT).await;
             let millis = started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32;
             let (problem, status) = match outcome {
-                Ok(response) if response.status().is_server_error() => (Some(format!("HTTP {}", response.status().as_u16())), response.status().as_u16()),
-                Ok(response) => (None, response.status().as_u16()),
+                Ok(status) if status >= 500 => (Some(format!("HTTP {status}")), status),
+                Ok(status) => (None, status),
                 Err(err) if err.is_timeout() => (Some("yanıt süresi aşıldı".to_string()), 0),
                 Err(_) => (Some("bağlantı kurulamadı".to_string()), 0),
             };
@@ -784,6 +782,12 @@ pub async fn update_wordpress_nightly(state: &AppState, last_day: &mut i64) {
         return;
     }
     *last_day = today;
+    // Bu ayar "önce yedek alınır" sözünü verir; yedek yeri yoksa güncelleme yapılmaz.
+    let has_target = crate::backup::is_installed() && crate::backup::list_targets(&state.db).map(|targets| !targets.is_empty()).unwrap_or(false);
+    if !has_target {
+        log_action(state, "wordpress.updates", "", "WordPress gece güncellemesi yapılmadı", true, false, "Yedek yeri tanımlı değil. Güncellemeden önce yedek alınabilmesi için Yedekler sayfasından bir yedek yeri ekleyin.");
+        return;
+    }
     // Güncel olmayan bir taramayla iş yapılmasın.
     scan_wordpress(state).await;
     let pending: Vec<i64> = state.health.wordpress.read().unwrap_or_else(|p| p.into_inner()).iter().filter(|(_, updates)| !updates.is_empty()).map(|(id, _)| *id).collect();
@@ -1214,7 +1218,8 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
 }
 
 /// Kök diskte güvenle silinebilecek şeyleri siler ve açılan yeri (bayt) döner: indirilmiş
-/// paket dosyaları, sistem günlüğünün eski bölümü ve iki haftadan eski döndürülmüş günlükler.
+/// paket dosyaları, sistem günlüğünün eski bölümü ve iki haftadan eski döndürülmüş günlükler
+/// (giriş kayıtları hariç).
 /// Sitelerin dosyalarına ve veritabanlarına dokunulmaz.
 async fn free_disk_space() -> u64 {
     let available = || async { crate::sys::metrics::disks().await.into_iter().find(|disk| disk.mount == "/").map(|disk| disk.available).unwrap_or(0) };
@@ -1223,7 +1228,12 @@ async fn free_disk_space() -> u64 {
     let _ = exec::run_with_timeout("journalctl", &["--vacuum-size=200M"], Duration::from_secs(60)).await;
     let _ = exec::run_with_timeout(
         "find",
-        &["/var/log", "-xdev", "-type", "f", "(", "-name", "*.gz", "-o", "-name", "*.[0-9]", "-o", "-name", "*.old", ")", "-mtime", "+14", "-delete"],
+        &[
+            "/var/log", "-xdev", "-type", "f", "(", "-name", "*.gz", "-o", "-name", "*.[0-9]", "-o", "-name", "*.old", ")",
+            // Kimin ne zaman giriş yaptığının kayıtları olay incelemesinde gerekir; onlara dokunulmaz.
+            "-not", "-name", "auth.log*", "-not", "-name", "wtmp*", "-not", "-name", "btmp*", "-not", "-name", "lastlog*",
+            "-mtime", "+14", "-delete",
+        ],
         Duration::from_secs(60),
     )
     .await;
@@ -1283,7 +1293,26 @@ pub async fn apply_security_updates(state: &AppState, enabled: bool) {
     if std::fs::read_to_string(AUTO_UPGRADES_FILE).ok().as_deref() == Some(wanted) && (installed || !enabled) {
         return;
     }
-    if enabled && !installed {
+    let write = move || {
+        if let Err(err) = crate::hosting::atomic_write(std::path::Path::new(AUTO_UPGRADES_FILE), wanted.as_bytes(), 0o644) {
+            tracing::warn!(error = %err, "güvenlik güncellemesi ayarı yazılamadı");
+        }
+    };
+    if !enabled || installed {
+        write();
+        return;
+    }
+    // Paket kurulumu dakikalar sürebilir ve başka bir kurulumun bitmesini bekleyebilir; denetim
+    // turunu bekletmemek için ayrı görevde yapılır. Başarısız olursa bir saat sonra yeniden denenir.
+    {
+        let mut last = state.health.upgrades_attempt.lock().unwrap_or_else(|p| p.into_inner());
+        if now() - *last < 3600 {
+            return;
+        }
+        *last = now();
+    }
+    let state = state.clone();
+    tokio::spawn(async move {
         let _guard = state.apt_lock.lock().await;
         let install = exec::run_with_timeout(
             "apt-get",
@@ -1291,14 +1320,12 @@ pub async fn apply_security_updates(state: &AppState, enabled: bool) {
             Duration::from_secs(600),
         )
         .await;
-        if !matches!(&install, Ok(output) if output.success()) {
+        if matches!(&install, Ok(output) if output.success()) {
+            write();
+        } else {
             tracing::warn!("unattended-upgrades kurulamadı; güvenlik güncellemeleri kendiliğinden kurulmayacak");
-            return;
         }
-    }
-    if let Err(err) = crate::hosting::atomic_write(std::path::Path::new(AUTO_UPGRADES_FILE), wanted.as_bytes(), 0o644) {
-        tracing::warn!(error = %err, "güvenlik güncellemesi ayarı yazılamadı");
-    }
+    });
 }
 
 /// İşletim sistemi paketlerini günceller. Yapılandırma dosyalarında var olan hâl korunur.

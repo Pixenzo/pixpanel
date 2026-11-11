@@ -77,6 +77,14 @@ check "aynı bağlantı ikinci kez çalışmaz" "$(site "/?pixpanel_login=$TOKEN
 URL=$(api POST /sites/$S/wordpress/login | jget 'd["url"]')
 check "yanlış anahtar reddedilir" "$(site "/?pixpanel_login=0000" -o /dev/null -w '%{http_code}')" 403
 check "yanlış deneme asıl bağlantıyı da geçersiz kılar" "$(site "/?pixpanel_login=${URL##*=}" -o /dev/null -w '%{http_code}')" 403
+# Site sahibi veritabanındaki adresi değiştirebilir; giriş adresi ona güvenmemeli.
+mariadb -e "UPDATE wp_wp_e2e_test.wp_options SET option_value='javascript:alert(document.cookie)//' WHERE option_name='siteurl'"
+has "zararlı site adresi giriş adresine taşınmaz" "$(api POST /sites/$S/wordpress/login | jget 'd["url"]')" "http://$DOMAIN/?pixpanel_login="
+mariadb -e "UPDATE wp_wp_e2e_test.wp_options SET option_value='https://kotu.example' WHERE option_name='siteurl'"
+has "yabancı alan adı giriş adresine taşınmaz" "$(api POST /sites/$S/wordpress/login | jget 'd["url"]')" "http://$DOMAIN/?pixpanel_login="
+mariadb -e "UPDATE wp_wp_e2e_test.wp_options SET option_value='http://$DOMAIN' WHERE option_name='siteurl'"
+# Yukarıda üretilip kullanılmayan giriş kaydı bir denemeyle tüketilir.
+site "/?pixpanel_login=0000" -o /dev/null
 check "panelin giriş eklentisi eklenti listesinde görünmez" "$(api GET /sites/$S/wordpress | jget '[p["name"] for p in d["plugins"] if "pixpanel" in p["name"]]')" "[]"
 check "anahtar veritabanında açık durmaz" "$(mariadb -N -e "SELECT COUNT(*) FROM wp_wp_e2e_test.wp_options WHERE option_name='pixpanel_login_token'")" 0
 
@@ -99,6 +107,7 @@ check "geçersiz seçenek" "$(code PUT /sites/$S/wordpress/settings -d '{"auto_c
 say "Güncelleme"
 check "geçersiz kapsam" "$(code POST /sites/$S/wordpress/update -d '{"what":"--all"}')" 400
 UJOB=$(api POST /sites/$S/wordpress/update -d '{"what":"all"}' | jget 'd["job_id"]')
+check "aynı sitede ikinci güncelleme başlatılamaz" "$(code POST /sites/$S/wordpress/update -d '{"what":"all"}')" 409
 check "güncelleme görevi" "$(wait_job "$UJOB")" success
 ULOG=$(api GET "/jobs/$UJOB" | jget 'd["log"]')
 if [ "$(api GET /backup | jget 'len(d["targets"]) > 0')" = True ]; then
