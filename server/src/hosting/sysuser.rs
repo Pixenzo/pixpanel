@@ -161,10 +161,12 @@ pub async fn remove(name: &str) -> AppResult<bool> {
     // Hesabın süren süreçleri varsa silme başarısız olur; önce sonlandırılırlar.
     // Açık oturumlar düzgünce kapatılır; kalan süreçler öldürülür.
     let _ = exec::run("loginctl", &["terminate-user", "--", name]).await;
-    let _ = exec::run("pkill", &["-KILL", "-u", &user.uid.to_string()]).await;
-    exec::run_ok("userdel", &["--", name]).await?;
-    // Öldürülen oturum yöneticisi "başarısız birim" olarak kalmasın.
+    // Oturum yöneticisinin kapanması beklenir: kapanırken öldürülürse "başarısız birim" olarak kalır
+    // (kapanış, aşağıdaki temizlikten sonra tamamlanıp durumu yeniden başarısıza çevirebilir).
     let uid = user.uid.to_string();
+    let _ = exec::run("systemctl", &["stop", &format!("user@{uid}.service"), &format!("user-runtime-dir@{uid}.service")]).await;
+    let _ = exec::run("pkill", &["-KILL", "-u", &uid]).await;
+    exec::run_ok("userdel", &["--", name]).await?;
     let _ = exec::run("systemctl", &["reset-failed", &format!("user@{uid}.service"), &format!("user-runtime-dir@{uid}.service")]).await;
     // Ev klasörünün üst düzeyi root'a aittir; `userdel` ona dokunmaz. Geride kalırsa aynı adla
     // açılacak yeni hesap eskisinin klasörünü devralırdı. Site dosyası kalmadığı yukarıda doğrulandı.
