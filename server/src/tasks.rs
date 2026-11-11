@@ -107,6 +107,9 @@ pub fn spawn_disk_measurement(state: AppState) {
             if let Err(err) = crate::quota::measure_disk(&state.db).await {
                 tracing::warn!(error = %err, "disk kullanımı ölçülemedi");
             }
+            if let Err(err) = crate::quota::notify_disk(&state).await {
+                tracing::warn!(error = %err, "disk kotası uyarıları gönderilemedi");
+            }
             tokio::time::sleep(Duration::from_secs(3600)).await;
         }
     });

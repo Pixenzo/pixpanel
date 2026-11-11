@@ -984,6 +984,21 @@ pub async fn run_checks(state: &AppState) -> Report {
             notify_admins(state, &finding.title, &finding.detail).await;
         }
     }
+    // Sitenin sahibi de haberdar edilir (kendi bildirim tercihinde açtıysa): site yanıt
+    // vermeyi bıraktığında ve yeniden yanıt verdiğinde.
+    let site_of = |key: &str| key.strip_prefix("site.down:").and_then(|id| id.parse::<i64>().ok()).and_then(|id| sites.iter().find(|site| site.id == id));
+    for key in fresh.iter() {
+        if let Some(site) = site_of(key) {
+            let body = format!("{} sunucunun içinden yapılan yoklamalara yanıt vermiyor ya da sunucu hatası döndürüyor. Sitenin günlüklerine ve son yaptığınız değişikliklere bakın.", site.domain);
+            crate::notify::send_event(state, site.user_id, "site_down", &format!("PixPanel: {} yanıt vermiyor", site.domain), &body).await;
+        }
+    }
+    for key in previous.difference(&current) {
+        if let Some(site) = site_of(key) {
+            let body = format!("{} yeniden yanıt veriyor.", site.domain);
+            crate::notify::send_event(state, site.user_id, "site_down", &format!("PixPanel: {} yeniden yanıt veriyor", site.domain), &body).await;
+        }
+    }
     auto_fix(state, &report, &records, &settings).await;
     report
 }

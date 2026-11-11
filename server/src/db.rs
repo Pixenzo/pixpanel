@@ -506,6 +506,11 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sites ADD COLUMN rules TEXT NOT NULL DEFAULT '{}';
     "#,
+    // 26: disk kotası uyarısının en son hangi düzeyde gönderildiği (0: yok, 1: %90, 2: doldu);
+    //     aynı uyarı her ölçümde yinelenmesin diye.
+    r#"
+    ALTER TABLE account_usage ADD COLUMN warned_level INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

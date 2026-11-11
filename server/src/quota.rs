@@ -255,6 +255,58 @@ async fn directory_size(path: &str) -> i64 {
 }
 
 /// Bütün hesapların disk kullanımını ölçüp kaydeder: ev klasörü (siteler) ve posta kutuları.
+/// Kotanın yüzde kaçı dolunca uyarı düzeyine geçilir.
+const WARN_PERCENT: i64 = 90;
+
+/// Kullanıma göre uyarı düzeyi: 0 (sorun yok), 1 (dolmak üzere), 2 (doldu).
+pub fn warning_level(used_bytes: i64, limit_mb: i64) -> i64 {
+    let limit = limit_mb.saturating_mul(1024 * 1024);
+    if limit <= 0 {
+        return 0;
+    }
+    if used_bytes >= limit {
+        2
+    } else if used_bytes.saturating_mul(100) >= limit.saturating_mul(WARN_PERCENT) {
+        1
+    } else {
+        0
+    }
+}
+
+/// Disk kotası dolmak üzere olan ya da dolan hesaplara haber verir. Bir düzey için yalnızca
+/// bir kez gönderilir; kullanım düşünce düzey sıfırlanır ve sonraki aşımda yeniden haber verilir.
+pub async fn notify_disk(state: &crate::state::AppState) -> AppResult<()> {
+    let rows: Vec<(i64, i64, i64)> = state.db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT user_id, disk_bytes, warned_level FROM account_usage")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect()
+    })?;
+    for (user_id, used, warned) in rows {
+        let Some(limit_mb) = limits_for(&state.db, user_id)?.and_then(|(_, limits)| limits.disk_mb) else { continue };
+        let level = warning_level(used, limit_mb);
+        if level == warned {
+            continue;
+        }
+        state.db.call(|conn| conn.execute("UPDATE account_usage SET warned_level = ?1 WHERE user_id = ?2", params![level, user_id]))?;
+        if level > warned {
+            let used_mb = used / 1024 / 1024;
+            let (subject, body) = if level == 2 {
+                (
+                    "Disk kotanız doldu".to_string(),
+                    format!("Hesabınız {used_mb} MB kullanıyor; paketinizin sınırı {limit_mb} MB. Yeni site, veritabanı ya da posta kutusu açamazsınız. Yer açmak için gereksiz dosyaları ve eski yedekleri silin ya da paketinizi yükseltin."),
+                )
+            } else {
+                (
+                    "Disk kotanız dolmak üzere".to_string(),
+                    format!("Hesabınız {used_mb} MB kullanıyor; paketinizin sınırı {limit_mb} MB (yüzde {WARN_PERCENT} aşıldı). Sınır dolmadan gereksiz dosyaları silin ya da paketinizi yükseltin."),
+                )
+            };
+            crate::notify::send_event(state, user_id, "quota_warning", &format!("PixPanel: {subject}"), &body).await;
+        }
+    }
+    Ok(())
+}
+
 pub async fn measure_disk(db: &Db) -> AppResult<()> {
     let accounts: Vec<(i64, String)> = db.call(|conn| {
         let mut stmt = conn.prepare("SELECT id, username FROM users WHERE role != 'member'")?;
@@ -290,6 +342,19 @@ pub async fn measure_disk(db: &Db) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn disk_warning_levels() {
+        let mb = 1024 * 1024;
+        assert_eq!(super::warning_level(0, 1000), 0);
+        assert_eq!(super::warning_level(899 * mb, 1000), 0);
+        assert_eq!(super::warning_level(900 * mb, 1000), 1);
+        assert_eq!(super::warning_level(999 * mb, 1000), 1);
+        assert_eq!(super::warning_level(1000 * mb, 1000), 2);
+        assert_eq!(super::warning_level(5000 * mb, 1000), 2);
+        // Sınırı olmayan (0) pakette uyarı yoktur.
+        assert_eq!(super::warning_level(5000 * mb, 0), 0);
+    }
+
     use super::*;
 
     fn limits(sites: Option<i64>, disk_mb: Option<i64>) -> Limits {

@@ -178,7 +178,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 ### 11. İşletim araçları — O (parçalar ayrı ayrı devredilebilir)
 
 - 11a. Müşteri olarak giriş (yönetici ve bayi için; denetim günlüğüne yazılır, kolayca geri dönülür). — **tamamlandı (11.11.2026)**
-- 11b. Bildirim olayları: disk doluyor, servis durdu, sertifika bitiyor, yedek başarısız, hesap kotayı aştı, yeni adresten giriş.
+- 11b. Bildirim olayları: disk doluyor, servis durdu, sertifika bitiyor, yedek başarısız, hesap kotayı aştı, yeni adresten giriş. — **tamamlandı (11.11.2026; sunucu olayları yöneticiye `health_alert` ile, site ve kota olayları hesabın kendisine)**
 - 11c. Sistem güncellemeleri: bekleyen paketler, güvenlik güncellemelerinin kendiliğinden kurulması, yeniden başlatma gerekli uyarısı.
 - 11d. Servis izleme: duran servisi yeniden başlatma, geçmişe dönük ölçümler (bugün yalnızca son dakikalar).
 - 11e. Marka: logo, ad, giriş sayfası metni (bayi bazında).

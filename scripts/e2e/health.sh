@@ -102,6 +102,10 @@ fi
 say "Yanıt vermeyen site"
 OLD=$(api GET /sites | jget 'next((s["id"] for s in d if s["domain"]=="saglik-e2e.test"), "")')
 [ -n "$OLD" ] && api DELETE "/sites/$OLD?delete_files=true" >/dev/null
+# Sitenin sahibi, sitesi yanıt vermeyince haber almak istiyor (sahte Telegram sunucusu yalnız sınama ortamında var).
+MOCKED=$(grep -c 'telegram_api = "http://127.0.0.1:9911"' /etc/pixpanel/config.toml 2>/dev/null)
+api PUT /notifications -d '{"email_enabled":false,"email_to":"","telegram_enabled":true,"telegram_token":"123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi","telegram_chat_id":"-100123","events":["deploy_failed","deploy_success","site_down"]}' >/dev/null
+: > /tmp/px-mock.log 2>/dev/null
 S=$(api POST /sites -d '{"domain":"saglik-e2e.test","kind":"proxy","proxy_target":"http://127.0.0.1:9"}' | jget 'd["id"]')
 R=$(recheck)
 check "tek başarısız yoklama bulgu sayılmaz" "$(finding "$R" site.down:$S severity)" yok
@@ -110,6 +114,9 @@ check "DNS'i bu sunucuyu göstermeyen siteye sertifika alınmaz" "$(unreachable 
 R=$(recheck)
 check "ikinci başarısız yoklamada kritik bulgu" "$(finding "$R" site.down:$S severity)" critical
 has "nedeni başlıkta" "$(finding "$R" site.down:$S title)" "HTTP 502"
+if [ "$MOCKED" = 1 ]; then
+  check "sitenin sahibine bir kez haber verilir" "$(sleep 1; grep -c 'saglik-e2e.test yanıt vermiyor' /tmp/px-mock.log)" 1
+fi
 U=$(api GET /sites/$S/uptime)
 check "yoklamalar erişilebilirlik geçmişine işlendi" "$(jget '(d["uptime_day"], d["last_status"], sum(b["checks"] for b in d["buckets"]), sum(b["failures"] for b in d["buckets"]), len(d["buckets"]))' <<<"$U")" "(0.0, 502, 2, 2, 288)"
 check "sorunsuz sitenin geçmişi temiz" "$(api GET /sites/1/uptime | jget '(d["uptime_day"] is not None and d["uptime_day"] > 0, d["last_status"] < 500, d["average_millis"] is not None)')" "(True, True, True)"
@@ -121,6 +128,7 @@ check "sertifika ve HTTPS zorlaması" "$(code POST /sites/$S/ssl/self-signed) $(
 check "80. port yönlendiriyor" "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: saglik-e2e.test' http://127.0.0.1/)" 301
 R=$(recheck)
 check "HTTPS'e zorlayan sitede de sorun yakalanır" "$(finding "$R" site.down:$S severity) $(api GET /sites/$S/uptime | jget 'd["last_status"]')" "critical 502"
+[ "$MOCKED" = 1 ] && check "süren sorun için yeniden haber verilmez" "$(sleep 1; grep -c 'saglik-e2e.test yanıt vermiyor' /tmp/px-mock.log)" 1
 api PUT /health/settings -d '{"restart_services":true,"issue_certificates":true,"check_sites":false,"notify":false,"security_updates":false,"update_wordpress":false}' >/dev/null
 R=$(recheck)
 check "site yoklaması kapatılabilir" "$(finding "$R" site.down:$S severity)" yok

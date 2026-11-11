@@ -172,7 +172,9 @@
     "SSL sertifikası yenilenemediğinde",
     "Hesabınıza yeni bir adresten giriş yapıldığında",
     "Yedekleme başarısız olduğunda",
-    "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde"
+    "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde",
+    "Siteniz yanıt vermediğinde ve yeniden yanıt vermeye başladığında",
+    "Disk kotanız dolmak üzereyken ya da dolduğunda"
   ],
   "server/src/health.rs (sağlık bulgusu düzeltme düğmeleri, Overview.tsx içinde t(finding.fix))": [
     "Yeniden başlat",

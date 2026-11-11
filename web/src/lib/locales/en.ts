@@ -2411,4 +2411,6 @@ export const en: Record<string, string> = {
   "Hata sayfaları sitenizin yayın klasöründeki dosyalardır; boş bıraktığınızda web sunucusunun kendi sayfası gösterilir.": "Error pages are files in your site's public folder; when left empty the web server's own page is shown.",
   "Kuralları kaydet": "Save rules",
   "Kurallar ve erişim": "Rules and access",
+  "Siteniz yanıt vermediğinde ve yeniden yanıt vermeye başladığında": "When your site stops responding and when it responds again",
+  "Disk kotanız dolmak üzereyken ya da dolduğunda": "When your disk quota is almost full or full",
 };

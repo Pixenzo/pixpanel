@@ -84,10 +84,6 @@ pub struct ErrorPages {
 }
 
 impl SiteRules {
-    pub fn is_empty(&self) -> bool {
-        *self == Self::default()
-    }
-
     /// Arayüze gönderilen görünüm: parola özetleri çıkarılır.
     pub fn public_view(&self) -> serde_json::Value {
         let mut value = serde_json::to_value(self).unwrap_or_default();
