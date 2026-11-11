@@ -3,6 +3,7 @@ import { Copy, Plus, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
+import { AccessPanel } from "../components/AccessPanel";
 import { NotificationSettings } from "../components/NotificationSettings";
 import { TwoFactorPanel } from "../components/TwoFactorPanel";
 import {
@@ -361,7 +362,8 @@ function TokensPanel() {
 }
 
 export function AccountPage() {
-  const role = useMe().role;
+  const me = useMe();
+  const role = me.role;
   return (
     <>
       <PageHeader title={t("Hesabım")} description={t("Parolanız, iki adımlı doğrulamanız, bildirim tercihleriniz, açık oturumlarınız ve API anahtarlarınız.")} />
@@ -369,6 +371,7 @@ export function AccountPage() {
         {/* Yöneticinin sınırı yoktur; öteki hesaplar paketlerini ve ne kadarını kullandıklarını görür. */}
         {role !== "admin" && <UsagePanel path="/packages/usage" />}
         <PasswordPanel />
+        <AccessPanel accountId={me.id} />
         <TwoFactorPanel />
         <NotificationSettings />
         <LanguagePanel />

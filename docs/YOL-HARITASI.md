@@ -165,7 +165,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 - **Arayüz:** hazır bağlantı bilgisi (Laravel `.env`, WordPress `wp-config.php`, soket yolu), kullanım çubuğu; mevcut tarayıcı ve konsol hesabın kendi örneğine bağlanır. Ortak Redis yöneticiye kalır.
 - **Kabul:** bir hesap diğerinin anahtarlarını göremez; bellek sınırını dolduran hesap başkasını etkilemez; kapatınca süreç ve veri kalkar.
 
-### 9. Hesaplara SFTP ve SSH — O, sistem katmanı
+### 9. Hesaplara SFTP ve SSH — TAMAMLANDI (11.11.2026; kalan: panelde hesap terminali)
 
 - **Kapsam:** hesap başına SFTP (hapisli; ev klasörü düzeni buna hazır) ve isteğe bağlı kabuk erişimi; açık anahtar yönetimi; `sshd_config.d` altında panelin kendi dosyası; panelde hesap terminali (bugün yalnızca yönetici).
 - **Kabul:** hesap SFTP ile yalnızca kendi klasörünü görür; kabuk izni olmayan hesap komut çalıştıramaz; bozuk sshd yapılandırması uygulanmaz (`sshd -t`).

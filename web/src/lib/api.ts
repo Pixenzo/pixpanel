@@ -544,3 +544,17 @@ export interface MyBackups {
   manual_count: number;
   manual_limit: number;
 }
+
+// ---- SFTP ve SSH erişimi ----
+
+export interface AccountAccess {
+  /** Sunucuda sshd kurulu mu? */
+  available: boolean;
+  mode: "none" | "sftp" | "shell";
+  username: string;
+  port: number;
+  password_set: boolean;
+  keys: { id: number; name: string; fingerprint: string; created_at: number }[];
+  can_change_mode: boolean;
+  can_grant_shell: boolean;
+}

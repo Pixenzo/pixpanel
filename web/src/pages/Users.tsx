@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Pause, Play, Plus, ShieldOff, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { AccessPanel } from "../components/AccessPanel";
 import { useFeedback } from "../components/feedback";
 import {
   Badge,
@@ -238,6 +239,11 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
       {packaged && (
         <div className="mt-5">
           <UsagePanel path={`/users/${user.id}/usage`} title={t("Kullanım")} />
+        </div>
+      )}
+      {user.role !== "member" && (
+        <div className="mt-5">
+          <AccessPanel accountId={user.id} />
         </div>
       )}
     </Modal>
