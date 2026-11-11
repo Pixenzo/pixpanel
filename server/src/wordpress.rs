@@ -593,7 +593,7 @@ async fn backup_before_update(ctx: &JobCtx, state: &AppState, site: &Site) -> Ap
 /// Güncellemeden sonra siteyi sunucunun içinden yoklar; sunucu hatası dönüyorsa görev
 /// başarısız sayılır ki yönetici hemen fark edip az önce alınan yedeğe dönebilsin.
 async fn verify_after_update(ctx: &JobCtx, site: &Site) -> AppResult<()> {
-    match crate::uptime::probe(&site.domain, site.force_https && site.ssl_mode != "none", Duration::from_secs(20)).await {
+    match crate::uptime::probe(&site.domain, &site.ip, site.force_https && site.ssl_mode != "none", Duration::from_secs(20)).await {
         Ok(status) if status >= 500 => Err(AppError::internal(format!(
             "Site güncellemeden sonra hata veriyor (HTTP {status}). Yedekler sayfasından az önce alınan yedeğe dönebilirsiniz."
         ))),

@@ -5,6 +5,7 @@ use axum::Router;
 use crate::state::AppState;
 
 mod access;
+mod addresses;
 mod auth;
 mod backup;
 mod backup_mine;
@@ -43,7 +44,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
         .nest("/users", users::router().merge(access::router()))
-        .nest("/system", system::router().nest("/certificate", panelcert::router()).nest("/update", update::router()))
+        .nest("/system", system::router().nest("/ips", addresses::router()).nest("/certificate", panelcert::router()).nest("/update", update::router()))
         .nest("/jobs", jobs::router())
         .nest("/events", events::router())
         .nest("/health", health::router())

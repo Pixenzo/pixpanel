@@ -36,6 +36,8 @@ fn default_true() -> bool {
 }
 
 pub struct SiteConfig<'a> {
+    /// Sitenin bağlandığı adres; `None` ise sunucunun bütün adresleri.
+    pub bind: Option<std::net::IpAddr>,
     pub domain: &'a str,
     pub aliases: &'a [String],
     pub backend: Backend<'a>,
@@ -135,7 +137,20 @@ async fn supports_http2_directive() -> bool {
     (major, minor, patch) >= (1, 25, 1)
 }
 
-fn listen_lines(out: &mut String, port: u16, flags: &str) {
+fn listen_lines(out: &mut String, port: u16, flags: &str, bind: Option<std::net::IpAddr>) {
+    // Adrese bağlı site yalnızca o adresi dinler; nginx o adrese gelen isteği yalnızca
+    // o adresi dinleyen sitelere dağıtır.
+    match bind {
+        Some(std::net::IpAddr::V4(address)) => {
+            let _ = writeln!(out, "    listen {address}:{port}{flags};");
+            return;
+        }
+        Some(std::net::IpAddr::V6(address)) => {
+            let _ = writeln!(out, "    listen [{address}]:{port}{flags};");
+            return;
+        }
+        None => {}
+    }
     let _ = writeln!(out, "    listen {port}{flags};");
     if ipv6_enabled() {
         let _ = writeln!(out, "    listen [::]:{port}{flags};");
@@ -202,8 +217,8 @@ pub async fn ensure_base() -> AppResult<()> {
     let mut default = String::from("# PixPanel: tanımsız alan adları
 server {
 ");
-    listen_lines(&mut default, 80, " default_server");
-    listen_lines(&mut default, 443, " ssl default_server");
+    listen_lines(&mut default, 80, " default_server", None);
+    listen_lines(&mut default, 443, " ssl default_server", None);
     default.push_str("    server_name _;
     ssl_reject_handshake on;
 ");
@@ -320,7 +335,7 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
 
     if redirect_http {
         out.push_str("server {\n");
-        listen_lines(&mut out, 80, "");
+        listen_lines(&mut out, 80, "", site.bind);
         let _ = writeln!(out, "    server_name {names};");
         out.push_str(ACME_LOCATION);
         out.push_str("    location / {\n        return 301 https://$host$request_uri;\n    }\n}\n\n");
@@ -328,10 +343,10 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
 
     out.push_str("server {\n");
     if !redirect_http {
-        listen_lines(&mut out, 80, "");
+        listen_lines(&mut out, 80, "", site.bind);
     }
     if site.ssl {
-        listen_lines(&mut out, 443, if http2_directive { " ssl" } else { " ssl http2" });
+        listen_lines(&mut out, 443, if http2_directive { " ssl" } else { " ssl http2" }, site.bind);
         if http2_directive {
             out.push_str("    http2 on;\n");
         }

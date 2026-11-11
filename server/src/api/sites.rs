@@ -138,6 +138,16 @@ struct Options {
     /// Sürüm başına genel PHP ayarları; site formunda devralınan değerleri göstermek için.
     php_defaults: std::collections::BTreeMap<String, php::PhpGlobal>,
     node_versions: Vec<String>,
+    /// Hesabın sitelerini bağlayabileceği sunucu adresleri (yöneticide hepsi, diğerlerinde ayrılmış olanlar).
+    ips: Vec<IpOption>,
+}
+
+#[derive(Serialize)]
+struct IpOption {
+    address: String,
+    label: String,
+    /// Adresin ayrıldığı hesap; yönetici, siteyi sahibine ayrılmamış adrese de bağlayabilir.
+    user_id: Option<i64>,
 }
 
 async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Options>> {
@@ -158,7 +168,12 @@ async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
     };
     let php_versions = php::installed_versions();
     let php_defaults = php_versions.iter().map(|version| (version.clone(), php::load_global(version))).collect();
-    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults, node_versions: node::installed_versions() }))
+    let ips = crate::addresses::selectable(&state.db, user.is_admin(), user.owner_id())
+        .await?
+        .into_iter()
+        .map(|item| IpOption { address: item.address, label: item.label, user_id: item.user_id })
+        .collect();
+    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults, node_versions: node::installed_versions(), ips }))
 }
 
 #[derive(Deserialize)]
@@ -244,7 +259,15 @@ async fn create(
         &state.db,
         &NewSite { user_id: owner_id, domain: domain_name.clone(), aliases, kind: body.kind, php_version, proxy_target, node: node_settings },
     )?;
-    let site = sites::get(&state.db, &user, id)?;
+    let mut site = sites::get(&state.db, &user, id)?;
+    // Hesaba ayrılmış adres varsa yeni site ona bağlanarak açılır.
+    let dedicated: Option<String> = state.db.call(|conn| {
+        conn.query_row("SELECT address FROM server_ips WHERE user_id = ?1 ORDER BY created_at, address LIMIT 1", params![owner_id], |row| row.get(0)).optional()
+    })?;
+    if let Some(address) = dedicated {
+        site.ip = address;
+        sites::save(&state.db, &site)?;
+    }
     if let Err(err) = sites::provision(&site).await {
         // Yarım kalan kurulum geri alınır; kullanıcının dosyalarına dokunulmaz.
         if let Err(cleanup) = sites::deprovision(&site, false).await {
@@ -279,6 +302,8 @@ struct UpdateBody {
     node: Option<NodeSettings>,
     proxy_rules: Option<Vec<ProxyRule>>,
     template: Option<String>,
+    /// Sitenin bağlanacağı sunucu adresi; boş metin bütün adresler demektir.
+    ip: Option<String>,
 }
 
 async fn update(
@@ -328,6 +353,9 @@ async fn update(
         }
         site.template = template;
     }
+    if let Some(ip) = &body.ip {
+        site.ip = crate::addresses::validate_for_site(&state.db, user.is_admin(), site.user_id, ip).await?;
+    }
     if let Some(custom) = body.nginx_custom {
         // Ham nginx yönergeleri sunucunun tamamını etkileyebilir.
         user.require_admin()?;
@@ -374,6 +402,15 @@ async fn update(
             tracing::error!(error = %restore, domain = %previous.domain, "site eski ayarlarına döndürülemedi");
         }
         return Err(err);
+    }
+    if site.ip != previous.ip {
+        // Adres değişti: panelin yönettiği DNS kayıtları yeni adrese çevrilir.
+        let mut names = vec![site.domain.clone()];
+        names.extend(site.aliases.iter().cloned());
+        let old = crate::dns::site_address_record(&state.db, &site.domain, &previous.ip);
+        for line in crate::dns::move_site_records(&state, site.user_id, &names, &old).await {
+            tracing::info!(domain = %site.domain, "DNS: {line}");
+        }
     }
     auth::audit(&state.db, &user, "site.update", &site.domain, "");
     Ok(Json(site))

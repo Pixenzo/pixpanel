@@ -91,6 +91,11 @@ function GeneralTab({ site }: { site: Site }) {
   const templates = SITE_TEMPLATES.filter((item) => item.kind === site.kind);
   // Site türü değişmişse eski türün şablonu kalmış olabilir; o durumda varsayılan gösterilir.
   const [template, setTemplate] = useState(templates.some((item) => item.id === site.template) ? site.template : "default");
+  const options = useSiteOptions();
+  const [ip, setIp] = useState(site.ip);
+  // Site, seçeneklerde olmayan bir adrese bağlı olabilir (yönetici bağlamıştır); o da listede gösterilir.
+  const ipChoices = [...(options.data?.ips ?? [])];
+  if (site.ip !== "" && !ipChoices.some((item) => item.address === site.ip)) ipChoices.unshift({ address: site.ip, label: "", user_id: null });
   const save = useSaveSite(site, t("Site ayarları kaydedildi"));
   const status = useSaveSite(site, site.status === "active" ? t("Site askıya alındı") : t("Site yeniden yayında"));
 
@@ -130,6 +135,7 @@ function GeneralTab({ site }: { site: Site }) {
             aliases: aliases.split(/[\s,]+/).filter(Boolean),
             public_dir: site.kind === "php" || site.kind === "static" ? publicDir : undefined,
             template: templates.length > 0 ? template : undefined,
+            ip: ip !== site.ip ? ip : undefined,
           })
         }
       >
@@ -162,6 +168,25 @@ function GeneralTab({ site }: { site: Site }) {
             {templates.map((item) => (
               <option key={item.id} value={item.id}>
                 {t(item.label)}
+              </option>
+            ))}
+          </Select>
+        )}
+        {ipChoices.length > 0 && (
+          <Select
+            label={t("Sunucu adresi")}
+            value={ip}
+            onChange={(event) => setIp(event.target.value)}
+            hint={
+              ip === ""
+                ? t("Site sunucunun bütün adreslerinden yanıt verir.")
+                : t("Site yalnızca bu adresten yanıt verir; panelin yönettiği DNS kayıtları bu adrese çevrilir.")
+            }
+          >
+            <option value="">{t("Bütün adresler (ortak)")}</option>
+            {ipChoices.map((item) => (
+              <option key={item.address} value={item.address}>
+                {item.label === "" ? item.address : `${item.address} — ${item.label}`}
               </option>
             ))}
           </Select>

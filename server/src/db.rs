@@ -457,6 +457,21 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sites ADD COLUMN template TEXT NOT NULL DEFAULT 'default';
     "#,
+    // 21: sunucunun IP adresleri hakkında panelin tuttuğu bilgiler ve sitenin bağlandığı adres
+    //     (boş: bütün adresler).
+    r#"
+    CREATE TABLE server_ips (
+        address        TEXT PRIMARY KEY,
+        prefix         INTEGER NOT NULL DEFAULT 0,
+        interface      TEXT NOT NULL DEFAULT '',
+        managed        INTEGER NOT NULL DEFAULT 0,
+        label          TEXT NOT NULL DEFAULT '',
+        public_address TEXT NOT NULL DEFAULT '',
+        user_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at     INTEGER NOT NULL
+    );
+    ALTER TABLE sites ADD COLUMN ip TEXT NOT NULL DEFAULT '';
+    "#,
 ];
 
 #[derive(Clone)]

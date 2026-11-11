@@ -44,6 +44,8 @@ pub struct Site {
     pub proxy_rules: Vec<ProxyRule>,
     /// Uygulamaya göre hazır web sunucusu ayarı (`default`, `wordpress`, `laravel`, `spa`, `clean_urls`).
     pub template: String,
+    /// Sitenin bağlandığı sunucu adresi; boşsa site sunucunun bütün adreslerinden yanıt verir.
+    pub ip: String,
 }
 
 impl Site {
@@ -58,7 +60,7 @@ impl Site {
 
 const SITE_COLUMNS: &str = "s.id, s.user_id, u.username, s.domain, s.kind, s.public_dir, s.php_version,
      s.php_settings, s.proxy_target, s.proxy_websocket, s.ssl_mode, s.force_https, s.hsts,
-     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template";
+     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template, s.ip";
 
 fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
     let php_settings: String = row.get(7)?;
@@ -83,6 +85,7 @@ fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
         node: serde_json::from_str(&row.get::<_, String>(16)?).unwrap_or_default(),
         proxy_rules: serde_json::from_str(&row.get::<_, String>(17)?).unwrap_or_default(),
         template: row.get(18)?,
+        ip: row.get(19)?,
     })
 }
 
@@ -330,12 +333,12 @@ pub fn save(db: &Db, site: &Site) -> AppResult<()> {
         tx.execute(
             "UPDATE sites SET kind = ?1, public_dir = ?2, php_version = ?3, php_settings = ?4, proxy_target = ?5,
                     proxy_websocket = ?6, ssl_mode = ?7, force_https = ?8, hsts = ?9, nginx_custom = ?10, status = ?11,
-                    node_settings = ?12, proxy_rules = ?13, template = ?14
-             WHERE id = ?15",
+                    node_settings = ?12, proxy_rules = ?13, template = ?14, ip = ?15
+             WHERE id = ?16",
             params![
                 site.kind, site.public_dir, site.php_version, settings, site.proxy_target, site.proxy_websocket,
                 site.ssl_mode, site.force_https, site.hsts, site.nginx_custom, site.status, node_settings, proxy_rules,
-                site.template, site.id
+                site.template, site.ip, site.id
             ],
         )?;
         tx.execute("DELETE FROM site_aliases WHERE site_id = ?1", params![site.id])?;
@@ -395,6 +398,7 @@ pub async fn provision(site: &Site) -> AppResult<()> {
     };
 
     nginx::apply(&nginx::SiteConfig {
+        bind: crate::addresses::bind_for(&site.ip).await,
         domain: &site.domain,
         aliases: &site.aliases,
         backend,

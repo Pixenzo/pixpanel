@@ -33,16 +33,34 @@ impl Check {
 /// ve uygulama çökse de "çalışıyor" görünür; bu yüzden asıl içerik 443. porttan istenir.
 /// İstek yerel adrese gittiğinden sertifikanın adı ve geçerliliği burada doğrulanmaz
 /// (sertifika ayrı bir denetimin konusudur).
-pub async fn probe(domain: &str, https: bool, timeout: std::time::Duration) -> Result<u16, reqwest::Error> {
+///
+/// `site_ip`: site belirli bir adrese bağlıysa yoklama o adrese gider. Adres sunucudan
+/// kalkmışsa site bütün adreslerden yayınlanıyordur; bağlantı kurulamazsa yerel adres denenir.
+pub async fn probe(domain: &str, site_ip: &str, https: bool, timeout: std::time::Duration) -> Result<u16, reqwest::Error> {
+    let local = std::net::IpAddr::from([127, 0, 0, 1]);
+    match site_ip.parse::<std::net::IpAddr>() {
+        Ok(address) => match probe_at(domain, address, https, timeout).await {
+            Err(err) if err.is_connect() => probe_at(domain, local, https, timeout).await,
+            outcome => outcome,
+        },
+        Err(_) => probe_at(domain, local, https, timeout).await,
+    }
+}
+
+async fn probe_at(domain: &str, target: std::net::IpAddr, https: bool, timeout: std::time::Duration) -> Result<u16, reqwest::Error> {
     // Yoklamalar kendini tanıtır; istatistik toplayıcı bu istekleri ziyaret saymaz.
     let builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(timeout).user_agent(crate::stats::PROBE_USER_AGENT);
     if https {
-        let address = std::net::SocketAddr::from(([127, 0, 0, 1], 443));
+        let address = std::net::SocketAddr::new(target, 443);
         let client = builder.resolve(domain, address).danger_accept_invalid_certs(true).build()?;
         return Ok(client.get(format!("https://{domain}/")).send().await?.status().as_u16());
     }
     let client = builder.build()?;
-    Ok(client.get("http://127.0.0.1/").header("Host", domain).send().await?.status().as_u16())
+    let host = match target {
+        std::net::IpAddr::V4(address) => address.to_string(),
+        std::net::IpAddr::V6(address) => format!("[{address}]"),
+    };
+    Ok(client.get(format!("http://{host}/")).header("Host", domain).send().await?.status().as_u16())
 }
 
 /// Bir turun yoklamalarını kaydeder ve süresi geçmiş kayıtları siler.

@@ -375,14 +375,80 @@ async fn ensure(state: &AppState, zone: &Zone, existing: &[Record], record: Reco
     }
 }
 
-/// Bir sitenin (ve takma adlarının) A kayıtlarını ekler.
+/// Adın ait olduğu sitenin bağlandığı adres (boş: site bütün adreslerden yayınlanıyor).
+fn site_ip_for(db: &Db, name: &str) -> String {
+    db.call(|conn| {
+        conn.query_row(
+            "SELECT ip FROM sites WHERE domain = ?1
+             UNION ALL SELECT s.ip FROM site_aliases a JOIN sites s ON s.id = a.site_id WHERE a.name = ?1 LIMIT 1",
+            params![name],
+            |row| row.get(0),
+        )
+        .optional()
+    })
+    .ok()
+    .flatten()
+    .unwrap_or_default()
+}
+
+/// Sitenin adres kaydı: siteye özel adres varsa o (IPv6 ise AAAA), yoksa sunucunun genel adresi.
+pub fn site_address_record(db: &Db, name: &str, site_ip: &str) -> Record {
+    match crate::addresses::dns_address(db, site_ip) {
+        Some(address @ std::net::IpAddr::V6(_)) => Record::new("AAAA", name, &address.to_string()),
+        Some(address) => Record::new("A", name, &address.to_string()),
+        None => Record::new("A", name, &server_ip(db)),
+    }
+}
+
+/// Bir sitenin (ve takma adlarının) adres kayıtlarını ekler.
 pub async fn add_site_records(state: &AppState, owner_id: i64, names: &[String]) -> Vec<String> {
-    let ip = server_ip(&state.db);
     let mut report = Vec::new();
     for name in names {
         let Ok(Some(zone)) = zone_for(&state.db, owner_id, name) else { continue };
         let Ok(existing) = list_records(state, &zone).await else { continue };
-        report.push(ensure(state, &zone, &existing, Record::new("A", name, &ip), Policy::IfNoAddress).await);
+        let record = site_address_record(&state.db, name, &site_ip_for(&state.db, name));
+        report.push(ensure(state, &zone, &existing, record, Policy::IfNoAddress).await);
+    }
+    report
+}
+
+/// Sitenin adresi değişince, eski adresi gösteren kayıtları yenisine çevirir. Kullanıcının
+/// başka yere yönlendirdiği kayıtlara dokunulmaz: yalnızca içeriği eski adres olanlar silinir.
+///
+/// `previous`: değişiklikten önce `site_address_record` ile alınmış kayıt (adı önemsizdir).
+pub async fn move_site_records(state: &AppState, owner_id: i64, names: &[String], previous: &Record) -> Vec<String> {
+    let mut report = Vec::new();
+    // Bölge açılırken `www` kaydı da sitenin adresiyle yazılır; site o adı taşımasa bile birlikte taşınır.
+    let mut targets: Vec<(String, String)> = names.iter().map(|name| (name.clone(), name.clone())).collect();
+    for name in names {
+        let www = format!("www.{name}");
+        if !names.contains(&www) {
+            targets.push((www, name.clone()));
+        }
+    }
+    for (name, site_name) in &targets {
+        let Ok(Some(zone)) = zone_for(&state.db, owner_id, name) else { continue };
+        let Ok(existing) = list_records(state, &zone).await else { continue };
+        let old = Record::new(&previous.kind, name, &previous.content);
+        if name != site_name && !existing.iter().any(|record| record.name == old.name && record.kind == old.kind && record.content == old.content) {
+            continue;
+        }
+        let new = site_address_record(&state.db, name, &site_ip_for(&state.db, site_name));
+        if old.kind == new.kind && old.content == new.content {
+            continue;
+        }
+        let mut remaining = Vec::new();
+        for record in existing {
+            if record.name == old.name && record.kind == old.kind && record.content == old.content {
+                if let Err(err) = delete_record(state, &zone, &record).await {
+                    report.push(format!("{} {}: eski kayıt silinemedi ({err})", record.kind, record.name));
+                    remaining.push(record);
+                }
+            } else {
+                remaining.push(record);
+            }
+        }
+        report.push(ensure(state, &zone, &remaining, new, Policy::IfNoAddress).await);
     }
     report
 }
@@ -421,9 +487,12 @@ pub async fn seed_local_zone(state: &AppState, zone: &Zone, vanity_nameservers: 
     if vanity_nameservers {
         names.extend([format!("ns1.{}", zone.domain), format!("ns2.{}", zone.domain)]);
     }
+    // Alan adının sitesi belirli bir adrese bağlıysa kök ve www kayıtları o adresi gösterir.
+    let site_ip = site_ip_for(&state.db, &zone.domain);
     let mut report = Vec::new();
-    for name in names {
-        report.push(ensure(state, zone, &existing, Record::new("A", &name, &ip), Policy::IfNoAddress).await);
+    for (index, name) in names.iter().enumerate() {
+        let record = if index < 2 { site_address_record(&state.db, name, &site_ip) } else { Record::new("A", name, &ip) };
+        report.push(ensure(state, zone, &existing, record, Policy::IfNoAddress).await);
     }
     report
 }

@@ -442,7 +442,9 @@ async fn check_certificates(state: &AppState, batch: &mut Batch, settings: &Sett
         batch.checks += 1;
         let link = format!("/sites/{}/ssl", site.id);
         if site.ssl_mode == "none" {
-            if points_here(&state.health, &site.domain, &server_ip).await {
+            // Siteye özel adres varsa alan adının o adresi göstermesi beklenir.
+            let expected = crate::addresses::dns_address(&state.db, &site.ip).map(|address| address.to_string()).unwrap_or_else(|| server_ip.clone());
+            if points_here(&state.health, &site.domain, &expected).await {
                 batch.push(
                     Finding::new(
                         "ssl.missing",
@@ -524,11 +526,11 @@ async fn check_site_responses(state: &AppState, batch: &mut Batch, sites: &[Site
     if !crate::sys::services::is_active("nginx.service").await {
         return;
     }
-    let targets: Vec<(i64, String, bool)> = sites.iter().map(|site| (site.id, site.domain.clone(), site.force_https && site.ssl_mode != "none")).collect();
-    let results: Vec<(i64, Option<String>, crate::uptime::Check)> = stream::iter(targets.into_iter().map(|(id, domain, https)| {
+    let targets: Vec<(i64, String, String, bool)> = sites.iter().map(|site| (site.id, site.domain.clone(), site.ip.clone(), site.force_https && site.ssl_mode != "none")).collect();
+    let results: Vec<(i64, Option<String>, crate::uptime::Check)> = stream::iter(targets.into_iter().map(|(id, domain, ip, https)| {
         async move {
             let started = std::time::Instant::now();
-            let outcome = crate::uptime::probe(&domain, https, SITE_CHECK_TIMEOUT).await;
+            let outcome = crate::uptime::probe(&domain, &ip, https, SITE_CHECK_TIMEOUT).await;
             let millis = started.elapsed().as_millis().min(u128::from(u32::MAX)) as u32;
             let (problem, status) = match outcome {
                 Ok(status) if status >= 500 => (Some(format!("HTTP {status}")), status),

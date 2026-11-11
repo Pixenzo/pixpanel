@@ -310,6 +310,8 @@ export interface Site {
   proxy_rules: ProxyRule[];
   /** Uygulamaya göre hazır web sunucusu ayarı. */
   template: string;
+  /** Sitenin bağlandığı sunucu adresi; boşsa bütün adresler. */
+  ip: string;
 }
 
 export type DbEngine = "mariadb" | "postgresql";
@@ -377,6 +379,30 @@ export interface SiteOptions {
   owners: { id: number; username: string }[];
   php_defaults: Record<string, PhpGlobal>;
   node_versions: string[];
+  /** Hesabın sitelerini bağlayabileceği sunucu adresleri. */
+  ips: { address: string; label: string; user_id: number | null }[];
+}
+
+/** Sunucunun bir IP adresi ve panelin onun hakkında bildikleri. */
+export interface ServerAddress {
+  address: string;
+  prefix: number;
+  interface: string;
+  family: "ipv4" | "ipv6";
+  present: boolean;
+  managed: boolean;
+  label: string;
+  public_address: string;
+  user_id: number | null;
+  owner: string | null;
+  site_count: number;
+}
+
+export interface ServerAddresses {
+  addresses: ServerAddress[];
+  interfaces: string[];
+  /** Sitelerin DNS kayıtlarında varsayılan olarak kullanılan adres. */
+  dns_address: string;
 }
 
 export interface SiteSummary {

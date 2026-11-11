@@ -1,5 +1,6 @@
 //! PixPanel — sunucu ve hosting yönetim paneli.
 
+mod addresses;
 mod api;
 mod auth;
 mod backup;
@@ -77,6 +78,9 @@ enum Command {
     /// Dosya yöneticisinin yardımcı süreci; panel tarafından başlatılır
     #[command(hide = true)]
     FsHelper,
+    /// Panelin eklediği IP adreslerini kurar; açılışta web sunucusundan önce çalışır
+    #[command(hide = true)]
+    ApplyAddresses,
     #[command(flatten)]
     Api(cli::ApiCommand),
 }
@@ -119,6 +123,11 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Api(command) => cli::run(&cfg, &db, command),
+        Command::ApplyAddresses => {
+            let added = tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(addresses::apply_managed(&db)).map_err(|err| anyhow::anyhow!(err.to_string()))?;
+            println!("{added} adres kuruldu.");
+            Ok(())
+        }
         Command::FsHelper | Command::UpdateWatchdog => unreachable!("yardımcı süreçler yukarıda ele alındı"),
     }
 }
@@ -126,6 +135,10 @@ fn main() -> anyhow::Result<()> {
 async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> {
     let metrics = sys::metrics::Metrics::default();
     metrics.spawn_sampler();
+    // Panelin eklediği adresler yeniden başlatmada kaybolmuş olabilir (açılış birimi çalışmadıysa).
+    if let Err(err) = addresses::apply_managed(&db).await {
+        tracing::warn!(error = %err, "ek IP adresleri kurulamadı");
+    }
 
     // TLS kullanan her şey (panel, ACME, bildirimler) aynı şifreleme sağlayıcısını kullanır.
     let _ = rustls::crypto::ring::default_provider().install_default();
