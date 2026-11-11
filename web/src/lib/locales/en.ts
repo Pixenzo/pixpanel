@@ -2460,4 +2460,6 @@ export const en: Record<string, string> = {
   "{address} için yeni sertifika onaylansın mı?": "Approve the new certificate for {address}?",
   "İkincil panelin sertifikasını siz yenilediyseniz onaylayın. Yenilemediyseniz onaylamayın: araya giren biri API anahtarınızı ele geçirmeye çalışıyor olabilir. Onaydan sonra yeni parmak izini ikincil paneldekiyle karşılaştırın.": "Approve if you renewed the secondary panel's certificate yourself. If you did not, do not approve: someone in between may be trying to capture your API key. After approving, compare the new fingerprint with the one on the secondary panel.",
   "Sertifikayı onayla": "Approve certificate",
+  "{address} kutusunu web postasında aç": "Open {address} in webmail",
+  "Web postası kurulu değil; Bileşenler sayfasından kurun": "Webmail is not installed; install it from the Components page",
 };

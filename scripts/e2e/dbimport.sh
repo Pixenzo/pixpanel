@@ -29,7 +29,8 @@ user_id() { api GET /databases | jget "next((x['id'] for x in d['users'] if x['n
 # upload <kimlik çerezi> <veritabanı no> <dosya>: dökümü yükler, görevin sonucunu yazar.
 upload() { local job; job=$(curl -sk -b $1 -c $1 -H 'x-pixpanel-csrf: 1' -F "file=@$3" "$B/databases/$2/import" | jget 'd["job_id"]'); wait_job "$job"; }
 my() { mariadb -N -B -e "$1" 2>&1; }
-pg() { runuser -u postgres -- psql -X -At -d "${2:-postgres}" -c "$1" 2>&1; }
+# Hata iletisi sonuca karışmasın (temiz kurulumda yerel ayarı uyarısı çıkar); sonuç boşsa hata sayılır.
+pg() { runuser -u postgres -- psql -X -At -d "${2:-postgres}" -c "$1" 2>/dev/null; }
 installed() { api GET /components | jget "next(c['installed'] for c in d if c['id']=='$1')"; }
 
 rm -rf $W; mkdir -p $W; rm -f $J $JC

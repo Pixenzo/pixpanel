@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, Globe, Inbox, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -33,6 +33,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatBytes, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
+import { useMe } from "../lib/session";
 import type { AutoReply, DnsRecord, FilterAction, FilterCondition, MailAlias, MailDomain, MailFilter, Mailbox } from "./Mail";
 
 interface DomainDetail {
@@ -43,6 +44,13 @@ interface DomainDetail {
   hostname: string;
   /** Alan adının DNS'i panelde yönetiliyor mu? */
   dns_managed: boolean;
+  /** Web postası kurulu mu? */
+  webmail: boolean;
+}
+
+/** Web postasının adresi; kutu verilirse giriş sayfasında adres yazılı gelir. */
+function webmailUrl(address?: string): string {
+  return address ? `/webmail/?_user=${encodeURIComponent(address)}` : "/webmail/";
 }
 
 type MailboxChanges = Partial<Pick<Mailbox, "quota_mb" | "enabled" | "forward_to" | "forward_keep" | "auto_reply" | "filters">> & { password?: string };
@@ -936,7 +944,19 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                     </div>
                   </Td>
                   <Td align="right" className="whitespace-nowrap">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1">
+                      {detail.webmail && (
+                        <a
+                          href={webmailUrl(mailbox.address)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={t("{address} kutusunu web postasında aç", { address: mailbox.address })}
+                          className="mr-1 inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-[13.5px] font-medium shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors hover:bg-sunken"
+                        >
+                          <MailOpen aria-hidden className="size-4 text-ink-2" />
+                          {t("Web postası")}
+                        </a>
+                      )}
                       <IconButton label={t("Düzenle")} onClick={() => setEditingId(mailbox.id)}>
                         <Pencil className="size-4" />
                       </IconButton>
@@ -1363,6 +1383,7 @@ interface Section {
 }
 
 export function MailDomainPage() {
+  const me = useMe();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const detail = useQuery({ queryKey: detailKey(id ?? ""), queryFn: () => api.get<DomainDetail>(`/mail/domains/${id}`), enabled: Boolean(id) });
@@ -1391,6 +1412,24 @@ export function MailDomainPage() {
         <Badge>{t("{n} takma ad", { n: data.domain.alias_count })}</Badge>
         {data.domain.catch_all && <Badge tone="accent">{t("Hepsini yakala")}</Badge>}
         <span className="text-[13.5px] text-ink-3">{t("Oluşturulma")}: {formatDateTime(data.domain.created_at)}</span>
+        {data.webmail ? (
+          <a
+            href={webmailUrl()}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto inline-flex h-9.5 items-center gap-2 rounded-lg border border-line-strong bg-surface px-4 font-medium shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors hover:bg-sunken max-sm:w-full max-sm:justify-center"
+          >
+            <MailOpen aria-hidden className="size-4 text-ink-2" />
+            {t("Web postasını aç")}
+            <ExternalLink aria-hidden className="size-3.5 text-ink-3" />
+          </a>
+        ) : (
+          me.role === "admin" && (
+            <Link to="/components" className="ml-auto text-[13.5px] font-medium text-accent hover:underline max-sm:ml-0">
+              {t("Web postası kurulu değil; Bileşenler sayfasından kurun")}
+            </Link>
+          )
+        )}
       </header>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

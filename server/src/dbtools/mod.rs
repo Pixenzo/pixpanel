@@ -189,6 +189,27 @@ pub async fn ensure_runtime(cfg: &Config) -> AppResult<()> {
         exec::run_ok("systemctl", &["reload-or-restart", "--", &format!("php{version}-fpm.service")]).await?;
     }
 
+    // ---- Roundcube'un temizlik görevi ----
+    // Dağıtımın zamanlı temizlik görevi sistemin varsayılan PHP'siyle çalışır. O sürüm web
+    // postasının çalıştığı sürümden yeniyse (Ubuntu 26.04'te 8.5) betik hata verir ve birim
+    // "başarısız" görünür; görev, havuzla aynı PHP sürümüne bağlanır.
+    let gc_unit = Path::new("/usr/lib/systemd/system/roundcube-gc.service");
+    if tools.roundcube && gc_unit.exists() {
+        let drop_in = Path::new("/etc/systemd/system/roundcube-gc.service.d/pixpanel.conf");
+        let content = format!("# PixPanel tarafından üretildi.
+[Service]
+ExecStart=
+ExecStart=/usr/bin/php{version} /usr/share/roundcube/bin/gc.sh
+");
+        if let Some(parent) = drop_in.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if write_if_changed(drop_in, &content, 0o644)? {
+            let _ = exec::run("systemctl", &["daemon-reload"]).await;
+            let _ = exec::run("systemctl", &["reset-failed", "roundcube-gc.service"]).await;
+        }
+    }
+
     // ---- nginx ----
     let conf = NGINX_TEMPLATE
         .replace("{{port}}", &PORT.to_string())

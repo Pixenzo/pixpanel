@@ -174,6 +174,8 @@ struct DomainDetail {
     hostname: String,
     /// Alan adının DNS'i panelde yönetiliyor mu? Öyleyse kayıtlar tek tıkla eklenebilir.
     dns_managed: bool,
+    /// Web postası (Roundcube) kurulu mu? Kuruluysa kutuların yanında açma bağlantısı gösterilir.
+    webmail: bool,
 }
 
 async fn domain_detail(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<DomainDetail>> {
@@ -194,6 +196,7 @@ async fn domain_detail(State(state): State<AppState>, user: AuthUser, Path(id): 
         mailboxes,
         domain,
         hostname,
+        webmail: crate::dbtools::installed().roundcube,
     }))
 }
 
