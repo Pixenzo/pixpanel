@@ -206,8 +206,49 @@ pub fn validate_public_dir(value: &str) -> AppResult<String> {
     Ok(parts.join("/"))
 }
 
+/// Yerel adreste müşteri sitelerinin vekilleyemeyeceği portlar: panel, veritabanı araçları, DNS ve
+/// posta süzgeci yönetim uçları, veritabanları. Bu servisler yerel bağlantıya güvenir.
+const INTERNAL_PORTS: &[u16] = &[8443, 8446, 8053, 11332, 11333, 11334, 3306, 5432, 6379, 953, 783, 9911];
+
+/// Hedef, sunucunun içinden ulaşılıp dışarıya açılmaması gereken bir adres mi?
+fn internal_target(url: &url::Url, panel_port: u16) -> bool {
+    use std::net::IpAddr;
+    let port = url.port_or_known_default().unwrap_or(80);
+    let local_port_blocked = port < 1024 || port == panel_port || INTERNAL_PORTS.contains(&port) || (16400..17400).contains(&port);
+    let address: Option<IpAddr> = match url.host() {
+        Some(url::Host::Ipv4(address)) => Some(IpAddr::V4(address)),
+        Some(url::Host::Ipv6(address)) => Some(IpAddr::V6(address)),
+        Some(url::Host::Domain(name)) if name.eq_ignore_ascii_case("localhost") || name.to_ascii_lowercase().ends_with(".localhost") => {
+            return local_port_blocked;
+        }
+        _ => None,
+    };
+    match address {
+        Some(IpAddr::V4(v4)) if v4.is_loopback() => local_port_blocked,
+        Some(IpAddr::V6(v6)) if v6.is_loopback() => local_port_blocked,
+        // Bulut sağlayıcıların kimlik bilgisi sunan metaveri adresi (169.254.169.254) ve iç ağlar.
+        Some(IpAddr::V4(v4)) => v4.is_link_local() || v4.is_private() || v4.is_unspecified() || v4.is_broadcast() || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xc0) == 64),
+        Some(IpAddr::V6(v6)) => v6.is_unspecified() || (v6.segments()[0] & 0xffc0) == 0xfe80 || (v6.segments()[0] & 0xfe00) == 0xfc00,
+        None => false,
+    }
+}
+
 /// Vekil hedefi yalnızca `http(s)://sunucu[:port][/yol]` biçiminde olabilir.
-pub fn validate_proxy_target(value: &str) -> AppResult<String> {
+///
+/// `trusted`: isteği yönetici yaptı. Öteki hesaplar iç servislere ve iç ağa yönlendiremez;
+/// aksi hâlde site, o servisleri kendi alan adından dışarıya açardı.
+pub fn validate_proxy_target(value: &str, trusted: bool, panel_port: u16) -> AppResult<String> {
+    let checked = validate_proxy_target_form(value)?;
+    if !trusted {
+        let parsed = url::Url::parse(&checked).map_err(|_| AppError::bad("Geçersiz hedef adres"))?;
+        if internal_target(&parsed, panel_port) {
+            return Err(AppError::bad("Bu hedefe yönlendirme yapılamaz: sunucunun iç servisleri ve iç ağ adresleri yalnızca yönetici tarafından hedef gösterilebilir"));
+        }
+    }
+    Ok(checked)
+}
+
+fn validate_proxy_target_form(value: &str) -> AppResult<String> {
     let invalid = || AppError::bad("Geçersiz hedef adres (örnek: http://127.0.0.1:3000)");
     let parsed = url::Url::parse(value.trim()).map_err(|_| invalid())?;
     let plain = matches!(parsed.scheme(), "http" | "https")
@@ -225,7 +266,7 @@ pub fn validate_proxy_target(value: &str) -> AppResult<String> {
 
 /// Vekil kuralının yolu: `/` ile başlar, yalnızca güvenli karakterler içerir.
 /// Kök yol (`/`) kural olamaz; bütün siteyi iletmek için site türü kullanılır.
-pub fn validate_proxy_rules(rules: &[ProxyRule]) -> AppResult<Vec<ProxyRule>> {
+pub fn validate_proxy_rules(rules: &[ProxyRule], trusted: bool, panel_port: u16) -> AppResult<Vec<ProxyRule>> {
     if rules.len() > 30 {
         return Err(AppError::bad("Bir siteye en fazla 30 vekil kuralı eklenebilir"));
     }
@@ -246,7 +287,7 @@ pub fn validate_proxy_rules(rules: &[ProxyRule]) -> AppResult<Vec<ProxyRule>> {
             return Err(AppError::bad(format!("{path} yolu için birden fazla kural var")));
         }
         // Hedefin yalnızca kökü (şema, sunucu, port) saklanır; yol kısmı kuraldan gelir.
-        let parsed = url::Url::parse(&validate_proxy_target(&rule.target)?).map_err(|_| AppError::bad("Geçersiz hedef adres"))?;
+        let parsed = url::Url::parse(&validate_proxy_target(&rule.target, trusted, panel_port)?).map_err(|_| AppError::bad("Geçersiz hedef adres"))?;
         if parsed.path() != "/" {
             return Err(AppError::bad("Hedef adres yol içeremez (örnek: http://127.0.0.1:8080)"));
         }
@@ -259,6 +300,48 @@ pub fn validate_proxy_rules(rules: &[ProxyRule]) -> AppResult<Vec<ProxyRule>> {
 }
 
 /// Alan adlarının (ana ad ve takma adlar) başka bir sitede kullanılmadığını denetler.
+/// Yönetici olmayan bir hesabın bu adlarla site açıp açamayacağını denetler.
+///
+/// * Sunucunun kendi adları (ana bilgisayar adı, posta sunucusunun adı) site adı olamaz: o adla
+///   açılan sitenin sertifikası posta servislerine verilir ve panelin kimliğiyle karışır.
+/// * Başka bir hesabın alan adının altındaki adlar (`giris.baskasi.com`) kullanılamaz: o hesabın
+///   ziyaretçilerini kendi sitesine çekebilir, o ad için sertifika alabilirdi. Hesabın kendi alan
+///   adlarının ve bayisinin alan adlarının altı serbesttir.
+pub fn check_names_allowed(db: &Db, acting: &AuthUser, owner_id: i64, names: &[String]) -> AppResult<()> {
+    if acting.is_admin() {
+        return Ok(());
+    }
+    let mut reserved = vec![crate::mail::system_hostname(), crate::mail::hostname(db)];
+    if let Ok(short) = std::fs::read_to_string("/proc/sys/kernel/hostname") {
+        reserved.push(short.trim().to_string());
+    }
+    let reserved: Vec<String> = reserved.into_iter().map(|name| name.to_ascii_lowercase()).filter(|name| name.contains('.')).collect();
+    for name in names {
+        if reserved.iter().any(|host| host == name || name.strip_prefix("www.") == Some(host.as_str())) {
+            return Err(AppError::bad(format!("{name} bu sunucunun kendi adı; site adı olarak yalnızca yönetici kullanabilir")));
+        }
+    }
+    // Hesabın kendisi, isteği yapan ve hesabın bayisi "yabancı" sayılmaz.
+    let parent: Option<i64> = db.call(|conn| conn.query_row("SELECT parent_id FROM users WHERE id = ?1", params![owner_id], |row| row.get(0)).optional())?.flatten();
+    let own = [Some(owner_id), Some(acting.owner_id()), parent];
+    let foreign: Vec<(String, i64)> = db.call(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT domain, user_id FROM sites
+             UNION SELECT a.name, s.user_id FROM site_aliases a JOIN sites s ON s.id = a.site_id
+             UNION SELECT domain, user_id FROM dns_zones
+             UNION SELECT domain, user_id FROM mail_domains",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    })?;
+    for name in names {
+        if let Some((taken, _)) = foreign.iter().find(|(other, user_id)| !own.contains(&Some(*user_id)) && name.ends_with(&format!(".{other}"))) {
+            return Err(AppError::bad(format!("{name} adı, başka bir hesaba ait {taken} alan adının altında; kullanılamaz")));
+        }
+    }
+    Ok(())
+}
+
 fn ensure_names_free(conn: &rusqlite::Connection, names: &[String], except_site: Option<i64>) -> rusqlite::Result<Option<String>> {
     for name in names {
         let taken: bool = conn.query_row(

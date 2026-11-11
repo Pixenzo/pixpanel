@@ -11,7 +11,7 @@ mod backup;
 mod backup_mine;
 mod branding;
 mod components;
-mod cron;
+pub mod cron;
 mod databases;
 mod dns;
 mod docker;

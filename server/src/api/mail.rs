@@ -138,6 +138,14 @@ async fn create_domain(State(state): State<AppState>, user: AuthUser, Json(body)
     if !user.is_admin() && !site_names(&state, owner_id)?.contains(&domain) {
         return Err(AppError::bad("Posta yalnızca hesabınızdaki bir sitenin alan adı için açılabilir"));
     }
+    // Site açmak alan adının sahibi olmayı kanıtlamaz (herkes istediği adla site açabilir). Posta
+    // alanı açılınca bu sunucudaki bütün uygulamaların o adrese gönderdiği posta yerel teslim
+    // edilir; bu yüzden alan adının gerçekten bu sunucuya yönlendirilmiş olması aranır.
+    if !user.is_admin() && !crate::addresses::domain_points_here(&state.db, &domain).await {
+        return Err(AppError::bad(format!(
+            "{domain} henüz bu sunucuyu göstermiyor. Önce alan adının DNS kayıtlarını (A kaydı) bu sunucuya yönlendirin; kayıt yayıldıktan sonra postayı açabilirsiniz. Alan adını henüz taşımadıysanız yöneticiniz postayı sizin adınıza açabilir."
+        )));
+    }
     let _guard = state.sys_lock.lock().await;
     let dkim_record = mail::ensure_dkim(&domain).await?;
     let inserted = state.db.call(|conn| {

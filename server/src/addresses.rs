@@ -343,6 +343,33 @@ async fn install_boot_unit() {
     let _ = exec::run("systemctl", &["enable", BOOT_UNIT]).await;
 }
 
+/// Sunucunun kendisine ait sayılan bütün adresler: üzerinde tanımlı olanlar, dış karşılıkları ve
+/// DNS kayıtlarında kullanılan genel adres.
+pub async fn own_addresses(db: &Db) -> Vec<IpAddr> {
+    let mut list: Vec<IpAddr> = detect().await.into_iter().map(|found| found.address).collect();
+    if let Ok(rows) = rows(db) {
+        list.extend(rows.iter().filter_map(|row| row.public_address.parse::<IpAddr>().ok()));
+    }
+    if let Ok(address) = crate::dns::server_ip(db).parse() {
+        list.push(address);
+    }
+    list
+}
+
+/// Alan adı (ya da `www.`/`mail.` önekli hâli) şu an bu sunucunun bir adresine çözülüyor mu?
+pub async fn domain_points_here(db: &Db, domain: &str) -> bool {
+    let own = own_addresses(db).await;
+    for name in [domain.to_string(), format!("www.{domain}"), format!("mail.{domain}")] {
+        let lookup = tokio::time::timeout(std::time::Duration::from_secs(5), tokio::net::lookup_host((name.as_str(), 80))).await;
+        if let Ok(Ok(found)) = lookup {
+            if found.into_iter().any(|address| own.contains(&address.ip().to_canonical())) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Hesabın sitelerinde seçebileceği adresler. Yönetici sunucudaki her adresi, diğerleri
 /// yalnızca sitenin sahibine ayrılmış olanları seçebilir.
 pub async fn selectable(db: &Db, is_admin: bool, owner_id: i64) -> AppResult<Vec<Address>> {

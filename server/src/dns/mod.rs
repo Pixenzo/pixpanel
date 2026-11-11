@@ -585,7 +585,27 @@ pub fn owns_domain(db: &Db, owner_id: i64, domain: &str) -> AppResult<bool> {
         )?;
         stmt.query_map(params![owner_id], |row| row.get(0))?.collect()
     })?;
-    Ok(names.iter().any(|name| name == domain || name.ends_with(&format!(".{domain}"))))
+    if names.iter().any(|name| name == domain) {
+        return Ok(true);
+    }
+    if !names.iter().any(|name| name.ends_with(&format!(".{domain}"))) {
+        return Ok(false);
+    }
+    // Hesabın yalnızca bir alt alan adı var (`blog.ornek.com`) ve üst adın (`ornek.com`) bölgesini
+    // açmak istiyor. Başka bir hesabın o adın kendisinde ya da altında sitesi, bölgesi ya da
+    // postası varsa izin verilmez: bölge o hesabın adlarını da yanıtlamaya başlardı.
+    let suffix = format!("%.{domain}");
+    let foreign: bool = db.call(|conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sites WHERE user_id != ?1 AND (domain = ?2 OR domain LIKE ?3))
+                 OR EXISTS(SELECT 1 FROM site_aliases a JOIN sites s ON s.id = a.site_id WHERE s.user_id != ?1 AND (a.name = ?2 OR a.name LIKE ?3))
+                 OR EXISTS(SELECT 1 FROM dns_zones WHERE user_id != ?1 AND (domain = ?2 OR domain LIKE ?3))
+                 OR EXISTS(SELECT 1 FROM mail_domains WHERE user_id != ?1 AND (domain = ?2 OR domain LIKE ?3))",
+            params![owner_id, domain, suffix],
+            |row| row.get(0),
+        )
+    })?;
+    Ok(!foreign)
 }
 
 pub fn normalize_domain(value: &str) -> AppResult<String> {

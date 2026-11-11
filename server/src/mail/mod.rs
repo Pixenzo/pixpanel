@@ -727,7 +727,7 @@ async fn write_rspamd(spam: &SpamSettings) -> AppResult<()> {
             "dkim_signing.conf",
             format!(
                 "# PixPanel tarafından üretildi.\npath = \"{DKIM_DIR}/$domain.$selector.key\";\nselector = \"{DKIM_SELECTOR}\";\n\
-                 allow_username_mismatch = true;\nuse_domain = \"header\";\n"
+                 allow_username_mismatch = false;\nuse_domain = \"header\";\n"
             ),
         ),
         (

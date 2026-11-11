@@ -172,6 +172,7 @@ suite clone php-8.3 mariadb
 suite branding
 suite python python
 suite dbimport mariadb
+suite tenancy dns mail mariadb
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"

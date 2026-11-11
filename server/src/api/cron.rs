@@ -163,6 +163,26 @@ fn load(state: &AppState, user: &AuthUser, id: i64) -> AppResult<CronJob> {
     }
 }
 
+/// Hesabın zamanlı görevlerini durdurur ya da yeniden etkinleştirir (hesap askıya alınınca/açılınca).
+pub fn set_account_enabled(state: &AppState, run_as: &str, enabled: bool) -> AppResult<()> {
+    if enabled {
+        write_cron_file(state, run_as)
+    } else {
+        let path = cron_file(run_as);
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+        Ok(())
+    }
+}
+
+/// Silinen hesabın görevlerini ve cron dosyasını kaldırır. Aynı adla sonradan açılacak bir hesap
+/// eskisinin görevlerini (ve komutlarındaki sırları) devralmasın.
+pub fn remove_account(state: &AppState, run_as: &str) -> AppResult<()> {
+    state.db.call(|conn| conn.execute("DELETE FROM cron_jobs WHERE run_as = ?1", params![run_as]))?;
+    set_account_enabled(state, run_as, false)
+}
+
 fn cron_file(run_as: &str) -> PathBuf {
     PathBuf::from(format!("/etc/cron.d/pixpanel-{run_as}"))
 }

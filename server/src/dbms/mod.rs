@@ -121,7 +121,9 @@ pub fn validate_name(name: &str, what: &str) -> AppResult<()> {
             "{what} en fazla 48 karakter olmalı, küçük harfle başlamalı; yalnızca küçük harf, rakam ve _ içerebilir"
         )));
     }
-    if RESERVED.contains(&name) || name.starts_with("pg_") || name.starts_with("pixpanel_") {
+    // `pxi_`: panelin içe aktarma hesapları (bkz. `import`). Bir müşteri bu adla kullanıcı
+    // açabilseydi, panel o hesabı kendi hesabı sanıp başka bir veritabanına yetki verirdi.
+    if RESERVED.contains(&name) || ["pg_", "pixpanel_", "pxi_", "pxt_"].iter().any(|prefix| name.starts_with(prefix)) {
         return Err(AppError::bad(format!("“{name}” adı sunucu tarafından kullanılıyor; başka bir ad seçin")));
     }
     Ok(())

@@ -335,14 +335,15 @@ async fn recreate_site(state: &AppState, ctx: &JobCtx, manifest: &SiteManifest) 
         _ => None,
     };
     let proxy_target = match (manifest.kind.as_str(), &manifest.proxy_target) {
-        ("proxy", Some(target)) => Some(sites::validate_proxy_target(target)?),
+        // Yedekteki ayarlar kaydedilirken denetlenmişti; burada yalnızca biçim yeniden doğrulanır.
+        ("proxy", Some(target)) => Some(sites::validate_proxy_target(target, true, state.cfg.listen_port)?),
         ("proxy", None) => return Err(AppError::bad("Yedekteki site ayarlarında hedef adres yok")),
         _ => None,
     };
     if node::is_app(&manifest.kind) {
         manifest.node.validate(&manifest.kind)?;
     }
-    let proxy_rules = sites::validate_proxy_rules(&manifest.proxy_rules)?;
+    let proxy_rules = sites::validate_proxy_rules(&manifest.proxy_rules, true, state.cfg.listen_port)?;
 
     ctx.log(format!("Site artık yok; yedekteki ayarlarla yeniden kuruluyor ({}).", manifest.kind));
     let _guard = state.sys_lock.lock().await;

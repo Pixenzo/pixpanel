@@ -161,6 +161,11 @@ async fn create(
     };
     let username = body.username.trim().to_lowercase();
     validate_username(&username)?;
+    // Bu adla bir Linux hesabı duruyorsa (silinmiş bir hesaptan kalan dosyalarıyla birlikte) yeni
+    // hesap onun ev klasörünü devralırdı.
+    if crate::hosting::sysuser::lookup(&username).is_some() {
+        return Err(AppError::conflict(format!("“{username}” adı sunucuda kullanılıyor (daha önce silinmiş bir hesabın dosyaları duruyor olabilir); başka bir ad seçin")));
+    }
     auth::validate_password(&body.password)?;
     validate_permissions(&body.permissions)?;
     let package_id = match body.package_id {
@@ -348,6 +353,17 @@ async fn update(
         }
         tx.commit()
     })?;
+    // Askıya alma yalnız panel oturumunu değil sunucudaki erişimi de kapatır: SSH/SFTP girişi ve
+    // zamanlı görevler durur; hesap yeniden etkinleşince geri gelir.
+    if let Some(status) = &body.status {
+        let active = status == "active";
+        if let Err(err) = crate::hosting::sysuser::set_locked(&target.username, !active).await {
+            tracing::warn!(account = %target.username, error = %err, "Linux hesabının kilidi değiştirilemedi");
+        }
+        if let Err(err) = crate::api::cron::set_account_enabled(&state, &target.username, active) {
+            tracing::warn!(account = %target.username, error = %err, "zamanlı görevler güncellenemedi");
+        }
+    }
     auth::audit(&state.db, &user, "user.update", &target.username, "");
     Ok(Json(json!({ "ok": true })))
 }
@@ -379,6 +395,16 @@ async fn remove(
     })?;
     // Hesabın SSH anahtar dosyası geride kalmasın (aynı adla yeni hesap açılırsa eski anahtarlar geçerli olurdu).
     crate::hosting::sshaccess::remove_keys(&target.username);
+    // Zamanlı görevler ve Linux hesabı da kalkar; aynı adla açılacak yeni hesap eskisinin
+    // görevlerini, anahtarlarını ya da dosyalarını devralmaz.
+    if let Err(err) = crate::api::cron::remove_account(&state, &target.username) {
+        tracing::warn!(account = %target.username, error = %err, "hesabın zamanlı görevleri kaldırılamadı");
+    }
+    match crate::hosting::sysuser::remove(&target.username).await {
+        Ok(true) => {}
+        Ok(false) => tracing::info!(account = %target.username, "Linux hesabı silinmedi (saklanmış site dosyaları var); kilitlendi"),
+        Err(err) => tracing::warn!(account = %target.username, error = %err, "Linux hesabı kaldırılamadı"),
+    }
     // Hesabın Redis örneği de onunla birlikte kapanır (süreç, yapılandırma ve veri).
     crate::hosting::redis_account::remove_for_username(&state.db, id, &target.username).await;
     auth::audit(&state.db, &user, "user.delete", &target.username, "");

@@ -132,6 +132,43 @@ pub async fn ensure(name: &str) -> AppResult<SysUser> {
     Ok(user)
 }
 
+/// Panelin yönettiği Linux hesabını kilitler ya da açar. Kilitli (süresi dolmuş) hesapla SSH ve
+/// SFTP oturumu açılamaz, zamanlı görevler çalışmaz. Sitelerin servisleri bundan etkilenmez.
+pub async fn set_locked(name: &str, locked: bool) -> AppResult<()> {
+    validate_name(name)?;
+    if lookup(name).is_none() || !group_members(MANAGED_GROUP).iter().any(|member| member == name) {
+        return Ok(());
+    }
+    // Hesabın geçerlilik tarihi: 1 = 2 Ocak 1970 (süresi dolmuş), boş = süresiz.
+    exec::run_ok("usermod", &["--expiredate", if locked { "1" } else { "" }, "--", name]).await?;
+    Ok(())
+}
+
+/// Silinen hesabın Linux kullanıcısını kaldırır. Ev klasöründe saklanmış site dosyaları varsa
+/// (site "dosyaları kalsın" denerek silinmişse) kullanıcı silinmez, yalnızca kilitlenir; dosyalar
+/// yöneticinin kararına kalır. Kaldırıldıysa `true` döner.
+pub async fn remove(name: &str) -> AppResult<bool> {
+    validate_name(name)?;
+    let Some(user) = lookup(name) else { return Ok(true) };
+    if !group_members(MANAGED_GROUP).iter().any(|member| member == name) {
+        return Ok(false);
+    }
+    let has_files = std::fs::read_dir(user.sites_dir()).map(|mut entries| entries.next().is_some()).unwrap_or(false);
+    if has_files {
+        set_locked(name, true).await?;
+        return Ok(false);
+    }
+    // Hesabın süren süreçleri varsa silme başarısız olur; önce sonlandırılırlar.
+    let _ = exec::run("pkill", &["-KILL", "-u", &user.uid.to_string()]).await;
+    exec::run_ok("userdel", &["--", name]).await?;
+    // Ev klasörünün üst düzeyi root'a aittir; `userdel` ona dokunmaz. Geride kalırsa aynı adla
+    // açılacak yeni hesap eskisinin klasörünü devralırdı. Site dosyası kalmadığı yukarıda doğrulandı.
+    if user.home.starts_with("/home/") && user.home.is_dir() {
+        std::fs::remove_dir_all(&user.home)?;
+    }
+    Ok(true)
+}
+
 /// Kullanıcının kendi yazabildiği, ev klasörünün üst düzeyindeki klasörler.
 /// Üst düzey root'a ait olduğundan araçların beklediği klasörler önceden açılır.
 const USER_DIRS: &[&str] = &["tmp", ".ssh", ".config", ".cache", ".local", ".composer", ".npm"];

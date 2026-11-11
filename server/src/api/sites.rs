@@ -168,6 +168,7 @@ async fn clone_site(State(state): State<AppState>, user: AuthUser, Path(id): Pat
     }
     crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Site)?;
     let domain_name = domain::normalize(&body.domain)?;
+    sites::check_names_allowed(&state.db, &user, source.user_id, std::slice::from_ref(&domain_name))?;
     let wordpress = crate::wordpress::is_wordpress(&source).await;
     if wordpress {
         crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Database)?;
@@ -288,6 +289,9 @@ async fn create(
     crate::quota::check(&state.db, owner_id, crate::quota::Resource::Site)?;
     let domain_name = domain::normalize(&body.domain)?;
     let aliases = sites::normalize_aliases(&domain_name, &body.aliases)?;
+    let mut all_names = vec![domain_name.clone()];
+    all_names.extend(aliases.iter().cloned());
+    sites::check_names_allowed(&state.db, &user, owner_id, &all_names)?;
 
     let php_version = match body.kind.as_str() {
         "php" => {
@@ -300,7 +304,7 @@ async fn create(
     let proxy_target = match body.kind.as_str() {
         "proxy" => {
             let target = body.proxy_target.ok_or_else(|| AppError::bad("Hedef adresi girin"))?;
-            Some(sites::validate_proxy_target(&target)?)
+            Some(sites::validate_proxy_target(&target, user.is_admin(), state.cfg.listen_port)?)
         }
         _ => None,
     };
@@ -387,6 +391,9 @@ async fn update(
     }
     if let Some(aliases) = &body.aliases {
         site.aliases = sites::normalize_aliases(&site.domain, aliases)?;
+        // Yalnızca yeni eklenen adlar denetlenir; var olanlar eski kurala göre kabul edilmişti.
+        let added: Vec<String> = site.aliases.iter().filter(|name| !previous.aliases.contains(name)).cloned().collect();
+        sites::check_names_allowed(&state.db, &user, site.user_id, &added)?;
     }
     if let Some(public_dir) = &body.public_dir {
         site.public_dir = sites::validate_public_dir(public_dir)?;
@@ -400,7 +407,7 @@ async fn update(
         site.php_settings = settings;
     }
     if let Some(target) = &body.proxy_target {
-        site.proxy_target = Some(sites::validate_proxy_target(target)?);
+        site.proxy_target = Some(sites::validate_proxy_target(target, user.is_admin(), state.cfg.listen_port)?);
     }
     if let Some(websocket) = body.proxy_websocket {
         site.proxy_websocket = websocket;
@@ -450,7 +457,7 @@ async fn update(
         site.node = settings;
     }
     if let Some(rules) = &body.proxy_rules {
-        site.proxy_rules = sites::validate_proxy_rules(rules)?;
+        site.proxy_rules = sites::validate_proxy_rules(rules, user.is_admin(), state.cfg.listen_port)?;
     }
     if node::is_app(&site.kind) {
         // Tür yeni değiştiyse ayarlar öteki çalışma ortamından kalmış olabilir; yenisinin başlangıç değerleri verilir.
