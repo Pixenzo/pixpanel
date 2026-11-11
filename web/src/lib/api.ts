@@ -187,6 +187,8 @@ export interface AccountUsage {
   mailboxes: number;
   ftp_accounts: number;
   dns_zones: number;
+  /** İçinde bulunulan ayda sitelerin aktardığı veri (bayt). */
+  traffic_bytes: number;
   disk_bytes: number | null;
   disk_measured_at: number | null;
 }
@@ -557,4 +559,27 @@ export interface AccountAccess {
   keys: { id: number; name: string; fingerprint: string; created_at: number }[];
   can_change_mode: boolean;
   can_grant_shell: boolean;
+}
+
+// ---- Site istatistikleri ----
+
+export interface SiteDayStats {
+  /** `YYYYMMDD` */
+  day: number;
+  requests: number;
+  pages: number;
+  visitors: number;
+  bytes: number;
+  bots: number;
+  s2xx: number;
+  s3xx: number;
+  s4xx: number;
+  s5xx: number;
+}
+
+export interface SiteStats {
+  days: SiteDayStats[];
+  top_paths: { path: string; hits: number }[];
+  /** İçinde bulunulan ayda aktarılan veri (bayt). */
+  month_bytes: number;
 }

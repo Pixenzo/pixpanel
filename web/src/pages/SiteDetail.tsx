@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, ArrowRightLeft, ExternalLink, FileCode2, GitBranch, Globe, HardDriveUpload, Hexagon, LayoutGrid, PenLine, Plus, Route, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ChartColumn, ExternalLink, FileCode2, GitBranch, Globe, HardDriveUpload, Hexagon, LayoutGrid, PenLine, Plus, Route, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router";
@@ -30,6 +30,7 @@ import { NodeSection } from "./SiteNode";
 import { ProxyRulesSection } from "./SiteProxyRules";
 import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { UptimePanel } from "../components/UptimePanel";
+import { StatsSection } from "./SiteStats";
 import { WordPressSection } from "./SiteWordPress";
 import { SslTab } from "./SiteSsl";
 
@@ -478,6 +479,7 @@ export function SiteDetailPage() {
     { id: "settings", label: t("Adresler ve yayın"), icon: Globe },
     ...(data.kind === "php" ? [{ id: "php", label: t("PHP ayarları"), icon: FileCode2 }] : []),
     ...(data.kind === "php" ? [{ id: "wordpress", label: "WordPress", icon: PenLine }] : []),
+    { id: "stats", label: t("İstatistikler"), icon: ChartColumn },
     ...(data.kind === "node" ? [{ id: "node", label: t("Node.js uygulaması"), icon: Hexagon }] : []),
     ...(data.kind === "proxy" ? [{ id: "proxy", label: t("Ters vekil"), icon: ArrowRightLeft }] : []),
     ...(data.kind !== "proxy" ? [{ id: "rules", label: t("Vekil kuralları"), icon: Route }] : []),
@@ -533,6 +535,7 @@ export function SiteDetailPage() {
           {active === "settings" && <GeneralTab key={JSON.stringify(data)} site={data} />}
           {active === "php" && <PhpTab key={JSON.stringify(data.php_settings) + data.php_version} site={data} options={options.data} />}
           {active === "wordpress" && <WordPressSection site={data} />}
+          {active === "stats" && <StatsSection site={data} />}
           {active === "node" && <NodeSection site={data} options={options.data} />}
           {active === "proxy" && <ProxyTab key={data.proxy_target} site={data} />}
           {active === "rules" && <ProxyRulesSection key={JSON.stringify(data.proxy_rules)} site={data} />}

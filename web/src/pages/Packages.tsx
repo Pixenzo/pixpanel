@@ -284,6 +284,10 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
           }
         />
       </dl>
+      <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+        <span className="text-ink-2">{t("Aylık trafik")}</span>
+        <span className="tabular font-mono text-[13px]">{formatBytes(data.traffic_bytes)}</span>
+      </p>
       {data.disk_measured_at !== null && (
         <p className="mt-3 text-[12.5px] text-ink-3">{t("Disk kullanımı saatte bir ölçülür; son ölçüm {when}.", { when: formatRelative(data.disk_measured_at) })}</p>
       )}

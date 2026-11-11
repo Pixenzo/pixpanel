@@ -170,7 +170,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 - **Kapsam:** hesap başına SFTP (hapisli; ev klasörü düzeni buna hazır) ve isteğe bağlı kabuk erişimi; açık anahtar yönetimi; `sshd_config.d` altında panelin kendi dosyası; panelde hesap terminali (bugün yalnızca yönetici).
 - **Kabul:** hesap SFTP ile yalnızca kendi klasörünü görür; kabuk izni olmayan hesap komut çalıştıramaz; bozuk sshd yapılandırması uygulanmaz (`sshd -t`).
 
-### 10. İstatistik — O, arka uç + arayüz (arayüz devre uygun)
+### 10. İstatistik — TAMAMLANDI (11.11.2026; kalan: trafik sınırının uygulanması, yönlendiren/ülke/tarayıcı dökümü, veritabanı ve posta disk kullanımı)
 
 - **Kapsam:** nginx erişim günlüklerinden site başına günlük özet (istek, tekil ziyaretçi, bant genişliği, durum kodları, en çok istenen yollar, botlar); disk kullanımı (site, veritabanı, posta); aylık trafik (paket sınırı için). Özetler SQLite'ta tutulur, ham günlük saklanmaz.
 - **Kabul:** bilinen sayıda istek atılır, özet aynı sayıyı gösterir; günlük döndürme (logrotate) sayımı bozmaz.

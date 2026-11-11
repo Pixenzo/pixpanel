@@ -14,6 +14,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  ChartColumn,
   Network,
   PenLine,
   HardDriveUpload,
@@ -119,6 +120,7 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
   if (site.kind === "php") {
     tools.push({ id: "wordpress", label: "WordPress", icon: PenLine, to: `${base}/wordpress`, status: t("Tek tıkla kur, güncelle, giriş yap") });
   }
+  tools.push({ id: "stats", label: t("İstatistikler"), icon: ChartColumn, to: `${base}/stats`, status: t("Ziyaretçi, sayfa ve trafik") });
   tools.push({ id: "git", label: t("Git ile yayınlama"), icon: GitBranch, to: `${base}/git`, ...gitStatus(summary) });
   if (can("ftp") && site.kind !== "proxy") {
     tools.push({ id: "ftp", label: t("FTP hesapları"), icon: HardDriveUpload, to: `${base}/ftp`, status: t("Siteye özel hesaplar") });
