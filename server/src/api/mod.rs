@@ -9,6 +9,7 @@ mod addresses;
 mod auth;
 mod backup;
 mod backup_mine;
+mod branding;
 mod components;
 mod cron;
 mod databases;
@@ -45,6 +46,7 @@ pub fn router() -> Router<AppState> {
         .nest("/auth", auth::router())
         .nest("/users", users::router().merge(access::router()))
         .nest("/system", system::router().nest("/ips", addresses::router()).nest("/certificate", panelcert::router()).nest("/update", update::router()))
+        .nest("/branding", branding::router())
         .nest("/jobs", jobs::router())
         .nest("/events", events::router())
         .nest("/health", health::router())

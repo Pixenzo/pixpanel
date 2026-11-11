@@ -6,12 +6,13 @@ import { ChevronDown, LogOut, Menu, Moon, Search, Sun, UserRound } from "lucide-
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
-import { BrandMark } from "../components/Brand";
+import { BrandLogo, BrandName } from "../components/Brand";
 import { CommandPalette } from "../components/CommandPalette";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Button, IconButton, Spinner } from "../components/ui";
 import type { Overview } from "../lib/api";
 import { api } from "../lib/api";
+import { useBrandTitle, useBranding } from "../lib/branding";
 import { classNames, formatBytes, formatPercent } from "../lib/format";
 import { t } from "../lib/i18n";
 import type { LiveState } from "../lib/live";
@@ -32,8 +33,10 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   return (
     <nav aria-label={t("Ana gezinme")} className="flex h-full flex-col overflow-y-auto bg-rail text-rail-ink">
       <div className="flex h-13 shrink-0 items-center gap-2.5 border-b border-rail-line px-4">
-        <BrandMark onDark />
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">PixPanel</span>
+        <BrandLogo onDark />
+        <span className="min-w-0 truncate text-[16px] font-semibold tracking-[-0.01em]">
+          <BrandName />
+        </span>
       </div>
       <div className="flex flex-1 flex-col gap-5 px-2.5 py-4">
         {navigation.map((group, index) => {
@@ -258,6 +261,7 @@ function ImpersonationBar({ by, username }: { by: string; username: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const [theme, toggleTheme] = useTheme();
+  useBrandTitle(useBranding());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const location = useLocation();
@@ -300,7 +304,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <header className="sticky top-0 z-20 flex h-13 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-4 lg:px-6">
         <span className="flex shrink-0 items-center lg:hidden">
-          <BrandMark />
+          <BrandLogo />
         </span>
         <button
           type="button"

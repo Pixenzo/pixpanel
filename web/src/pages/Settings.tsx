@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
+import { BrandingSettings } from "../components/BrandingSettings";
 import { IpAddresses } from "../components/IpAddresses";
 import { PanelCertificate } from "../components/PanelCertificate";
 import { Button, ErrorBlock, Input, LoadingBlock, PageHeader, Panel, Select } from "../components/ui";
@@ -175,6 +176,7 @@ export function SettingsPage() {
       <PageHeader title={t("Ayarlar")} description={t("Panelin genel ayarları.")} />
       <PanelCertificate />
       <PanelUpdate />
+      <BrandingSettings />
       <IpAddresses />
       <Panel title={t("E-posta gönderimi (SMTP)")}>
         <p className="mb-4 max-w-[70ch] text-ink-2">

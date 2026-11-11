@@ -2,7 +2,8 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Button, Input } from "../components/ui";
 import { ApiError, api, errorMessage } from "../lib/api";
-import { BrandMark } from "../components/Brand";
+import { BrandLogo } from "../components/Brand";
+import { brandName, useBrandTitle, useBranding } from "../lib/branding";
 import { t } from "../lib/i18n";
 import { useSession, useTheme } from "../lib/session";
 
@@ -50,13 +51,16 @@ export function LoginPage() {
     setError(null);
   }
 
+  const branding = useBranding();
+  useBrandTitle(branding);
+
   return (
     <main className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-7 flex items-center gap-3">
-          <BrandMark className="size-8" />
-          <div>
-            <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">PixPanel</h1>
+          <BrandLogo className="size-8" />
+          <div className="min-w-0">
+            <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.01em] break-words">{brandName(branding)}</h1>
             <p className="font-mono text-[12.5px] text-ink-3">{window.location.hostname}</p>
           </div>
         </div>
@@ -125,6 +129,7 @@ export function LoginPage() {
             </div>
           )}
         </form>
+        {branding.login_message !== "" && <p className="mt-4 text-center text-[13px] whitespace-pre-line text-ink-2">{branding.login_message}</p>}
 
         <p className="mt-4 text-[12.5px] text-ink-3">
           {t("Parolanızı unuttuysanız sunucuda şu komutla sıfırlayabilirsiniz:")}{" "}

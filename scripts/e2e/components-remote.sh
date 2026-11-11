@@ -169,6 +169,7 @@ suite redis-account redis
 suite impersonate
 suite rules php-8.3
 suite clone php-8.3 mariadb
+suite branding
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"
