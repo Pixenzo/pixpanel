@@ -177,6 +177,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_health_monitor(state.clone());
     tasks::spawn_wordpress_scan(state.clone());
     tasks::spawn_disk_measurement(state.clone());
+    tasks::spawn_dkim_owner_sync(state.clone());
     tasks::spawn_stats_collector(state.clone());
     tasks::spawn_metrics_archive(state.clone());
     tasks::spawn_dns_cluster_sync(state.clone());

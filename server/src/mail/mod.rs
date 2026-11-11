@@ -27,6 +27,12 @@ const VMAIL_USER: &str = "vmail";
 const VMAIL_UID: u32 = 5000;
 const DKIM_DIR: &str = "/var/lib/rspamd/dkim";
 pub const DKIM_SELECTOR: &str = "pix";
+/// Bir iletinin hangi alan adı adına imzalanabileceğine karar veren Rspamd koşulu.
+const DKIM_SIGN_CONDITION: &str = include_str!("dkim-sign-condition.lua");
+/// Yalnızca `sendmail` ile gelen postayı işleyen Postfix temizlik servisi.
+const LOCAL_CLEANUP_SERVICE: &str = "pixcleanup";
+/// Postfix'in `sendmail` yolunda eklediği, gönderenin Linux kullanıcı numarasını taşıyan iç başlık.
+const UID_HEADER: &str = "X-PixPanel-Uid";
 const HOSTNAME_KEY: &str = "mail.hostname";
 const SPAM_KEY: &str = "mail.spam";
 
@@ -461,6 +467,8 @@ pub async fn sync(db: &Db) -> AppResult<()> {
     atomic_write(&users_path, users.as_bytes(), 0o640)?;
     std::os::unix::fs::chown(&users_path, Some(0), Some(sysuser::group_id("dovecot")?))?;
 
+    write_dkim_owners(db)?;
+
     // texthash eşlemeleri süreç başlarken okunur; yeniden yükleme yeni içeriği devreye alır.
     if services::is_active("postfix.service").await {
         exec::run_ok("postfix", &["reload"]).await?;
@@ -667,6 +675,86 @@ fn tls_paths(cfg: &crate::config::Config, hostname: &str) -> (PathBuf, PathBuf) 
     (cfg.tls_dir().join("panel.crt"), cfg.tls_dir().join("panel.key"))
 }
 
+// ---- DKIM imza yetkisi ----
+
+fn dkim_owners_file() -> PathBuf {
+    Path::new(MAIL_DIR).join("rspamd").join("dkim_owners.map")
+}
+
+/// Hangi Linux kullanıcısının hangi alan adı adına imzalı posta gönderebileceğini yazar
+/// (`kullanıcı numarası:alan adı` satırları). Rspamd koşulu bu dosyayı okur; sunucunun içinden
+/// `sendmail` ile gönderilen posta ancak alan adının sahibi hesaptan geliyorsa imzalanır.
+/// Hesabın Linux kullanıcısı ilk sitesiyle oluştuğu için dosya düzenli aralıkla da yenilenir.
+pub fn write_dkim_owners(db: &Db) -> AppResult<()> {
+    if !is_installed() {
+        return Ok(());
+    }
+    let rows: Vec<(String, String)> = db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT u.username, d.domain FROM mail_domains d JOIN users u ON u.id = d.user_id ORDER BY d.domain")?;
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?.collect()
+    })?;
+    let mut content = String::new();
+    for (username, domain) in rows {
+        // Kök kullanıcı koşulda ayrıca güvenilir sayılır; buraya yazılmaz.
+        if let Some(user) = sysuser::lookup(&username).filter(|user| user.uid != 0) {
+            content.push_str(&format!("{}:{}\n", user.uid, domain.to_lowercase()));
+        }
+    }
+    let path = dkim_owners_file();
+    if std::fs::read_to_string(&path).is_ok_and(|current| current == content) {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    atomic_write(&path, content.as_bytes(), 0o644)
+}
+
+/// Postfix'i, `sendmail` ile gelen postanın başına gönderenin kullanıcı numarasını yazacak
+/// biçimde ayarlar.
+///
+/// Postfix yerel gönderimde iletiye "(Postfix, from userid N)" içeren bir alındı başlığı ekler,
+/// ama posta süzgeci (Rspamd) bu başlığı görmez. Bu yüzden yalnızca `sendmail` yolunu işleyen
+/// ayrı bir temizlik servisi tanımlanır; o servis alındı başlığından numarayı alıp iç başlığa
+/// yazar. SMTP ile gelen postayı işleyen asıl servis ise aynı adlı başlığı siler; böylece başlık
+/// dışarıdan ya da yerel SMTP bağlantısıyla taklit edilemez.
+async fn configure_local_sender_mark() -> AppResult<()> {
+    let strip = Path::new("/etc/postfix/pixpanel-header-checks");
+    let mark = Path::new("/etc/postfix/pixpanel-local-header-checks");
+    let strip_rule = format!("/^{UID_HEADER}:/ IGNORE\n");
+    atomic_write(strip, format!("# PixPanel tarafından üretildi.\n{strip_rule}").as_bytes(), 0o644)?;
+    atomic_write(
+        mark,
+        format!(
+            "# PixPanel tarafından üretildi.\n{strip_rule}\
+             /^Received: by .* \\(Postfix, from userid ([0-9]+)\\)/ PREPEND {UID_HEADER}: $1\n"
+        )
+        .as_bytes(),
+        0o644,
+    )?;
+    postconf(&["-e".into(), format!("header_checks=regexp:{}", strip.display())]).await?;
+    postconf(&["-M".into(), format!("{LOCAL_CLEANUP_SERVICE}/unix={LOCAL_CLEANUP_SERVICE} unix n - y - 0 cleanup")]).await?;
+    postconf(&["-P".into(), format!("{LOCAL_CLEANUP_SERVICE}/unix/header_checks=regexp:{}", mark.display())]).await?;
+    postconf(&["-P".into(), format!("pickup/unix/cleanup_service_name={LOCAL_CLEANUP_SERVICE}")]).await?;
+    Ok(())
+}
+
+/// Bu korumadan önce kurulmuş posta sunucusunu panel açılırken günceller (bir kez).
+pub async fn upgrade_dkim_policy(db: &Db) -> AppResult<()> {
+    if !is_installed() || Path::new("/etc/postfix/pixpanel-local-header-checks").exists() || !Path::new("/etc/rspamd/local.d/dkim_signing.conf").exists() {
+        return Ok(());
+    }
+    write_dkim_owners(db)?;
+    configure_local_sender_mark().await?;
+    exec::run_ok("postfix", &["check"]).await?;
+    if services::is_active("postfix.service").await {
+        exec::run_ok("postfix", &["reload"]).await?;
+    }
+    write_rspamd(&load_spam(db)?).await?;
+    tracing::info!("posta sunucusu DKIM imza yetkisi denetimine geçirildi");
+    Ok(())
+}
+
 // ---- Temel yapılandırma ----
 
 async fn postconf(args: &[String]) -> AppResult<()> {
@@ -727,7 +815,13 @@ async fn write_rspamd(spam: &SpamSettings) -> AppResult<()> {
             "dkim_signing.conf",
             format!(
                 "# PixPanel tarafından üretildi.\npath = \"{DKIM_DIR}/$domain.$selector.key\";\nselector = \"{DKIM_SELECTOR}\";\n\
-                 allow_username_mismatch = false;\nuse_domain = \"header\";\n"
+                 allow_username_mismatch = false;\nuse_domain = \"header\";\n\
+                 # İmza yalnızca gönderenin alan adı üzerindeki hakkı kanıtlanınca atılır.\n\
+                 sign_condition = <<EOD\n{condition}\nEOD;\n",
+                condition = DKIM_SIGN_CONDITION
+                    .replace("{{map}}", &dkim_owners_file().to_string_lossy())
+                    .replace("{{dkim_dir}}", DKIM_DIR)
+                    .replace("{{selector}}", DKIM_SELECTOR)
             ),
         ),
         (
@@ -877,6 +971,7 @@ pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
         );
         postconf(&options).await?;
     }
+    configure_local_sender_mark().await?;
     exec::run_ok("postfix", &["check"]).await?;
 
     // ---- Rspamd ----

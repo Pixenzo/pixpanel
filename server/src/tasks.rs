@@ -99,6 +99,26 @@ pub fn spawn_wordpress_scan(state: AppState) {
     });
 }
 
+/// DKIM imza yetkisi eşlemesini güncel tutar: hesabın Linux kullanıcısı ilk sitesiyle oluşur,
+/// o ana kadar eşlemede yer almaz. Dosya yalnızca içeriği değiştiyse yeniden yazılır.
+pub fn spawn_dkim_owner_sync(state: AppState) {
+    tokio::spawn(async move {
+        {
+            let _guard = state.sys_lock.lock().await;
+            if let Err(err) = crate::mail::upgrade_dkim_policy(&state.db).await {
+                tracing::warn!(error = %err, "posta sunucusu DKIM imza yetkisi denetimine geçirilemedi");
+            }
+        }
+        let mut ticker = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            ticker.tick().await;
+            if let Err(err) = crate::mail::write_dkim_owners(&state.db) {
+                tracing::warn!(error = %err, "DKIM imza yetkisi eşlemesi yazılamadı");
+            }
+        }
+    });
+}
+
 /// Hesapların disk kullanımını saatte bir ölçer (paketlerin disk kotası için).
 pub fn spawn_disk_measurement(state: AppState) {
     tokio::spawn(async move {

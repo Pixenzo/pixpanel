@@ -174,6 +174,7 @@ suite python python
 suite dbimport mariadb
 suite tenancy dns mail mariadb
 suite portguard node-22
+suite dkim mail
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"
