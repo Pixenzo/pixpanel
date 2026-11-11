@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 // Panel API'siyle konuşan ince istemci.
 
 const BASE = "/api/v1";
@@ -30,7 +31,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, "network", "Panele ulaşılamıyor. Bağlantınızı ve sunucunun çalıştığını denetleyin.");
+    throw new ApiError(0, "network", t("Panele ulaşılamıyor. Bağlantınızı ve sunucunun çalıştığını denetleyin."));
   }
 
   if (!response.ok) {
@@ -61,7 +62,7 @@ export const api = {
 };
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Beklenmeyen bir hata oluştu";
+  return error instanceof Error ? error.message : t("Beklenmeyen bir hata oluştu");
 }
 
 // ---- Türler ----

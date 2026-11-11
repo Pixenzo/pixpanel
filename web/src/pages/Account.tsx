@@ -26,8 +26,45 @@ import type { SessionInfo, TokenInfo } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { formatDateTime, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
-import { UsagePanel } from "./Packages";
 import { useMe } from "../lib/session";
+import { UsagePanel } from "./Packages";
+
+function LanguagePanel() {
+  const me = useMe();
+  const queryClient = useQueryClient();
+  const [language, setLanguage] = useState(me.language === "en" ? "en" : "tr");
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/users/${me.id}`, { language }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
+      // `t` çağıran bileşenlerin hepsi yeni dille çizilsin diye sayfa yeniden yüklenir.
+      window.location.reload();
+    },
+  });
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    save.mutate();
+  }
+
+  return (
+    <Panel title={t("Dil")}>
+      <form onSubmit={submit} className="flex max-w-sm flex-col gap-4">
+        <Select label={t("Arayüz dili")} value={language} onChange={(e) => setLanguage(e.target.value)}>
+          <option value="tr">Türkçe</option>
+          <option value="en">English</option>
+        </Select>
+        {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
+        <div>
+          <Button type="submit" variant="primary" loading={save.isPending} disabled={language === me.language}>
+            {t("Dili kaydet")}
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
 
 function PasswordPanel() {
   const feedback = useFeedback();
@@ -334,6 +371,7 @@ export function AccountPage() {
         <PasswordPanel />
         <TwoFactorPanel />
         <NotificationSettings />
+        <LanguagePanel />
         <SessionsPanel />
         <TokensPanel />
       </div>

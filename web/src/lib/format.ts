@@ -1,5 +1,7 @@
 // Biçimlendirme yardımcıları.
 
+import { getLanguage, t } from "./i18n";
+
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
 
 export function formatBytes(bytes: number, digits = 1): string {
@@ -10,7 +12,7 @@ export function formatBytes(bytes: number, digits = 1): string {
 }
 
 export function formatRate(bytesPerSecond: number): string {
-  return `${formatBytes(bytesPerSecond)}/sn`;
+  return t("{size}/sn", { size: formatBytes(bytesPerSecond) });
 }
 
 export function formatPercent(value: number, digits = 0): string {
@@ -21,21 +23,24 @@ export function formatPercent(value: number, digits = 0): string {
 export function formatDuration(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds));
   const parts: [number, string][] = [
-    [Math.floor(seconds / 86400), "gün"],
-    [Math.floor((seconds % 86400) / 3600), "sa"],
-    [Math.floor((seconds % 3600) / 60), "dk"],
-    [seconds % 60, "sn"],
+    [Math.floor(seconds / 86400), "{n} gün"],
+    [Math.floor((seconds % 86400) / 3600), "{n} sa"],
+    [Math.floor((seconds % 3600) / 60), "{n} dk"],
+    [seconds % 60, "{n} sn"],
   ];
   const first = parts.findIndex(([value]) => value > 0);
-  if (first === -1) return "0 sn";
+  if (first === -1) return t("{n} sn", { n: 0 });
   return parts
     .slice(first, first + 2)
     .filter(([value]) => value > 0)
-    .map(([value, unit]) => `${value} ${unit}`)
+    .map(([value, unit]) => t(unit, { n: value }))
     .join(" ");
 }
 
-const dateTimeFormat = new Intl.DateTimeFormat("tr-TR", {
+// Tarihler etkin dilin alışılmış biçimiyle yazılır (dil değişince sayfa yeniden yüklenir).
+const dateLocale = getLanguage() === "en" ? "en-GB" : "tr-TR";
+
+const dateTimeFormat = new Intl.DateTimeFormat(dateLocale, {
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
@@ -43,7 +48,7 @@ const dateTimeFormat = new Intl.DateTimeFormat("tr-TR", {
   minute: "2-digit",
 });
 
-const timeFormat = new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const timeFormat = new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 export function formatDateTime(unixSeconds: number | null | undefined): string {
   if (!unixSeconds) return "—";
@@ -56,12 +61,12 @@ export function formatTime(unixSeconds: number): string {
 
 /** "5 dakika önce" gibi göreli zaman. */
 export function formatRelative(unixSeconds: number | null | undefined): string {
-  if (!unixSeconds) return "hiç";
+  if (!unixSeconds) return t("hiç");
   const diff = Math.floor(Date.now() / 1000) - unixSeconds;
-  if (diff < 60) return "az önce";
-  if (diff < 3600) return `${Math.floor(diff / 60)} dk önce`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} sa önce`;
-  if (diff < 30 * 86400) return `${Math.floor(diff / 86400)} gün önce`;
+  if (diff < 60) return t("az önce");
+  if (diff < 3600) return t("{n} dk önce", { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t("{n} sa önce", { n: Math.floor(diff / 3600) });
+  if (diff < 30 * 86400) return t("{n} gün önce", { n: Math.floor(diff / 86400) });
   return formatDateTime(unixSeconds);
 }
 

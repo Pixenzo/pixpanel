@@ -1,0 +1,161 @@
+{
+  "web/src/layout/navigation.ts": [
+    "Genel bakış", "Siteler", "Posta", "DNS", "Veritabanları", "Dosyalar", "Zamanlı görevler", "Günlükler",
+    "Sunucu", "Sunucu durumu", "Güvenlik duvarı", "Saldırı engelleme", "Docker", "PHP", "Redis", "Yedekler",
+    "Bileşenler", "Servisler", "Süreçler", "Terminal",
+    "Yönetim", "Kullanıcılar", "Görevler", "Denetim günlüğü", "Ayarlar"
+  ],
+  "web/src/components/SecurityTabs.tsx": ["Güvenlik duvarı", "Saldırı engelleme"],
+  "web/src/layout/AppShell.tsx": [
+    "Yönetici", "Bayi", "Müşteri", "Alt hesap",
+    "Canlı: değişiklikler anında yansır", "Sunucuya bağlanılıyor", "Bağlantı koptu, yeniden deneniyor",
+    "Durum", "Sunucu", "Veritabanı"
+  ],
+  "web/src/lib/format.ts": ["hiç", "az önce", "{n} dk önce", "{n} sa önce", "{n} gün önce"],
+  "web/src/lib/siteTools.ts": [
+    "Let's Encrypt", "Let's Encrypt (joker)", "Yüklenen sertifika", "Kendinden imzalı"
+  ],
+  "web/src/components/PanelCertificate.tsx": [
+    "Kendinden imzalı", "Let's Encrypt", "Let's Encrypt (DNS ile doğrulanmış)", "Yüklenen sertifika"
+  ],
+  "web/src/pages/SiteSsl.tsx": [
+    "Sertifika yok", "Kendinden imzalı", "Yüklenen sertifika", "Let's Encrypt",
+    "Let's Encrypt (DNS ile doğrulanmış)", "Let's Encrypt (joker sertifika)"
+  ],
+  "web/src/pages/Audit.tsx": [
+    "Oturum açtı", "Parolasını değiştirdi", "API anahtarı oluşturdu", "API anahtarı sildi", "Hesap oluşturdu",
+    "Hesabı güncelledi", "Hesabı sildi", "Servis işlemi yaptı", "Bileşen kurdu", "Site oluşturdu",
+    "Site ayarlarını değiştirdi", "Siteyi sildi", "Kendinden imzalı sertifika üretti", "Sertifika yükledi",
+    "Let's Encrypt sertifikası istedi", "Sertifikayı kaldırdı", "Sürece sinyal gönderdi", "Terminal açtı",
+    "Zamanlanmış görev oluşturdu", "Zamanlanmış görevi değiştirdi", "Zamanlanmış görevi sildi",
+    "Zamanlanmış görevi elle çalıştırdı", "Dosyayı kaydetti", "Klasör oluşturdu", "Yeniden adlandırdı",
+    "Taşıdı", "Kopyaladı", "Dosya sildi", "İzinleri değiştirdi", "Arşiv oluşturdu", "Arşivi açtı", "Dosya yükledi",
+    "Veritabanı oluşturdu", "Veritabanını sildi", "Veritabanını dışa aktardı", "Veritabanına içe aktardı",
+    "Veritabanı erişimi verdi", "Veritabanı erişimini kaldırdı", "Veritabanı kullanıcısı oluşturdu",
+    "Veritabanı kullanıcısının parolasını değiştirdi", "Veritabanı kullanıcısını sildi"
+  ],
+  "web/src/pages/BackupPlans.tsx": [
+    "Kısa", "7 günlük kopya", "Dengeli", "7 günlük, 4 haftalık, 6 aylık kopya", "Uzun",
+    "14 günlük, 8 haftalık, 12 aylık kopya", "Özel", "Sayıları kendiniz belirleyin"
+  ],
+  "web/src/pages/BackupShared.tsx": ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"],
+  "web/src/pages/BackupTargets.tsx": [
+    "Bu sunucu", "Uzak sunucu", "Bulut depolama",
+    "En kolayı; ancak sunucu kaybedilirse yedekler de gider.",
+    "Yedekleri SSH ile başka bir sunucuya gönderir.",
+    "Amazon S3, Backblaze, MinIO gibi bulut depolamalar."
+  ],
+  "web/src/pages/Components.tsx": [
+    "Web sunucusu", "PHP sürümleri", "Node.js sürümleri", "Veritabanı ve önbellek", "Konteyner", "Posta"
+  ],
+  "server/src/components.rs (bileşen açıklamaları, Components.tsx içinde t(component.description))": [
+    "Web sunucusu ve ters vekil. Siteleri yayınlamak için gereklidir.",
+    "PHP-FPM ve yaygın eklentiler.",
+    "Node.js çalışma ortamı ve npm. Siteler sürümü tek tek seçebilir.",
+    "MySQL uyumlu veritabanı sunucusu.",
+    "Gelişmiş ilişkisel veritabanı sunucusu.",
+    "Bellek içi önbellek ve kuyruk sunucusu.",
+    "Konteyner çalıştırma ortamı ve Compose eklentisi.",
+    "MariaDB veritabanlarını tarayıcıdan yönetme aracı. Panelden tek tıkla, parola sormadan açılır.",
+    "PostgreSQL veritabanlarını tarayıcıdan yönetme aracı. Panelden tek tıkla, parola sormadan açılır.",
+    "Parola deneme saldırılarını kendiliğinden engeller (SSH, panel, posta, FTP).",
+    "PowerDNS. Alan adlarının DNS kayıtlarını bu sunucuda barındırır.",
+    "Şifreli ve artımlı yedekler; yerel klasöre, SFTP sunucusuna ya da S3 uyumlu depoya.",
+    "pure-ftpd. Site başına, o sitenin klasörüne hapsedilmiş FTP hesapları açılır.",
+    "Posta kutularına tarayıcıdan erişim. Panel adresinin /webmail/ yolunda yayınlanır.",
+    "Postfix (SMTP), Dovecot (IMAP, filtreler) ve Rspamd (istenmeyen posta süzgeci, DKIM)."
+  ],
+  "server/src/notify.rs (bildirim olayları, NotificationSettings.tsx içinde t(item.label))": [
+    "Yayınlama başarısız olduğunda", "Yayınlama başarıyla bittiğinde", "SSL sertifikası yenilenemediğinde",
+    "Hesabınıza yeni bir adresten giriş yapıldığında", "Yedekleme başarısız olduğunda",
+    "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde"
+  ],
+  "server/src/health.rs (sağlık bulgusu düzeltme düğmeleri, Overview.tsx içinde t(finding.fix))": [
+    "Yeniden başlat", "Başlat", "Yer aç", "Sertifika al", "Yenile", "Günlük plan oluştur", "Yeniden çalıştır",
+    "Güncelle", "Güncellemeleri kur"
+  ],
+  "server/src/health.rs (site sorun etiketleri, Sites.tsx içinde t(issue.label))": [
+    "Yanıt vermiyor", "Sertifikanın süresi doldu", "Sertifika bitmek üzere", "Sertifika alınabilir",
+    "Desteği bitmiş PHP sürümü", "WordPress güncellemesi var"
+  ],
+  "web/src/pages/Cron.tsx": [
+    "Her dakika", "5 dakikada bir", "15 dakikada bir", "Saat başı", "Her gün 03:00", "Her pazartesi 03:00",
+    "Her ayın ilk günü 03:00", "Sunucu açıldığında"
+  ],
+  "web/src/pages/Databases.tsx": [
+    "Tam yetki", "Okuma ve yazma", "Yalnızca okuma",
+    "Tablo oluşturma ve silme dahil her şey",
+    "Veri okur ve değiştirir; tabloların yapısına dokunamaz",
+    "Yalnızca veri okur"
+  ],
+  "web/src/pages/Dns.tsx": [
+    "Bu sunucu", "Cloudflare", "Bu sunucuda barındır",
+    "Bölgeyi bu sunucudaki DNS sunucusu yanıtlar. Alan adının ad sunucularını kayıt şirketinizde bu sunucuya yönlendirirsiniz.",
+    "Cloudflare'deki bölgeyi bağla",
+    "Bölge Cloudflare'de kalır; panel kayıtları Cloudflare hesabınız üzerinden okur ve yazar."
+  ],
+  "web/src/pages/DnsZone.tsx": [
+    "Kapalı", "Esnek", "Tam", "Tam (katı)",
+    "IPv4 adresi", "Adın işaret edeceği IPv4 adresi.",
+    "IPv6 adresi", "Adın işaret edeceği IPv6 adresi.",
+    "Hedef ad", "Bu adın takma ad olarak işaret edeceği alan adı.",
+    "Posta sunucusu", "Postayı kabul eden sunucunun adı (IP adresi olamaz). Önceliği düşük olan sunucu önce denenir.",
+    "Metin", "Tırnak işareti eklemeyin; metin olduğu gibi kaydedilir.",
+    "Ad sunucusu", "Bu ad için yetkiyi devrettiğiniz ad sunucusu (alt alan adı delegasyonu).",
+    "Ağırlık, port ve hedef", "Boşlukla ayrılmış üç değer: ağırlık port hedef. Ad genellikle _hizmet._protokol biçimindedir.",
+    "CAA değeri", "Biçim: bayrak etiket \"değer\". Etiket issue, issuewild ya da iodef olabilir."
+  ],
+  "web/src/pages/Fail2ban.tsx": [
+    "Gevşek", "10 hatalı denemede 15 dakika engelle", "Dengeli", "5 hatalı denemede 1 saat engelle", "Sıkı",
+    "3 hatalı denemede 1 gün engelle"
+  ],
+  "web/src/pages/Files.tsx": ["Sahibi", "Grup", "Diğerleri", "Okuma", "Yazma", "Çalıştırma"],
+  "web/src/pages/Firewall.tsx": ["Herkes", "Tek adres", "Kapalı"],
+  "web/src/pages/Jobs.tsx": ["Çalışıyor", "Tamamlandı", "Başarısız"],
+  "web/src/pages/Mail.tsx": ["Teslim edildi", "Junk", "Gri liste", "Reddedildi"],
+  "web/src/pages/MailDomain.tsx": [
+    "Gönderen", "Alıcı", "Bilgi (Cc)", "Konu", "Başlık", "Boyut büyükse",
+    "içerir", "içermez", "tam olarak eşit", "kalıba uyar (* ve ?)",
+    "Klasöre taşı", "Klasöre kopyala", "Okundu işaretle", "Yıldızla", "Adrese ilet", "Sil",
+    "Doğru", "Bulunamadı", "Farklı bir değer var", "Denetlenmedi"
+  ],
+  "web/src/pages/Overview.tsx": [
+    "Kritik", "Uyarı", "Öneri",
+    "Çöken servisleri yeniden başlat",
+    "Web sunucusu, veritabanı ya da posta servisi hata verip durursa panel yeniden başlatır.",
+    "Sertifikasız sitelere sertifika al",
+    "Alan adı bu sunucuyu gösteren sitelere ücretsiz Let's Encrypt sertifikası alınır.",
+    "Siteleri dakikada bir yokla",
+    "Yanıt vermeyen ya da sunucu hatası döndüren site hemen bildirilir.",
+    "Güvenlik güncellemelerini kur",
+    "İşletim sisteminin güvenlik yamaları her gün kendiliğinden kurulur; öteki güncellemeler size bırakılır.",
+    "WordPress sitelerini gece güncelle",
+    "Her gece 02:00–05:00 arasında bekleyen çekirdek, eklenti ve tema güncellemeleri kurulur. Önce sitenin yedeği alınır; güncelleme siteyi bozarsa haber verilir.",
+    "Sorunları ve yapılanları bildir",
+    "Kritik sorunlar ve panelin yaptığı düzeltmeler e-posta ya da Telegram ile gönderilir (Hesabım → Bildirimler)."
+  ],
+  "web/src/pages/Processes.tsx": ["İşlemci", "Bellek", "PID", "Kullanıcı"],
+  "web/src/pages/Services.tsx": [
+    "{name} başlatıldı", "{name} durduruldu", "{name} yeniden başlatıldı", "{name} açılışta başlayacak",
+    "{name} açılışta başlamayacak"
+  ],
+  "web/src/pages/SiteGit.tsx": [
+    "Yayınlanıyor", "Başarılı", "Başarısız", "Laravel", "Composer (PHP)", "Node.js (derleme)", "Elle",
+    "Depoya gönderim", "Eski sürüme dönüş"
+  ],
+  "web/src/pages/SiteNode.tsx": ["Çalışıyor", "Başlatılıyor", "Durduruluyor", "Çöktü", "Durdu"],
+  "web/src/pages/Sites.tsx": [
+    "PHP", "Statik", "Ters vekil", "Node.js",
+    "WordPress, Laravel ve diğer PHP uygulamaları",
+    "Express, Next.js, NestJS gibi Node.js uygulamaları",
+    "Yalnızca HTML, CSS ve JavaScript dosyaları",
+    "Başka bir adreste ya da portta çalışan uygulamaya yönlendirir"
+  ],
+  "web/src/pages/SiteWordPress.tsx": ["Yalnızca güvenlik ve bakım sürümleri", "Bütün yeni sürümler", "Kendiliğinden güncelleme"],
+  "web/src/pages/Terminal.tsx": ["Bağlanıyor", "Bağlı", "Bağlantı kapandı"],
+  "web/src/pages/Users.tsx": [
+    "Yönetici", "Bayi", "Müşteri", "Alt hesap",
+    "Siteler", "Dosyalar", "Veritabanları", "E-posta", "DNS", "FTP", "SSL sertifikaları",
+    "Zamanlanmış görevler", "Yedekler", "Günlükler", "Docker"
+  ]
+}
