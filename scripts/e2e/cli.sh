@@ -75,6 +75,9 @@ pixpanel health >/tmp/cli-health.txt 2>&1; HEALTH=$?
 check "sağlık çıktısı" "$([ -s /tmp/cli-health.txt ] && echo dolu)" dolu
 check "çıkış kodu kritik bulguyla uyumlu" "$HEALTH" "$(grep -q '^KRİTİK' /tmp/cli-health.txt && echo 1 || echo 0)"
 
+check "sistem hesabıyla çakışan ad" "$(pixpanel user add postgres 2>&1 | grep -c 'sistem tarafından')" 1
+check "root olmayan kullanıcı komutu çalıştıramaz" "$(runuser -u nobody -- pixpanel site list >/dev/null 2>&1; echo $?)" 1
+
 say "İz bırakmama"
 pixpanel api GET /sites | head -c 1 >/dev/null; pixpanel site list | true
 check "geçici anahtar kalmadı (hatalı komutlardan sonra da)" "$(tokens)" 0

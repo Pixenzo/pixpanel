@@ -376,8 +376,9 @@ impl FromRequestParts<AppState> for AuthUser {
                 return Err(AppError::Unauthorized);
             }
             // Oturum kullanıldıkça uzar; her istekte yazmamak için yarı ömürde yenilenir.
+            // Başka hesap adına açılan oturum uzamaz: açıldığı andaki süresi dolunca biter.
             let ttl = state.cfg.session_ttl_secs;
-            if expires_at - current < ttl / 2 {
+            if impersonation.is_none() && expires_at - current < ttl / 2 {
                 state.db.call(|conn| {
                     conn.execute(
                         "UPDATE sessions SET expires_at = ?1 WHERE id = ?2",

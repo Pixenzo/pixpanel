@@ -177,6 +177,19 @@ impl ServerCertVerifier for PinVerifier {
     }
 }
 
+/// Yalnızca verilen parmak izini taşıyan sertifikayı (ya da genel olarak geçerli bir sertifikayı)
+/// kabul eden istemci. Komut satırı aracı panelin kendi sertifikasını böyle sabitler.
+pub fn pinned_client(fingerprint: [u8; 32], timeout: Duration) -> AppResult<reqwest::Client> {
+    let verifier = PinVerifier::new(Some(fingerprint), false)?;
+    let config = rustls::ClientConfig::builder_with_provider(verifier.provider.clone())
+        .with_safe_default_protocol_versions()
+        .map_err(|err| AppError::internal(err.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth();
+    reqwest::Client::builder().use_preconfigured_tls(config).redirect(reqwest::redirect::Policy::none()).timeout(timeout).build().map_err(|err| AppError::internal(err.to_string()))
+}
+
 fn client(verifier: Arc<PinVerifier>) -> AppResult<reqwest::Client> {
     let config = rustls::ClientConfig::builder_with_provider(verifier.provider.clone())
         .with_safe_default_protocol_versions()
@@ -240,7 +253,7 @@ async fn push(secondary: &Secondary, zones: &[String]) -> AppResult<SyncStatus> 
         .map_err(|err| {
             let cause = root_cause(&err);
             if cause.to_ascii_lowercase().contains("certificate") {
-                AppError::bad("İkincil panelin sertifikası değişmiş; kümeyi yeniden kaydederek yeni sertifikayı onaylayın")
+                AppError::bad("İkincil panelin sertifikası değişmiş. Değişikliği siz yaptıysanız yeni sertifikayı onaylayın; yapmadıysanız bağlantınız dinleniyor olabilir")
             } else {
                 AppError::bad(format!("İkincil panele bağlanılamadı: {cause}"))
             }
@@ -315,6 +328,9 @@ pub struct SecondaryInput {
     pub panel_url: String,
     #[serde(default)]
     pub token: String,
+    /// İkincil panelin sertifikası değişti ve yönetici yenisini onaylıyor.
+    #[serde(default)]
+    pub repin: bool,
 }
 
 /// İkincil listesini kaydeder ve DNS sunucusuna uygular.
@@ -346,8 +362,15 @@ pub async fn save(state: &AppState, input: Vec<SecondaryInput>) -> AppResult<()>
         if !panel_url.is_empty() && token.is_empty() {
             return Err(AppError::bad(format!("{address} için ikincil panelin API anahtarını girin")));
         }
-        // Sertifika her kayıtta yeniden okunur: yönetici kaydederek değişen sertifikayı onaylamış olur.
-        let fingerprint = if panel_url.is_empty() { String::new() } else { probe_fingerprint(&panel_url).await? };
+        // Sertifika yalnızca ikincil ilk eklendiğinde, panel adresi değiştiğinde ya da yönetici açıkça
+        // yenisini onayladığında okunur. Başka bir ikincil eklenirken var olanların sabiti değişmez;
+        // aksi hâlde araya giren biri o anda kendi sertifikasını sabitletip kayıtlı anahtarı alabilirdi.
+        let kept = old.filter(|other| other.panel_url == panel_url && !other.fingerprint.is_empty() && !item.repin).map(|other| other.fingerprint.clone());
+        let fingerprint = match kept {
+            _ if panel_url.is_empty() => String::new(),
+            Some(fingerprint) => fingerprint,
+            None => probe_fingerprint(&panel_url).await?,
+        };
         let token = if panel_url.is_empty() { String::new() } else { token };
         list.push(Secondary { address, panel_url, token, fingerprint });
     }

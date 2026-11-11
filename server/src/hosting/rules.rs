@@ -23,6 +23,9 @@ pub const MAINTENANCE_PAGE: &str = "maintenance.html";
 const MAX_REDIRECTS: usize = 200;
 const MAX_PROTECTED: usize = 20;
 const MAX_USERS: usize = 30;
+/// Bir sitedeki bütün korumalı klasörlerin toplam kullanıcı sayısı. Her yeni parola ayrı bir
+/// özet hesabıdır; sınırsız olsaydı tek istek paneli uzun süre meşgul edebilirdi.
+const MAX_TOTAL_USERS: usize = 60;
 const MAX_ADDRESSES: usize = 200;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -252,6 +255,9 @@ pub async fn normalize(input: SiteRules, previous: &SiteRules, names: &[String])
     if input.protected.len() > MAX_PROTECTED {
         return Err(AppError::bad(format!("Bir sitede en çok {MAX_PROTECTED} korumalı klasör olabilir")));
     }
+    if input.protected.iter().map(|area| area.users.len()).sum::<usize>() > MAX_TOTAL_USERS {
+        return Err(AppError::bad(format!("Bir sitede korumalı klasörlerin toplam kullanıcı sayısı {MAX_TOTAL_USERS} olabilir")));
+    }
     let mut protected: Vec<Protected> = Vec::new();
     for item in &input.protected {
         let path = match item.path.trim() {
@@ -325,11 +331,15 @@ fn htpasswd_path(site_id: i64, index: usize) -> PathBuf {
 }
 
 /// Yolu düzenli ifadeye çevirir: yol yalnızca güvenli karakterlerden oluşur, kaçışlanan tek şey noktadır.
+///
+/// İfade, yolun önünde bir betik adı bulunmasına da izin verir: PHP uygulamalarında
+/// `/index.php/yonetim` isteği uygulamanın `/yonetim` sayfasını açar; yalnızca yolun başına
+/// bakılsaydı koruma bu yazımla atlatılırdı. Eşleme büyük/küçük harf ayırmaz (bkz. `render_preamble`).
 fn path_regex(path: &str) -> String {
     if path == "/" {
         return "^/".to_string();
     }
-    format!("^{}(/|$)", path.replace('.', "\\."))
+    format!("^(?:/.*\\.php)?{}(/|$)", path.replace('.', "\\."))
 }
 
 /// Sitenin yapılandırma dosyasının başına (http düzeyine) yazılan eşlemeler.
@@ -340,11 +350,11 @@ pub fn render_preamble(site_id: i64, rules: &SiteRules) -> String {
         // (PHP, durağan, vekil) bağımsız çalışır ve içerik kurallarını ezmez.
         let _ = writeln!(out, "map $uri $pix_auth_{site_id} {{\n    default off;");
         for area in &rules.protected {
-            let _ = writeln!(out, "    ~{} \"{}\";", path_regex(&area.path), area.label);
+            let _ = writeln!(out, "    ~*{} \"{}\";", path_regex(&area.path), area.label);
         }
         let _ = writeln!(out, "}}\nmap $uri $pix_authfile_{site_id} {{\n    default /dev/null;");
         for (index, area) in rules.protected.iter().enumerate() {
-            let _ = writeln!(out, "    ~{} {};", path_regex(&area.path), htpasswd_path(site_id, index).display());
+            let _ = writeln!(out, "    ~*{} {};", path_regex(&area.path), htpasswd_path(site_id, index).display());
         }
         out.push_str("}\n");
     }
@@ -417,7 +427,11 @@ pub fn render_server(site_id: i64, rules: &SiteRules, domain: &str, has_docroot:
             // adresler içerik kurallarının dışında kalırdı).
             let base = item.from.trim_end_matches('/');
             let target = item.to.trim_end_matches('/');
-            let _ = writeln!(out, "    location ~ ^{}(/.*)?$ {{\n        return {} {target}$1;\n    }}", base.replace('.', "\\."), item.code);
+            // Yakalanan yol `return` ile ham yazılmaz; `rewrite` hedefi kendisi kaçışlar (çözülmüş
+            // yoldaki satır başı gibi karakterler yanıt başlığına olduğu gibi geçmez).
+            let pattern = base.replace('.', "\\.");
+            let flag = if item.code == 301 { "permanent" } else { "redirect" };
+            let _ = writeln!(out, "    location ~ ^{pattern}(/|$) {{\n        rewrite ^{pattern}(/.*)?$ {target}$1 {flag};\n    }}");
         }
     }
     out
@@ -593,14 +607,14 @@ mod tests {
         };
         let preamble = render_preamble(7, &rules);
         assert!(preamble.contains("map $uri $pix_auth_7 {"));
-        assert!(preamble.contains("~^/yonetim(/|$) \"Yönetim\";"));
-        assert!(preamble.contains("~^/yonetim(/|$) /etc/nginx/pixpanel/htpasswd/7-0;"));
+        assert!(preamble.contains("~*^(?:/.*\\.php)?/yonetim(/|$) \"Yönetim\";"));
+        assert!(preamble.contains("~*^(?:/.*\\.php)?/yonetim(/|$) /etc/nginx/pixpanel/htpasswd/7-0;"));
         assert!(preamble.contains("geo $pix_maint_ip_7 {\n    default 1;\n    192.0.2.1 0;"));
         let server = render_server(7, &rules, "ornek.com", true);
         assert!(server.contains("if ($host = 'www.ornek.com') {\n        return 301 $scheme://ornek.com$request_uri;"));
         assert!(server.contains("deny 203.0.113.5;\n    allow 198.51.100.0/24;\n    deny all;"));
         assert!(server.contains("location = /eski {\n        return 301 /yeni;"));
-        assert!(server.contains("location ~ ^/blog\\.v1(/.*)?$ {\n        return 302 https://blog.ornek.com$1;"));
+        assert!(server.contains("location ~ ^/blog\\.v1(/|$) {\n        rewrite ^/blog\\.v1(/.*)?$ https://blog.ornek.com$1 redirect;"));
         assert!(server.contains("error_page 503 @pix_maintenance;"));
         assert!(server.contains("error_page 404 /404.html;"));
         assert!(server.contains("error_page 500 502 504 /hata.html;"));

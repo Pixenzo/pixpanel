@@ -2456,4 +2456,8 @@ export const en: Record<string, string> = {
   "Uygulamanızın gereksinimlerini site klasöründeki requirements.txt dosyasına yazın. Paketler yalnızca bu sitenin sanal ortamına kurulur; sunucudaki öteki uygulamaları etkilemez.": "List your application's requirements in requirements.txt in the site folder. Packages are installed only into this site's virtual environment and do not affect other applications on the server.",
   "Python uygulamaları (Flask, Django, FastAPI) için sanal ortam desteği. Her site kendi bağımlılıklarını ayrı kurar.": "Virtual environment support for Python applications (Flask, Django, FastAPI). Each site installs its own dependencies separately.",
   "PORT ve HOST değişkenlerini panel belirler; uygulamanız PORT değişkenindeki portu dinlemelidir.": "The panel sets the PORT and HOST variables; your application must listen on the port in PORT.",
+  "İkincilin yeni sertifikasını onayla": "Approve the secondary's new certificate",
+  "{address} için yeni sertifika onaylansın mı?": "Approve the new certificate for {address}?",
+  "İkincil panelin sertifikasını siz yenilediyseniz onaylayın. Yenilemediyseniz onaylamayın: araya giren biri API anahtarınızı ele geçirmeye çalışıyor olabilir. Onaydan sonra yeni parmak izini ikincil paneldekiyle karşılaştırın.": "Approve if you renewed the secondary panel's certificate yourself. If you did not, do not approve: someone in between may be trying to capture your API key. After approving, compare the new fingerprint with the one on the secondary panel.",
+  "Sertifikayı onayla": "Approve certificate",
 };

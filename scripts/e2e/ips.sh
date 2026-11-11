@@ -113,6 +113,7 @@ check "ikinci adresi ekle" "$(code POST /system/ips -d "{\"address\":\"$SECOND\"
 check "olmayan hesaba ayırma" "$(code PUT /system/ips/$SECOND -d '{"label":"","user_id":999999}')" 400
 check "sunucuda olmayan adresi tanımlama" "$(code PUT /system/ips/10.77.0.99 -d '{"label":"x"}')" 404
 check "müşteriye ayır" "$(code PUT /system/ips/$SECOND -d "{\"label\":\"Müşteri adresi\",\"user_id\":$C}")" 200
+check "ayrılan adrese bağlı başka hesabın sitesi ortak adrese döner" "$(api PATCH /sites/$O -d "{\"ip\":\"$SECOND\"}" | jget 'd["ip"]') $(code PUT /system/ips/$SECOND -d "{\"label\":\"Müşteri adresi\",\"user_id\":$C}") $(api GET /sites/$O | jget 'd["ip"]')|$(at 127.0.0.1 $SHARED)" "$SECOND 200 |ortak"
 check "listede sahibi görünür" "$(entry $SECOND '(a["owner"], a["label"])')" "('$CUSTOMER', 'Müşteri adresi')"
 check "müşterinin seçeneği yalnız kendi adresi" "$(call $JC GET /sites/options | jget '[i["address"] for i in d["ips"]]')" "['$SECOND']"
 check "müşteri kendi adresine bağlanır" "$(call $JC PATCH /sites/$CS -d "{\"ip\":\"$SECOND\"}" | jget 'd["ip"]')" $SECOND

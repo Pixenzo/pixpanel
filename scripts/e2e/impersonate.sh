@@ -56,6 +56,10 @@ check "parolayı bilmeden parola değiştirilemez" "$(code POST /auth/password -
 check "iç içe geçiş yok" "$(code POST /users/$O/impersonate)" 400
 check "müşterinin son giriş zamanı değişmedi" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "SELECT last_login_at IS NULL FROM users WHERE id=$C")" 1
 
+sqlite3 /var/lib/pixpanel/pixpanel.db "UPDATE sessions SET expires_at = strftime('%s','now') + 60 WHERE impersonator_id IS NOT NULL"
+code GET /auth/me >/dev/null
+check "başka hesap adına oturum kullanıldıkça uzamaz" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "SELECT expires_at - strftime('%s','now') <= 60 FROM sessions WHERE impersonator_id IS NOT NULL")" 1
+
 say "Geri dönüş"
 check "kendi hesabına dön" "$(code POST /auth/impersonate/stop)" 200
 check "yeniden yönetici" "$(whoami $J)" "('$PX_USER', 'admin', None)"

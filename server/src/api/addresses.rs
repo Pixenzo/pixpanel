@@ -76,6 +76,29 @@ async fn describe(State(state): State<AppState>, user: AuthUser, Path(address): 
             }
         }
     }
+    // Adres bir hesaba ayrıldıysa yalnızca onundur: başka hesapların o adrese bağlı siteleri
+    // bütün adreslere döndürülür (iki müşteri aynı "özel" adresi paylaşmasın).
+    if let Some(owner) = body.user_id {
+        let others: Vec<i64> = state.db.call(|conn| {
+            let mut stmt = conn.prepare("SELECT id FROM sites WHERE ip = ?1 AND user_id != ?2")?;
+            let rows = stmt.query_map(rusqlite::params![key, owner], |row| row.get(0))?;
+            rows.collect()
+        })?;
+        for site_id in others {
+            let Some(mut site) = crate::hosting::sites::load(&state.db, site_id)? else { continue };
+            let old = crate::dns::site_address_record(&state.db, &site.domain, &site.ip);
+            site.ip = String::new();
+            crate::hosting::sites::save(&state.db, &site)?;
+            if let Err(err) = crate::hosting::sites::provision(&site).await {
+                tracing::warn!(domain = %site.domain, error = %err, "adresi alınan site yeniden yapılandırılamadı");
+            }
+            let mut names = vec![site.domain.clone()];
+            names.extend(site.aliases.iter().cloned());
+            for line in crate::dns::move_site_records(&state, site.user_id, &names, &old).await {
+                tracing::info!(domain = %site.domain, "DNS: {line}");
+            }
+        }
+    }
     let detail = body.user_id.map(|id| format!("hesap {id}")).unwrap_or_default();
     auth::audit(&state.db, &user, "ip.update", address.trim(), &detail);
     Ok(Json(json!({ "ok": true })))

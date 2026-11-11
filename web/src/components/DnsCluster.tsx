@@ -17,6 +17,8 @@ interface SecondaryBody {
   address: string;
   panel_url: string;
   token: string;
+  /** İkincil panelin sertifikası değişti ve yönetici yenisini onaylıyor. */
+  repin?: boolean;
 }
 
 function toBody(item: DnsClusterSecondary): SecondaryBody {
@@ -113,7 +115,7 @@ function AddModal({ current, onClose }: { current: DnsClusterSecondary[]; onClos
   );
 }
 
-function SecondaryCard({ item, onRemove, removing }: { item: DnsClusterSecondary; onRemove: () => void; removing: boolean }) {
+function SecondaryCard({ item, onRemove, onRepin, removing }: { item: DnsClusterSecondary; onRemove: () => void; onRepin: () => void; removing: boolean }) {
   const hasPanel = item.panel_url !== "";
   return (
     <li className="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0">
@@ -153,6 +155,13 @@ function SecondaryCard({ item, onRemove, removing }: { item: DnsClusterSecondary
         </p>
       )}
       {item.last_error !== "" && <ErrorBlock message={item.last_error} />}
+      {hasPanel && item.last_error !== "" && (
+        <div>
+          <Button size="sm" onClick={onRepin} disabled={removing}>
+            {t("İkincilin yeni sertifikasını onayla")}
+          </Button>
+        </div>
+      )}
       {item.conflicts.length > 0 && (
         <p className="rounded-md bg-sunken px-3 py-2 text-[13px] text-ink-2">
           {t("İkincilde aynı adla başka bir bölge bulunduğu için açılamayanlar: {names}", { names: item.conflicts.join(", ") })}
@@ -218,6 +227,16 @@ export function DnsCluster({ localInstalled }: { localInstalled: boolean }) {
     if (confirmed) save.mutate(data.secondaries.filter((other) => other.address !== item.address).map(toBody));
   }
 
+  async function confirmRepin(item: DnsClusterSecondary) {
+    const confirmed = await feedback.confirm({
+      title: t("{address} için yeni sertifika onaylansın mı?", { address: item.address }),
+      description: t("İkincil panelin sertifikasını siz yenilediyseniz onaylayın. Yenilemediyseniz onaylamayın: araya giren biri API anahtarınızı ele geçirmeye çalışıyor olabilir. Onaydan sonra yeni parmak izini ikincil paneldekiyle karşılaştırın."),
+      confirmLabel: t("Sertifikayı onayla"),
+      danger: true,
+    });
+    if (confirmed) save.mutate(data.secondaries.map((other) => (other.address === item.address ? { ...toBody(other), repin: true } : toBody(other))));
+  }
+
   async function confirmDetach(primary: string, zones: number) {
     const confirmed = await feedback.confirm({
       title: t("{address} ile bağlantı kesilsin mi?", { address: primary }),
@@ -262,7 +281,7 @@ export function DnsCluster({ localInstalled }: { localInstalled: boolean }) {
           <>
             <ul>
               {data.secondaries.map((item) => (
-                <SecondaryCard key={item.address} item={item} onRemove={() => void confirmRemove(item)} removing={save.isPending} />
+                <SecondaryCard key={item.address} item={item} onRemove={() => void confirmRemove(item)} onRepin={() => void confirmRepin(item)} removing={save.isPending} />
               ))}
             </ul>
             <p className="border-t border-line px-4 py-3 text-[13px] text-ink-2">

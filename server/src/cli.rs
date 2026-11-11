@@ -132,8 +132,15 @@ impl Client {
             addr => addr.to_string(),
         };
         let allowed = format!("127.0.0.1,::1,{host}");
-        // Panel yerel adresten çağrılır; sertifikası bu ada düzenlenmediği için ad doğrulanmaz.
-        let http = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(Duration::from_secs(120)).build()?;
+        // Geçici anahtar yalnızca panelin kendisine gönderilmeli. Panel o an kapalıysa aynı portu
+        // sunucudaki başka bir süreç (bir müşterinin betiği) açmış olabilir; bu yüzden karşı tarafın
+        // sertifikası panelin diskteki sertifikasıyla aynı olmak zorundadır.
+        let http = if cfg.tls {
+            let fingerprint = panel_fingerprint(cfg)?;
+            crate::dns::cluster::pinned_client(fingerprint, Duration::from_secs(120)).map_err(|err| anyhow!(err.to_string()))?
+        } else {
+            reqwest::Client::builder().timeout(Duration::from_secs(120)).build()?
+        };
         let token = format!("{}{}", auth::API_TOKEN_PREFIX, auth::random_token(24));
         let token_hash = auth::hash_token(&token);
         let prefix: String = token.chars().take(10).collect();
@@ -201,6 +208,24 @@ impl Client {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
+}
+
+/// Panelin diskteki sertifikasının SHA-256 parmak izi.
+fn panel_fingerprint(cfg: &Config) -> anyhow::Result<[u8; 32]> {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let path = cfg.tls_dir().join("panel.crt");
+    let pem = std::fs::read_to_string(&path).with_context(|| format!("panelin sertifikası okunamadı: {}", path.display()))?;
+    // Dosyada zincir olabilir; sunucunun kendi sertifikası ilk bloktur.
+    let body: String = pem
+        .lines()
+        .skip_while(|line| !line.starts_with("-----BEGIN CERTIFICATE-----"))
+        .skip(1)
+        .take_while(|line| !line.starts_with("-----END CERTIFICATE-----"))
+        .collect();
+    let der = base64::engine::general_purpose::STANDARD.decode(body.trim()).context("panelin sertifikası çözülemedi")?;
+    anyhow::ensure!(!der.is_empty(), "panelin sertifikası boş");
+    Ok(sha2::Sha256::digest(&der).into())
 }
 
 fn read_body(data: Option<String>) -> anyhow::Result<Option<Value>> {
@@ -330,6 +355,7 @@ pub fn run(cfg: &Config, db: &Db, command: ApiCommand) -> anyhow::Result<()> {
         ApiCommand::Api { user, .. } => user.clone(),
         _ => None,
     };
+    anyhow::ensure!(nix::unistd::geteuid().is_root(), "bu komut root olarak çalıştırılmalıdır (sudo pixpanel …)");
     let _ = rustls::crypto::ring::default_provider().install_default();
     let client = Client::connect(cfg, db, username.as_deref())?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;

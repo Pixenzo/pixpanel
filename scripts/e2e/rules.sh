@@ -51,6 +51,8 @@ check "kaydet" "$(rules $S "$R" | jget 'len(d["rules"]["redirects"])')" 3
 check "tam eşleşme kalıcı yönlenir" "$(loc $SITE /eski)" "301 http://$SITE/yeni.html"
 check "tam eşleşme altını etkilemez" "$(st $SITE /eski/alt)" 404
 check "klasör yönlendirmesi altındaki yolu taşır" "$(loc $SITE /eski-klasor/a/b.html)" "302 http://$SITE/yeni-klasor/a/b.html"
+check "klasör yönlendirmesi sorgu dizgesini taşır" "$(loc $SITE '/eski-klasor/a?x=1&y=2')" "302 http://$SITE/yeni-klasor/a?x=1&y=2"
+check "yolda satır başı yanıt başlığını bölmez" "$(curl -s -D - -o /dev/null -H "Host: $SITE" 'http://127.0.0.1/eski-klasor/a%0d%0aX-Eklenen:%201' | tr -d '' | grep -ci '^x-eklenen')" 0
 check "klasörün kendisi de yönlenir" "$(loc $SITE /eski-klasor)" "302 http://$SITE/yeni-klasor"
 check "benzer adlı adres yönlenmez" "$(st $SITE /eski-klasorum)" 404
 check "dış adrese yönlendirme" "$(loc $SITE /dis)" "301 https://ornek.org/karsilama?kaynak=site"
@@ -92,6 +94,8 @@ chown -R $PX_USER:www-data $PROOT
 R='{"protected":[{"path":"/yonetim","label":"Yönetim","users":[{"name":"ali","password":"Ali-Parolasi-1"}]}],"redirects":[{"from":"/eski","to":"/yeni","code":301,"exact":false}]}'
 check "kaydet" "$(rcode $P "$R")" 200
 check "korumalı klasörde PHP parolasız çalışmaz" "$(st $PHP /yonetim/index.php)" 401
+check "betik adı öne eklenerek koruma atlatılamaz" "$(st $PHP /index.php/yonetim/) $(st $PHP /eskimis.php/yonetim/index.php)" "401 401"
+check "büyük harfle yazılan yol da korunur" "$(st $PHP /YONETIM/index.php)" 401
 check "parolayla PHP çalışır (kaynak olarak sunulmaz)" "$(body $PHP /yonetim/index.php -u ali:Ali-Parolasi-1)" yonetim-calisti
 check "yönlendirmeye komşu PHP dosyası çalışmayı sürdürür" "$(body $PHP /eskimis.php)" komsu-calisti
 check "yönlendirme PHP sitesinde de çalışır" "$(loc $PHP /eski/sayfa)" "301 http://$PHP/yeni/sayfa"

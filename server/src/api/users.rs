@@ -87,6 +87,17 @@ pub fn validate_username(username: &str) -> AppResult<()> {
     let valid = (3..=32).contains(&username.len())
         && chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+    // Hesap adı aynı zamanda Linux kullanıcı adıdır. Bir servisin kullanıcısıyla aynı adı taşıyan
+    // hesap, o servis sonradan kurulursa onun dosyalarına sahip olurdu.
+    const RESERVED: &[&str] = &[
+        "root", "daemon", "bin", "sys", "sync", "games", "man", "mail", "news", "uucp", "proxy", "backup", "list", "irc", "nobody", "sshd", "www-data",
+        "systemd-network", "systemd-resolve", "systemd-timesync", "messagebus", "syslog", "admin-panel", "mysql", "mariadb", "postgres", "redis", "pdns",
+        "nginx", "postfix", "dovecot", "dovenull", "vmail", "opendkim", "rspamd", "_rspamd", "clamav", "ftp", "ftpuser", "pure-ftpd", "docker", "pixpanel",
+        "ubuntu", "debian", "sudo", "adm", "staff", "users", "wheel", "ssl-cert", "tss", "polkitd", "lxd", "uuidd", "tcpdump", "landscape",
+    ];
+    if RESERVED.contains(&username) || username.starts_with("systemd-") || username.starts_with("pixpanel-") {
+        return Err(AppError::bad("Bu kullanıcı adı sistem tarafından kullanılıyor; başka bir ad seçin"));
+    }
     if valid {
         Ok(())
     } else {

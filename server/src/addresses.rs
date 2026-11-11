@@ -327,6 +327,9 @@ async fn install_boot_unit() {
         return;
     }
     let Ok(binary) = std::env::current_exe() else { return };
+    // Panel güncellenirken ikili dosya yerinde değiştirilir; o durumda çekirdek yolun sonuna
+    // " (deleted)" yazar. Birime o hâliyle yazılırsa açılışta çalışmaz.
+    let binary = std::path::PathBuf::from(binary.to_string_lossy().trim_end_matches(" (deleted)"));
     let unit = format!(
         "[Unit]\nDescription=PixPanel ek IP adresleri\nAfter=network.target\nBefore=nginx.service\n\n\
          [Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart={} apply-addresses\n\n\
