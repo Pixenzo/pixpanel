@@ -69,12 +69,18 @@ impl Client {
     pub async fn connect() -> AppResult<Self> {
         let raw = std::fs::read_to_string(CONFIG_PATH).unwrap_or_default();
         let port: u16 = config_value(&raw, "port").and_then(|value| value.parse().ok()).unwrap_or(6379);
+        let password = config_value(&raw, "requirepass").filter(|value| !value.is_empty());
+        Self::connect_to(port, password.as_deref()).await
+    }
+
+    /// Yerel adresteki belirli bir örneğe bağlanır (hesap başına Redis örnekleri).
+    pub async fn connect_to(port: u16, password: Option<&str>) -> AppResult<Self> {
         let stream = tokio::time::timeout(TIMEOUT, TcpStream::connect(("127.0.0.1", port)))
             .await
             .map_err(|_| AppError::bad("Redis yanıt vermiyor"))?
             .map_err(|_| AppError::bad("Redis'e bağlanılamadı; servisin çalıştığını denetleyin"))?;
         let mut client = Self { stream: BufReader::new(stream) };
-        if let Some(password) = config_value(&raw, "requirepass").filter(|value| !value.is_empty()) {
+        if let Some(password) = password {
             client.command(&[b"AUTH", password.as_bytes()]).await?;
         }
         Ok(client)

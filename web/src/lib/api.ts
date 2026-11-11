@@ -383,6 +383,28 @@ export interface SiteOptions {
   ips: { address: string; label: string; user_id: number | null }[];
 }
 
+/** Bir hesabın kendi Redis örneği. Parola yalnızca hesabın kendi görünümünde bulunur. */
+export interface RedisAccountInstance {
+  user_id: number;
+  username: string;
+  running: boolean;
+  host: string;
+  port: number;
+  socket: string;
+  memory_mb: number;
+  created_at: number;
+  used_memory: number | null;
+  keys: number | null;
+  version: string;
+  password?: string;
+}
+
+export interface RedisAccountView {
+  /** Redis bu sunucuda kurulu mu? */
+  available: boolean;
+  instance: RedisAccountInstance | null;
+}
+
 /** Bu sunucudan bölge çeken bir ikincil ad sunucusu. */
 export interface DnsClusterSecondary {
   address: string;

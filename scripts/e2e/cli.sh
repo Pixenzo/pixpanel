@@ -59,6 +59,12 @@ PASSWORD=$(sed -n 's/^Parola: //p' <<<"$OUT")
 check "hesap ekleme parola üretir" "${#PASSWORD}" 20
 check "hesap listede" "$(pixpanel user list | awk -v u=$ACCOUNT '$1==u {print $2}')" user
 check "üretilen parolayla giriş yapılır" "$(curl -sk -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -X POST https://127.0.0.1:8443/api/v1/auth/login -d "{\"username\":\"$ACCOUNT\",\"password\":\"$PASSWORD\"}")" 200
+FIRST=$(pixpanel api GET /users | jget "next(u['id'] for u in d if u['username']=='$ACCOUNT')")
+pixpanel api DELETE "/users/$FIRST" >/dev/null
+pixpanel user add $ACCOUNT --password "$PASSWORD" >/dev/null
+SECOND=$(pixpanel api GET /users | jget "next(u['id'] for u in d if u['username']=='$ACCOUNT')")
+check "silinen hesabın numarası yeniden verilmez" "$([ "$SECOND" -gt "$FIRST" ] && echo büyük)" büyük
+check "yeni hesap silinmiş hesabın görevlerini görmez" "$(pixpanel api GET /jobs --as $ACCOUNT | jget 'len(d)')" 0
 check "verilen parola yazdırılmaz" "$(pixpanel user add ${ACCOUNT}2 --password 'Deneme-Parola-123' | grep -c Parola)" 0
 check "başka hesap adına: yalnız kendi siteleri" "$(pixpanel api GET /sites --as $ACCOUNT | jget 'len(d)')" 0
 check "başka hesap adına: yönetici ucu kapalı" "$(pixpanel api GET /health --as $ACCOUNT 2>/dev/null | jget 'd["error"]["code"]')" forbidden

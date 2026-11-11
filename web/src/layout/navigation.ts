@@ -53,6 +53,7 @@ export const navigation: NavGroup[] = [
       { to: "/mail", label: "Posta", icon: Mail, visible: can("mail") },
       { to: "/dns", label: "DNS", icon: Network, visible: can("dns") },
       { to: "/databases", label: "Veritabanları", icon: Database, visible: can("databases") },
+      { to: "/redis", label: "Redis", icon: DatabaseZap, visible: (me) => me.role !== "admin" && can("databases")(me) },
       { to: "/files", label: "Dosyalar", icon: FolderOpen, visible: can("files") },
       { to: "/cron", label: "Zamanlı görevler", icon: CalendarClock, visible: can("cron") },
       { to: "/logs", label: "Günlükler", icon: FileText, visible: can("logs") },

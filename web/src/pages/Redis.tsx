@@ -30,6 +30,8 @@ import { formatBytes, formatDuration, formatPercent, formatRelative } from "../l
 import { t } from "../lib/i18n";
 import type { KeyspaceEntry } from "./RedisBrowser";
 import { RedisBrowser } from "./RedisBrowser";
+import { useMe } from "../lib/session";
+import { AccountRedisPage, RedisAccountsPanel } from "./RedisAccount";
 import { RedisConsole } from "./RedisConsole";
 
 // ---- Türler ----
@@ -78,7 +80,7 @@ interface ConfigRequest {
   password?: string;
 }
 
-const TAB_IDS = ["status", "keys", "console", "settings"] as const;
+const TAB_IDS = ["status", "keys", "console", "accounts", "settings"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 /** Adres çubuğundaki `?sekme=` değerleri. */
@@ -86,6 +88,7 @@ const TAB_SLUGS: Record<TabId, string> = {
   status: "durum",
   keys: "anahtarlar",
   console: "konsol",
+  accounts: "hesaplar",
   settings: "ayarlar",
 };
 
@@ -180,6 +183,12 @@ function useFlush() {
 
 // ---- Sayfa ----
 
+/** Yönetici ortak Redis'i, öteki hesaplar kendi örneklerini görür. */
+export function RedisRoute() {
+  const me = useMe();
+  return me.role === "admin" ? <RedisPage /> : <AccountRedisPage />;
+}
+
 export function RedisPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -196,6 +205,7 @@ export function RedisPage() {
     { id: "status", label: t("Durum") },
     { id: "keys", label: t("Anahtarlar") },
     { id: "console", label: t("Konsol") },
+    { id: "accounts", label: t("Hesaplar") },
     { id: "settings", label: t("Ayarlar") },
   ];
 
@@ -252,12 +262,13 @@ export function RedisPage() {
     body = (
       <>
         <p className="mb-4 rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-warn">
-          {t("Redis'te hesaplar arası yalıtım yoktur; buradaki veriler sunucudaki bütün uygulamalara aittir.")}
+          {t("Bu ortak Redis'te hesaplar arası yalıtım yoktur; buradaki veriler sunucudaki bütün uygulamalara aittir. Müşteri hesapları kendi sayfalarından yalıtılmış ayrı bir Redis açabilir.")}
         </p>
         <Tabs tabs={tabs} value={tab} onChange={selectTab} label={t("Redis bölümleri")} />
         {tab === "status" && <StatusTab info={data} onBrowse={browseDatabase} />}
         {tab === "keys" && <KeysTab info={data} />}
         {tab === "console" && <RedisConsole info={data} />}
+        {tab === "accounts" && <RedisAccountsPanel />}
         {tab === "settings" && <SettingsTab info={data} />}
       </>
     );

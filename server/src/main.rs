@@ -222,10 +222,13 @@ fn create_admin(db: &Db, username: &str, password: Option<String>) -> anyhow::Re
     auth::validate_password(&password).map_err(to_anyhow)?;
     let hash = auth::hash_password(&password).map_err(to_anyhow)?;
     db.call(|conn| {
-        conn.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?1, ?2, 'admin', ?3)",
-            params![username, hash, db::now()],
-        )
+        let tx = conn.transaction()?;
+        let id = db::next_user_id(&tx)?;
+        tx.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?1, ?2, ?3, 'admin', ?4)",
+            params![id, username, hash, db::now()],
+        )?;
+        tx.commit()
     })
     .map_err(to_anyhow)?;
     println!("Yönetici hesabı oluşturuldu.");

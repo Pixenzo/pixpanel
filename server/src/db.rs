@@ -472,7 +472,49 @@ const MIGRATIONS: &[&str] = &[
     );
     ALTER TABLE sites ADD COLUMN ip TEXT NOT NULL DEFAULT '';
     "#,
+    // 22: hesap başına Redis örnekleri.
+    r#"
+    CREATE TABLE redis_instances (
+        user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        port       INTEGER NOT NULL UNIQUE,
+        password   TEXT NOT NULL,
+        memory_mb  INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+    "#,
+    // 23: hesap numaraları yeniden kullanılmaz. SQLite, en büyük numaralı hesap silinince o
+    //     numarayı sonraki hesaba verir; görev ve denetim kayıtları numarayla tutulduğundan yeni
+    //     hesap, silinmiş hesabın geçmişini görebiliyordu. Bugüne kadar verilmiş en büyük numara
+    //     kaydedilir (bkz. `next_user_id`) ve sahipsiz kalmış kayıtların hesap bağı koparılır.
+    r#"
+    INSERT OR REPLACE INTO settings (key, value) VALUES ('users.id_floor', (
+        SELECT MAX(
+            COALESCE((SELECT MAX(id) FROM users), 0),
+            COALESCE((SELECT MAX(user_id) FROM jobs), 0),
+            COALESCE((SELECT MAX(user_id) FROM audit_log), 0)
+        )
+    ));
+    UPDATE jobs SET user_id = NULL WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users);
+    UPDATE audit_log SET user_id = NULL WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users);
+    "#,
 ];
+
+const USER_ID_FLOOR_KEY: &str = "users.id_floor";
+
+/// Yeni hesabın numarası: bugüne kadar verilmiş en büyük numaranın bir fazlası. Silinmiş bir
+/// hesabın numarası asla yeniden verilmez; verilen numara aynı işlemde kaydedilir.
+pub fn next_user_id(conn: &Connection) -> rusqlite::Result<i64> {
+    use rusqlite::OptionalExtension;
+    let highest: i64 = conn.query_row("SELECT COALESCE(MAX(id), 0) FROM users", [], |row| row.get(0))?;
+    let floor: i64 = conn
+        .query_row("SELECT value FROM settings WHERE key = ?1", [USER_ID_FLOOR_KEY], |row| row.get::<_, String>(0))
+        .optional()?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let id = highest.max(floor) + 1;
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)", rusqlite::params![USER_ID_FLOOR_KEY, id.to_string()])?;
+    Ok(id)
+}
 
 #[derive(Clone)]
 pub struct Db(Arc<Mutex<Connection>>);

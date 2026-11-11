@@ -159,12 +159,15 @@ async fn create(
     let hash = auth::hash_password(&body.password)?;
     let permissions = serde_json::to_string(&body.permissions).unwrap_or_else(|_| "[]".into());
     let id = state.db.call(|conn| {
-        conn.execute(
-            "INSERT INTO users (username, email, password_hash, role, parent_id, permissions, created_at, package_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![username, body.email.trim(), hash, role.as_str(), parent_id, permissions, now(), package_id],
+        let tx = conn.transaction()?;
+        let id = crate::db::next_user_id(&tx)?;
+        tx.execute(
+            "INSERT INTO users (id, username, email, password_hash, role, parent_id, permissions, created_at, package_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, username, body.email.trim(), hash, role.as_str(), parent_id, permissions, now(), package_id],
         )?;
-        Ok(conn.last_insert_rowid())
+        tx.commit()?;
+        Ok(id)
     })?;
     auth::audit(&state.db, &user, "user.create", &username, role.as_str());
     Ok(Json(json!({ "id": id })))
@@ -319,9 +322,18 @@ async fn remove(
             return Err(AppError::bad("Son yönetici hesabı silinemez"));
         }
     }
-    state.db.call(|conn| conn.execute("DELETE FROM users WHERE id = ?1", params![id]))?;
+    state.db.call(|conn| {
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM users WHERE id = ?1", params![id])?;
+        // Görev ve denetim kayıtları kalır ama artık hiçbir hesaba bağlı değildir (yalnız yönetici görür).
+        tx.execute("UPDATE jobs SET user_id = NULL WHERE user_id = ?1", params![id])?;
+        tx.execute("UPDATE audit_log SET user_id = NULL WHERE user_id = ?1", params![id])?;
+        tx.commit()
+    })?;
     // Hesabın SSH anahtar dosyası geride kalmasın (aynı adla yeni hesap açılırsa eski anahtarlar geçerli olurdu).
     crate::hosting::sshaccess::remove_keys(&target.username);
+    // Hesabın Redis örneği de onunla birlikte kapanır (süreç, yapılandırma ve veri).
+    crate::hosting::redis_account::remove_for_username(&state.db, id, &target.username).await;
     auth::audit(&state.db, &user, "user.delete", &target.username, "");
     Ok(Json(json!({ "ok": true })))
 }

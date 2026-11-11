@@ -13,6 +13,7 @@ use serde_json::{json, Value as Json_};
 
 use crate::auth::{self, AuthUser};
 use crate::error::{AppError, AppResult};
+use crate::hosting::redis_account::{self, Instance};
 use crate::state::AppState;
 use crate::sys::redis::{Client, Value};
 use crate::sys::{exec, services};
@@ -37,10 +38,148 @@ pub fn router() -> Router<AppState> {
         .route("/key", get(show_key).post(edit_key).delete(delete_key))
         .route("/command", post(run_command))
         .route("/flush", post(flush))
+        .route("/mine", get(mine))
+        .route("/mine/enable", post(mine_enable))
+        .route("/mine/disable", post(mine_disable))
+        .route("/mine/password", post(mine_password))
+        .route("/accounts", get(accounts))
+        .route("/accounts/{user_id}", axum::routing::put(account_memory).delete(account_close))
 }
 
 fn parse_info(raw: &str) -> HashMap<String, String> {
     raw.lines().filter(|line| !line.starts_with('#')).filter_map(|line| line.split_once(':')).map(|(k, v)| (k.to_string(), v.trim().to_string())).collect()
+}
+
+/// Alt hesapların Redis'e erişimi veritabanı yetkisine bağlıdır.
+const ACCOUNT_AREA: &str = "databases";
+
+/// Anahtar tarayıcısının ve konsolun bağlanacağı sunucu: yönetici ortak Redis'e,
+/// diğer hesaplar yalnızca kendi örneklerine bağlanır.
+async fn client_for(state: &AppState, user: &AuthUser) -> AppResult<Client> {
+    if user.is_admin() {
+        return Client::connect().await;
+    }
+    user.require(ACCOUNT_AREA)?;
+    let instance = redis_account::get(&state.db, user.owner_id())?.ok_or_else(|| AppError::bad("Bu hesap için Redis açık değil"))?;
+    redis_account::connect(&instance).await
+}
+
+// ---- Hesabın kendi örneği ----
+
+/// Örneğin canlı durumu; bağlanılamazsa yalnızca kayıtlı bilgiler döner.
+async fn instance_json(instance: &Instance, with_secret: bool) -> Json_ {
+    let running = redis_account::is_running(instance).await;
+    let mut view = json!({
+        "user_id": instance.user_id,
+        "username": instance.username,
+        "running": running,
+        "host": "127.0.0.1",
+        "port": instance.port,
+        "socket": instance.socket(),
+        "memory_mb": instance.memory_mb,
+        "created_at": instance.created_at,
+        "used_memory": Json_::Null,
+        "keys": Json_::Null,
+        "version": "",
+    });
+    if with_secret {
+        view["password"] = json!(instance.password);
+    }
+    if running {
+        if let Ok(mut client) = redis_account::connect(instance).await {
+            if let Ok(reply) = client.run(&["INFO"]).await {
+                let info = parse_info(&reply.text());
+                let keys: i64 = info
+                    .iter()
+                    .filter(|(key, _)| key.strip_prefix("db").is_some_and(|rest| rest.bytes().all(|byte| byte.is_ascii_digit()) && !rest.is_empty()))
+                    .filter_map(|(_, value)| value.split(',').find_map(|part| part.strip_prefix("keys=")?.parse::<i64>().ok()))
+                    .sum();
+                view["used_memory"] = json!(info.get("used_memory").and_then(|value| value.parse::<u64>().ok()));
+                view["keys"] = json!(keys);
+                view["version"] = json!(info.get("redis_version").cloned().unwrap_or_default());
+            }
+        }
+    }
+    view
+}
+
+async fn mine_view(state: &AppState, user: &AuthUser) -> AppResult<Json_> {
+    let instance = redis_account::get(&state.db, user.owner_id())?;
+    Ok(json!({
+        "available": redis_account::is_available(),
+        "instance": match &instance {
+            Some(instance) => instance_json(instance, true).await,
+            None => Json_::Null,
+        },
+    }))
+}
+
+async fn mine(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Json_>> {
+    user.require(ACCOUNT_AREA)?;
+    Ok(Json(mine_view(&state, &user).await?))
+}
+
+async fn mine_enable(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Json_>> {
+    user.require(ACCOUNT_AREA)?;
+    let _guard = state.sys_lock.lock().await;
+    let created = redis_account::get(&state.db, user.owner_id())?.is_none();
+    let instance = redis_account::enable(&state.db, user.owner_id()).await?;
+    if created {
+        auth::audit(&state.db, &user, "redis.account.enable", &instance.username, &format!("port {}", instance.port));
+    }
+    Ok(Json(mine_view(&state, &user).await?))
+}
+
+async fn mine_disable(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Json_>> {
+    user.require(ACCOUNT_AREA)?;
+    let _guard = state.sys_lock.lock().await;
+    if let Some(instance) = redis_account::get(&state.db, user.owner_id())? {
+        redis_account::disable(&state.db, user.owner_id()).await?;
+        auth::audit(&state.db, &user, "redis.account.disable", &instance.username, "");
+    }
+    Ok(Json(mine_view(&state, &user).await?))
+}
+
+async fn mine_password(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Json_>> {
+    user.require(ACCOUNT_AREA)?;
+    let _guard = state.sys_lock.lock().await;
+    let instance = redis_account::rotate_password(&state.db, user.owner_id()).await?;
+    auth::audit(&state.db, &user, "redis.account.password", &instance.username, "");
+    Ok(Json(mine_view(&state, &user).await?))
+}
+
+// ---- Hesap örnekleri (yönetici) ----
+
+async fn accounts(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Json_>> {
+    user.require_admin()?;
+    let mut list = Vec::new();
+    for instance in redis_account::list(&state.db)? {
+        // Parola yöneticinin listesinde gösterilmez; hesabın kendi sayfasındadır.
+        list.push(instance_json(&instance, false).await);
+    }
+    Ok(Json(json!({ "accounts": list, "max_memory_mb": redis_account::MAX_MEMORY_MB })))
+}
+
+#[derive(Deserialize)]
+struct MemoryBody {
+    memory_mb: u32,
+}
+
+async fn account_memory(State(state): State<AppState>, user: AuthUser, axum::extract::Path(user_id): axum::extract::Path<i64>, Json(body): Json<MemoryBody>) -> AppResult<Json<Json_>> {
+    user.require_admin()?;
+    let _guard = state.sys_lock.lock().await;
+    let instance = redis_account::set_memory(&state.db, user_id, body.memory_mb).await?;
+    auth::audit(&state.db, &user, "redis.account.memory", &instance.username, &format!("{} MB", instance.memory_mb));
+    Ok(Json(instance_json(&instance, false).await))
+}
+
+async fn account_close(State(state): State<AppState>, user: AuthUser, axum::extract::Path(user_id): axum::extract::Path<i64>) -> AppResult<Json<Json_>> {
+    user.require_admin()?;
+    let _guard = state.sys_lock.lock().await;
+    let instance = redis_account::get(&state.db, user_id)?.ok_or(AppError::NotFound)?;
+    redis_account::disable(&state.db, user_id).await?;
+    auth::audit(&state.db, &user, "redis.account.disable", &instance.username, "yönetici");
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn config_get(client: &mut Client, key: &str) -> AppResult<String> {
@@ -169,8 +308,7 @@ fn validate_kind(kind: &str) -> AppResult<()> {
 
 /// Anahtarları tarar. Redis'in SCAN komutu tek adımda az (hatta hiç) sonuç
 /// dönebildiğinden, yeterince anahtar birikene ya da tarama bitene kadar yinelenir.
-async fn list_keys(user: AuthUser, Query(query): Query<KeysQuery>) -> AppResult<Json<Json_>> {
-    user.require_admin()?;
+async fn list_keys(State(state): State<AppState>, user: AuthUser, Query(query): Query<KeysQuery>) -> AppResult<Json<Json_>> {
     let mut cursor = if query.cursor.is_empty() { "0".to_string() } else { query.cursor };
     if !cursor.bytes().all(|b| b.is_ascii_digit()) || cursor.len() > 20 {
         return Err(AppError::bad("Geçersiz imleç"));
@@ -180,7 +318,7 @@ async fn list_keys(user: AuthUser, Query(query): Query<KeysQuery>) -> AppResult<
     }
     validate_kind(&query.kind)?;
     let pattern = if query.pattern.is_empty() { "*".to_string() } else { query.pattern };
-    let mut client = Client::connect().await?;
+    let mut client = client_for(&state, &user).await?;
     client.run(&["SELECT", &validate_db(query.db)?]).await?;
 
     let mut names: Vec<Value> = Vec::new();
@@ -239,9 +377,8 @@ fn preview(value: &Value) -> Json_ {
 
 /// Anahtarın ayrıntısı. Koleksiyonlar sayfa sayfa okunur; yanıt bir sonraki
 /// sayfanın imlecini (`next`; bittiyse boş) içerir.
-async fn show_key(user: AuthUser, Query(query): Query<KeyQuery>) -> AppResult<Json<Json_>> {
-    user.require_admin()?;
-    let mut client = Client::connect().await?;
+async fn show_key(State(state): State<AppState>, user: AuthUser, Query(query): Query<KeyQuery>) -> AppResult<Json<Json_>> {
+    let mut client = client_for(&state, &user).await?;
     client.run(&["SELECT", &validate_db(query.db)?]).await?;
     let key = query.key.as_str();
     let cursor = if query.cursor.is_empty() { "0".to_string() } else { query.cursor.clone() };
@@ -344,11 +481,10 @@ struct EditBody {
 }
 
 async fn edit_key(State(state): State<AppState>, user: AuthUser, Json(body): Json<EditBody>) -> AppResult<Json<Json_>> {
-    user.require_admin()?;
     if body.key.is_empty() || body.key.len() > 1024 {
         return Err(AppError::bad("Anahtar adı boş olamaz ve 1024 baytı aşamaz"));
     }
-    let mut client = Client::connect().await?;
+    let mut client = client_for(&state, &user).await?;
     client.run(&["SELECT", &validate_db(body.db)?]).await?;
     let key = body.key.as_str();
     let too_big = |value: &str| value.len() > MAX_VALUE_BYTES;
@@ -463,7 +599,6 @@ struct CommandBody {
 
 /// Konsol: tek bir Redis komutu çalıştırır. Tehlikeli komutlar reddedilir, her komut denetim günlüğüne yazılır.
 async fn run_command(State(state): State<AppState>, user: AuthUser, Json(body): Json<CommandBody>) -> AppResult<Json<Json_>> {
-    user.require_admin()?;
     if body.command.len() > 64 * 1024 {
         return Err(AppError::bad("Komut çok uzun"));
     }
@@ -472,7 +607,7 @@ async fn run_command(State(state): State<AppState>, user: AuthUser, Json(body): 
     if BLOCKED_COMMANDS.contains(&name.as_str()) {
         return Err(AppError::bad(format!("{name} komutu konsoldan çalıştırılamaz")));
     }
-    let mut client = Client::connect().await?;
+    let mut client = client_for(&state, &user).await?;
     client.run(&["SELECT", &validate_db(body.db)?]).await?;
     let raw: Vec<&[u8]> = args.iter().map(|arg| arg.as_bytes()).collect();
     // Redis'in hata yanıtı da bir sonuçtur; konsolda olduğu gibi gösterilir.
@@ -486,8 +621,7 @@ async fn run_command(State(state): State<AppState>, user: AuthUser, Json(body): 
 }
 
 async fn delete_key(State(state): State<AppState>, user: AuthUser, Query(query): Query<KeyQuery>) -> AppResult<Json<Json_>> {
-    user.require_admin()?;
-    let mut client = Client::connect().await?;
+    let mut client = client_for(&state, &user).await?;
     client.run(&["SELECT", &validate_db(query.db)?]).await?;
     let removed = client.run(&["DEL", &query.key]).await?.int();
     auth::audit(&state.db, &user, "redis.key.delete", &query.key.chars().take(120).collect::<String>(), "");
@@ -501,8 +635,7 @@ struct FlushBody {
 }
 
 async fn flush(State(state): State<AppState>, user: AuthUser, Json(body): Json<FlushBody>) -> AppResult<Json<Json_>> {
-    user.require_admin()?;
-    let mut client = Client::connect().await?;
+    let mut client = client_for(&state, &user).await?;
     match body.db {
         Some(db) => {
             client.run(&["SELECT", &validate_db(db)?]).await?;

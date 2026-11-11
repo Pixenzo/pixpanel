@@ -29,7 +29,7 @@ import { MyBackupsPage } from "./pages/MyBackups";
 import { OverviewPage } from "./pages/Overview";
 import { PhpPage } from "./pages/Php";
 import { ProcessesPage } from "./pages/Processes";
-import { RedisPage } from "./pages/Redis";
+import { RedisRoute } from "./pages/Redis";
 import { BackupsPage } from "./pages/Backups";
 import { ServicesPage } from "./pages/Services";
 import { SettingsPage } from "./pages/Settings";
@@ -70,7 +70,6 @@ function App() {
             <Route path="/fail2ban" element={<Fail2banPage />} />
             <Route path="/docker" element={<DockerPage />} />
             <Route path="/php" element={<PhpPage />} />
-            <Route path="/redis" element={<RedisPage />} />
             <Route path="/backups" element={<BackupsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/components" element={<ComponentsPage />} />
@@ -88,6 +87,8 @@ function App() {
         {can("dns") && <Route path="/dns" element={<DnsPage />} />}
         {can("dns") && <Route path="/dns/:id" element={<DnsZonePage />} />}
         {can("databases") && <Route path="/databases" element={<DatabasesPage />} />}
+        {/* Yönetici ortak Redis'i, öteki hesaplar kendi örneklerini görür. */}
+        {(isAdmin || can("databases")) && <Route path="/redis" element={<RedisRoute />} />}
         {can("files") && <Route path="/files" element={<FilesPage />} />}
         {can("cron") && <Route path="/cron" element={<CronPage />} />}
         {can("logs") && <Route path="/logs" element={<LogsPage />} />}

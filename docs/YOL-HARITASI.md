@@ -158,7 +158,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 - **Disk kotası kararı:** dosya sistemi kotası LXC'de güvenilir değil; panel `du` ile düzenli ölçer, sınır aşılınca uyarır ve yüklemeyi/yeni kaynak açmayı engeller ("yumuşak kota"). Gerçek kota ayrı bir iş.
 - **Kabul:** sınırdaki hesap yeni site açamaz; bayi kendi müşterilerine kendi sınırını aşan paket veremez.
 
-### 8a. Hesap başına Redis — O, sistem katmanı + arayüz (8 ile birlikte)
+### 8a. Hesap başına Redis — TAMAMLANDI (11.11.2026; kalan: bellek sınırının pakete bağlanması)
 
 - **Karar (10.11.2026):** ACL/önek yerine hesap başına ayrı Redis örneği. Site başına değil hesap başına; siteler veritabanı numarasıyla ayrılır.
 - **Kapsam:** isteğe bağlı açılır ("Redis'i aç"); `pixpanel-redis-<hesap>.service` hesabın kendi kullanıcısıyla çalışır (Node.js birimleriyle aynı düzen); varsayılan bağlantı hesaba özel port + panelin ürettiği uzun parola (`127.0.0.1:<port>`; uygulamaların çoğu adres+port beklediği için; parola zorunlu çünkü yerel port bütün hesaplara açık, müşteri parola seçemez, yenileyebilir). Yanında unix soketi (`/run/pixpanel-redis/<hesap>/redis.sock`, dosya izniyle yalnız o hesap, parolasız). **Uzaktan erişim yok (kullanıcı kararı, 10.11.2026):** örnek yalnız `127.0.0.1`'i dinler, panelde bunu değiştiren ayar bulunmaz, müşteri istese de açamaz; dışarıdan erişim yalnız SSH tüneliyle (paket 9'daki hesap SSH erişimine bağlı). Yalnız yerel adresi dinlediği için güvenlik duvarında port açılsa bile ulaşılamaz. Bellek sınırı paketten gelir, dolunca en eski önbellek atılır.
