@@ -314,6 +314,7 @@ export interface Site {
   template: string;
   /** Sitenin bağlandığı sunucu adresi; boşsa bütün adresler. */
   ip: string;
+  rules: SiteRules;
 }
 
 export type DbEngine = "mariadb" | "postgresql";
@@ -383,6 +384,36 @@ export interface SiteOptions {
   node_versions: string[];
   /** Hesabın sitelerini bağlayabileceği sunucu adresleri. */
   ips: { address: string; label: string; user_id: number | null }[];
+}
+
+export interface SiteRedirect {
+  from: string;
+  to: string;
+  /** 301 (kalıcı) ya da 302 (geçici). */
+  code: number;
+  /** Yalnızca tam bu adres mi, yoksa altındaki adresler de mi? */
+  exact: boolean;
+}
+
+export interface ProtectedArea {
+  path: string;
+  label: string;
+  /** Parola yalnızca gönderilirken bulunur; sunucu geri göndermez. */
+  users: { name: string; password?: string }[];
+}
+
+/** Sitenin yönlendirme, koruma ve erişim kuralları. */
+export interface SiteRules {
+  /** Asıl ad tercihi: "www", "apex" ya da boş. */
+  www: string;
+  redirects: SiteRedirect[];
+  protected: ProtectedArea[];
+  blocked: string[];
+  allowed: string[];
+  maintenance: boolean;
+  maintenance_allowed: string[];
+  hotlink_protection: boolean;
+  error_pages: { not_found: string; forbidden: string; server_error: string };
 }
 
 /** Bir hesabın kendi Redis örneği. Parola yalnızca hesabın kendi görünümünde bulunur. */

@@ -304,6 +304,8 @@ struct UpdateBody {
     template: Option<String>,
     /// Sitenin bağlanacağı sunucu adresi; boş metin bütün adresler demektir.
     ip: Option<String>,
+    /// Site kurallarının tamamı (yönlendirmeler, parola koruması…); verilirse öncekinin yerini alır.
+    rules: Option<crate::hosting::rules::SiteRules>,
 }
 
 async fn update(
@@ -352,6 +354,11 @@ async fn update(
             return Err(AppError::bad("Bu şablon bu site türünde kullanılamaz"));
         }
         site.template = template;
+    }
+    if let Some(rules) = body.rules {
+        let mut names = vec![site.domain.clone()];
+        names.extend(site.aliases.iter().cloned());
+        site.rules = crate::hosting::rules::normalize(rules, &previous.rules, &names).await?;
     }
     if let Some(ip) = &body.ip {
         site.ip = crate::addresses::validate_for_site(&state.db, user.is_admin(), site.user_id, ip).await?;

@@ -502,6 +502,10 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sessions ADD COLUMN impersonator_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
     "#,
+    // 25: site kuralları (yönlendirme, parola koruması, adres engelleme, bakım kipi…).
+    r#"
+    ALTER TABLE sites ADD COLUMN rules TEXT NOT NULL DEFAULT '{}';
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

@@ -36,6 +36,9 @@ fn default_true() -> bool {
 }
 
 pub struct SiteConfig<'a> {
+    /// Sitenin numarası; kurallara ait değişken ve dosya adlarında kullanılır.
+    pub id: i64,
+    pub rules: &'a crate::hosting::rules::SiteRules,
     /// Sitenin bağlandığı adres; `None` ise sunucunun bütün adresleri.
     pub bind: Option<std::net::IpAddr>,
     pub domain: &'a str,
@@ -157,7 +160,7 @@ fn listen_lines(out: &mut String, port: u16, flags: &str, bind: Option<std::net:
     }
 }
 
-const ACME_LOCATION: &str = "    location ^~ /.well-known/acme-challenge/ {\n        root /var/lib/pixpanel/acme;\n        default_type text/plain;\n        auth_basic off;\n    }\n";
+const ACME_LOCATION: &str = "    location ^~ /.well-known/acme-challenge/ {\n        root /var/lib/pixpanel/acme;\n        default_type text/plain;\n        auth_basic off;\n        allow all;\n    }\n";
 
 /// Dosyanın şimdiki içeriğini saklar; `restore` ile eski hâline döndürülür.
 struct Snapshot {
@@ -332,6 +335,11 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
     let (cert, key) = certificate_paths(site.domain);
     let redirect_http = site.ssl && site.force_https;
     let mut out = format!("# PixPanel tarafından üretildi ({}). Elle yapılan değişiklikler kaybolur.\n", site.domain);
+    // Askıdaki sitede kurallar uygulanmaz; site zaten hiçbir içerik sunmaz.
+    let rules = if site.suspended { None } else { Some(site.rules) };
+    if let Some(rules) = rules {
+        out.push_str(&crate::hosting::rules::render_preamble(site.id, rules));
+    }
 
     if redirect_http {
         out.push_str("server {\n");
@@ -366,6 +374,9 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
         return out;
     }
 
+    let has_docroot = matches!(site.backend, Backend::Static { .. } | Backend::Php { .. });
+    out.push_str(&crate::hosting::rules::render_server(site.id, site.rules, site.domain, has_docroot));
+
     // Yol bazlı vekil kuralları sitenin asıl içeriğinden önce eşleşir (`^~`).
     for rule in site.proxy_rules {
         // Hedefin sonuna `/` eklenirse nginx eşleşen öneki atar; eklenmezse yol olduğu gibi iletilir.
@@ -394,6 +405,8 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
             out.push_str(
                 "    location ~* (?:\\.(?:sql|bak|old|orig|swp|dist)|/composer\\.(?:json|lock)|/package(?:-lock)?\\.json)$ {\n        return 404;\n    }\n",
             );
+            // Görsel koruması, aynı uzantıları eşleyen genel kuraldan önce yazılır (ilk eşleşen geçerlidir).
+            out.push_str(crate::hosting::rules::render_hotlink(site.rules));
             match php_socket {
                 Some(socket) => {
                     out.push_str(php_template_rules(site.template));

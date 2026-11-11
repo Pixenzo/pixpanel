@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, ArrowRightLeft, ChartColumn, ExternalLink, FileCode2, GitBranch, Globe, HardDriveUpload, Hexagon, LayoutGrid, PenLine, Plus, Route, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ChartColumn, ExternalLink, FileCode2, GitBranch, Globe, HardDriveUpload, Hexagon, LayoutGrid, PenLine, Plus, Route, ShieldCheck, Signpost, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router";
@@ -28,6 +28,7 @@ import { FtpSection } from "./SiteFtp";
 import { GitSection } from "./SiteGit";
 import { NodeSection } from "./SiteNode";
 import { ProxyRulesSection } from "./SiteProxyRules";
+import { SiteRulesSection } from "./SiteRules";
 import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { UptimePanel } from "../components/UptimePanel";
 import { StatsSection } from "./SiteStats";
@@ -535,6 +536,7 @@ export function SiteDetailPage() {
   const sections: Section[] = [
     { id: "overview", label: t("Genel bakış"), icon: LayoutGrid },
     { id: "settings", label: t("Adresler ve yayın"), icon: Globe },
+    { id: "access", label: t("Kurallar ve erişim"), icon: Signpost },
     ...(data.kind === "php" ? [{ id: "php", label: t("PHP ayarları"), icon: FileCode2 }] : []),
     ...(data.kind === "php" ? [{ id: "wordpress", label: "WordPress", icon: PenLine }] : []),
     { id: "stats", label: t("İstatistikler"), icon: ChartColumn },
@@ -596,6 +598,7 @@ export function SiteDetailPage() {
           {active === "stats" && <StatsSection site={data} />}
           {active === "node" && <NodeSection site={data} options={options.data} />}
           {active === "proxy" && <ProxyTab key={data.proxy_target} site={data} />}
+          {active === "access" && <SiteRulesSection key={JSON.stringify(data.rules)} site={data} />}
           {active === "rules" && <ProxyRulesSection key={JSON.stringify(data.proxy_rules)} site={data} />}
           {active === "ssl" && <SslTab site={data} />}
           {active === "git" && <GitSection site={data} />}

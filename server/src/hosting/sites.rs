@@ -46,6 +46,9 @@ pub struct Site {
     pub template: String,
     /// Sitenin bağlandığı sunucu adresi; boşsa site sunucunun bütün adreslerinden yanıt verir.
     pub ip: String,
+    /// Yönlendirmeler, parola koruması, adres engelleme gibi kurallar. Arayüze parola özetleri gitmez.
+    #[serde(serialize_with = "crate::hosting::rules::serialize_public")]
+    pub rules: crate::hosting::rules::SiteRules,
 }
 
 impl Site {
@@ -60,7 +63,7 @@ impl Site {
 
 const SITE_COLUMNS: &str = "s.id, s.user_id, u.username, s.domain, s.kind, s.public_dir, s.php_version,
      s.php_settings, s.proxy_target, s.proxy_websocket, s.ssl_mode, s.force_https, s.hsts,
-     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template, s.ip";
+     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template, s.ip, s.rules";
 
 fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
     let php_settings: String = row.get(7)?;
@@ -86,6 +89,7 @@ fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
         proxy_rules: serde_json::from_str(&row.get::<_, String>(17)?).unwrap_or_default(),
         template: row.get(18)?,
         ip: row.get(19)?,
+        rules: serde_json::from_str(&row.get::<_, String>(20)?).unwrap_or_default(),
     })
 }
 
@@ -325,6 +329,8 @@ pub fn save(db: &Db, site: &Site) -> AppResult<()> {
     let settings = serde_json::to_string(&site.php_settings).map_err(to_json)?;
     let node_settings = serde_json::to_string(&site.node).map_err(to_json)?;
     let proxy_rules = serde_json::to_string(&site.proxy_rules).map_err(to_json)?;
+    // Saklanan biçim parola özetlerini içerir (arayüze giden görünüm içermez).
+    let rules = serde_json::to_string(&site.rules).map_err(to_json)?;
     let outcome = db.call(|conn| {
         let tx = conn.transaction()?;
         if let Some(taken) = ensure_names_free(&tx, &site.aliases, Some(site.id))? {
@@ -333,12 +339,12 @@ pub fn save(db: &Db, site: &Site) -> AppResult<()> {
         tx.execute(
             "UPDATE sites SET kind = ?1, public_dir = ?2, php_version = ?3, php_settings = ?4, proxy_target = ?5,
                     proxy_websocket = ?6, ssl_mode = ?7, force_https = ?8, hsts = ?9, nginx_custom = ?10, status = ?11,
-                    node_settings = ?12, proxy_rules = ?13, template = ?14, ip = ?15
-             WHERE id = ?16",
+                    node_settings = ?12, proxy_rules = ?13, template = ?14, ip = ?15, rules = ?16
+             WHERE id = ?17",
             params![
                 site.kind, site.public_dir, site.php_version, settings, site.proxy_target, site.proxy_websocket,
                 site.ssl_mode, site.force_https, site.hsts, site.nginx_custom, site.status, node_settings, proxy_rules,
-                site.template, site.ip, site.id
+                site.template, site.ip, rules, site.id
             ],
         )?;
         tx.execute("DELETE FROM site_aliases WHERE site_id = ?1", params![site.id])?;
@@ -397,7 +403,12 @@ pub async fn provision(site: &Site) -> AppResult<()> {
         _ => nginx::Backend::Static { docroot: &docroot },
     };
 
+    // Kuralların dayandığı dosyalar yapılandırmadan önce yerinde olmalı.
+    crate::hosting::rules::write_password_files(site.id, &site.rules)?;
+    crate::hosting::rules::ensure_pages()?;
     nginx::apply(&nginx::SiteConfig {
+        id: site.id,
+        rules: &site.rules,
         bind: crate::addresses::bind_for(&site.ip).await,
         domain: &site.domain,
         aliases: &site.aliases,
@@ -421,6 +432,7 @@ pub async fn provision(site: &Site) -> AppResult<()> {
 /// Siteyi sistemden kaldırır; `delete_files` verilirse dosyalarını da siler.
 pub async fn deprovision(site: &Site, delete_files: bool) -> AppResult<()> {
     nginx::remove(&site.domain).await?;
+    crate::hosting::rules::remove_password_files(site.id, 0);
     node::remove(site.id).await?;
     php::remove_pool_except(site.id, None).await?;
     let ssl_dir = Path::new(nginx::SSL_DIR).join(&site.domain);
