@@ -52,8 +52,9 @@ echo "Makine: $PRETTY_NAME"
 [ -e /usr/local/bin/pixpanel ] && { echo "  HATA bu makinede panel zaten kurulu; sınama temiz makine ister"; exit 1; }
 
 say "Panel kurulumu"
+STARTED=$SECONDS
 OUT=$(bash $REL/install.sh --from-dir $REL --admin $ADMIN 2>&1); RC=$?
-check "kurulum" "$RC" 0
+check "kurulum ($((SECONDS - STARTED)) sn)" "$RC" 0
 [ "$RC" = 0 ] || { echo "$OUT" | tail -15; exit 1; }
 PASSWORD=$(sed -n 's/.*Parola *: *//p' <<<"$OUT" | head -1)
 # Sınama betiklerinin kendi gereksinimi (JSON ayrıştırma, sahte sunucular); panelin değil.
