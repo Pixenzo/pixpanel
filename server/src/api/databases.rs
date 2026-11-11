@@ -321,6 +321,7 @@ async fn create_database(
     };
 
     let owner_id = user.owner_id();
+    crate::quota::check(&state.db, owner_id, crate::quota::Resource::Database)?;
     let _guard = state.sys_lock.lock().await;
     let taken: bool = state.db.call(|conn| {
         conn.query_row(

@@ -85,6 +85,19 @@ pub fn spawn_wordpress_scan(state: AppState) {
     });
 }
 
+/// Hesapların disk kullanımını saatte bir ölçer (paketlerin disk kotası için).
+pub fn spawn_disk_measurement(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(120)).await;
+        loop {
+            if let Err(err) = crate::quota::measure_disk(&state.db).await {
+                tracing::warn!(error = %err, "disk kullanımı ölçülemedi");
+            }
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    });
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {

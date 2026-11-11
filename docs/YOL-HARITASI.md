@@ -132,6 +132,24 @@ Ardından gelecek otomasyonlar P2'deki WordPress araçlarıyla birleşir (tek t�
 
 ---
 
+### Ö3. VestaCP'de olup bizde olmayanlar (kullanıcı isteği, 11.11.2026)
+
+Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun dönem grafikler, site şablonları, ssh sftp erişimi, müşteri kendi yedeği, paketler ve kotalar, trafik ve ziyaretçi istatistikleri, çoklu dil, ftp ye yedek özelliklerinin hepsini ekleyelim". Yürütme sırası:
+
+1. Paketler ve kotalar (aşağıdaki 8. madde)
+2. Müşterinin kendi yedeği: hesap kendi sitelerinin, veritabanlarının ve postasının yedeğini görür, alır, geri yükler
+3. SSH/SFTP erişimi (9. madde)
+4. Trafik ve ziyaretçi istatistikleri (10. madde)
+5. Uzun dönem sunucu grafikleri: gün, hafta, ay, yıl
+6. FTP'ye yedek: düz FTP/FTPS yedek hedefi
+7. Site şablonları: uygulamaya göre hazır nginx ayarı
+8. Komut satırı: panelin işlemlerini betikten yapabilmek
+9. Birden çok IP: sunucuya IP ekleme, siteye özel IP
+10. DNS kümesi: ikincil ad sunucusuna eşitleme (18. madde)
+11. Çoklu dil: İngilizce çeviri (alt ajana verildi)
+
+---
+
 ## P1 — Müşteriye açmak için gerekli
 
 ### 8. Paketler ve kotalar — B, arka uç + arayüz (devre uygun)

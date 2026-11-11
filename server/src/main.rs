@@ -21,6 +21,7 @@ mod jobs;
 mod mail;
 mod notify;
 mod panelcert;
+mod quota;
 mod state;
 mod sys;
 mod tasks;
@@ -150,6 +151,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_update_check(state.clone());
     tasks::spawn_health_monitor(state.clone());
     tasks::spawn_wordpress_scan(state.clone());
+    tasks::spawn_disk_measurement(state.clone());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");

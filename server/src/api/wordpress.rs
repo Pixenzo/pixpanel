@@ -34,6 +34,8 @@ async fn install(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
     let request = body.validated()?;
+    // Kurulum bir veritabanı açar; paketin veritabanı sınırı burada da geçerlidir.
+    crate::quota::check(&state.db, site.user_id, crate::quota::Resource::Database)?;
     wordpress::check_installable(&site).await?;
     let lock = wordpress::SiteLock::acquire(&site)?;
 

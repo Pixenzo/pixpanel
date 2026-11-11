@@ -194,6 +194,7 @@ async fn create_zone(State(state): State<AppState>, user: AuthUser, Json(body): 
     user.require(AREA)?;
     let domain = dns::normalize_domain(&body.domain)?;
     let owner = user.owner_id();
+    crate::quota::check(&state.db, owner, crate::quota::Resource::DnsZone)?;
     let exists: bool = state.db.call(|conn| conn.query_row("SELECT EXISTS(SELECT 1 FROM dns_zones WHERE domain = ?1)", params![domain], |row| row.get(0)))?;
     if exists {
         return Err(AppError::conflict(format!("{domain} için bir bölge zaten var")));

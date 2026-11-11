@@ -191,6 +191,7 @@ async fn create(
     user.require(AREA)?;
     validate_kind(&body.kind)?;
     let owner_id = resolve_owner(&state, &user, body.user_id)?;
+    crate::quota::check(&state.db, owner_id, crate::quota::Resource::Site)?;
     let domain_name = domain::normalize(&body.domain)?;
     let aliases = sites::normalize_aliases(&domain_name, &body.aliases)?;
 

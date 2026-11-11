@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/{id}", patch(update).delete(remove))
+        .route("/{id}/usage", get(usage))
         .route("/{id}/2fa/reset", axum::routing::post(reset_two_factor))
 }
 
@@ -37,6 +38,8 @@ struct UserInfo {
     last_login_at: Option<i64>,
     /// İki adımlı doğrulama açık mı?
     two_factor: bool,
+    package_id: Option<i64>,
+    package_name: Option<String>,
 }
 
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<UserInfo>>> {
@@ -48,8 +51,8 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
     let users = state.db.call(|conn| {
         let mut stmt = conn.prepare(
             "SELECT u.id, u.username, u.email, u.role, u.parent_id, p.username, u.permissions,
-                    u.status, u.language, u.created_at, u.last_login_at, u.totp_enabled
-             FROM users u LEFT JOIN users p ON p.id = u.parent_id
+                    u.status, u.language, u.created_at, u.last_login_at, u.totp_enabled, u.package_id, k.name
+             FROM users u LEFT JOIN users p ON p.id = u.parent_id LEFT JOIN packages k ON k.id = u.package_id
              WHERE ?1 IS NULL OR u.parent_id = ?1
              ORDER BY u.username",
         )?;
@@ -68,6 +71,8 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
                 created_at: row.get(9)?,
                 last_login_at: row.get(10)?,
                 two_factor: row.get(11)?,
+                package_id: row.get(12)?,
+                package_name: row.get(13)?,
             })
         })?;
         rows.collect()
@@ -106,6 +111,27 @@ struct CreateBody {
     role: String,
     #[serde(default)]
     permissions: Vec<String>,
+    /// Hesaba atanacak hizmet paketi.
+    package_id: Option<i64>,
+}
+
+/// Paketin bu hesaba atanabildiğini denetler: paketi yalnızca tanımlayan (ya da yönetici)
+/// atayabilir; yöneticilere ve alt hesaplara paket atanmaz (alt hesap üst hesabına tabidir).
+fn assignable_package(state: &AppState, user: &AuthUser, package_id: i64, target_role: &str) -> AppResult<i64> {
+    if matches!(target_role, "admin" | "member") {
+        return Err(AppError::bad("Yöneticilere ve alt hesaplara paket atanmaz"));
+    }
+    let package = crate::quota::load_package(&state.db, package_id).map_err(|_| AppError::bad("Paket bulunamadı"))?;
+    if !user.is_admin() && package.owner_id != user.id {
+        return Err(AppError::bad("Paket bulunamadı"));
+    }
+    Ok(package.id)
+}
+
+/// Yönetilen bir hesabın paketi ve kullanımı.
+async fn usage(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<crate::quota::Usage>> {
+    load_manageable(&state, &user, id)?;
+    Ok(Json(crate::quota::usage(&state.db, id)?))
 }
 
 async fn create(
@@ -125,14 +151,18 @@ async fn create(
     validate_username(&username)?;
     auth::validate_password(&body.password)?;
     validate_permissions(&body.permissions)?;
+    let package_id = match body.package_id {
+        Some(package_id) => Some(assignable_package(&state, &user, package_id, role.as_str())?),
+        None => None,
+    };
 
     let hash = auth::hash_password(&body.password)?;
     let permissions = serde_json::to_string(&body.permissions).unwrap_or_else(|_| "[]".into());
     let id = state.db.call(|conn| {
         conn.execute(
-            "INSERT INTO users (username, email, password_hash, role, parent_id, permissions, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![username, body.email.trim(), hash, role.as_str(), parent_id, permissions, now()],
+            "INSERT INTO users (username, email, password_hash, role, parent_id, permissions, created_at, package_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![username, body.email.trim(), hash, role.as_str(), parent_id, permissions, now(), package_id],
         )?;
         Ok(conn.last_insert_rowid())
     })?;
@@ -182,6 +212,8 @@ struct UpdateBody {
     status: Option<String>,
     permissions: Option<Vec<String>>,
     language: Option<String>,
+    /// Atanacak paket; 0 paketi kaldırır.
+    package_id: Option<i64>,
 }
 
 async fn update(
@@ -208,6 +240,13 @@ async fn update(
     if let Some(permissions) = &body.permissions {
         validate_permissions(permissions)?;
     }
+    // Paketi yalnızca hesabı yöneten (yönetici ya da bayisi) değiştirebilir; hesap kendi paketini değiştiremez.
+    let package_change: Option<Option<i64>> = match body.package_id {
+        None => None,
+        Some(_) if id == user.id => return Err(AppError::Forbidden),
+        Some(0) => Some(None),
+        Some(package_id) => Some(Some(assignable_package(&state, &user, package_id, &target.role)?)),
+    };
     let password_hash = match &body.password {
         Some(password) => {
             auth::validate_password(password)?;
@@ -230,6 +269,9 @@ async fn update(
              WHERE id = ?6",
             params![body.email.as_deref().map(str::trim), password_hash, body.status, permissions, body.language, id],
         )?;
+        if let Some(package_id) = package_change {
+            tx.execute("UPDATE users SET package_id = ?1 WHERE id = ?2", params![package_id, id])?;
+        }
         // Parolası değişen ya da askıya alınan hesabın açık oturumları ve
         // (askıda ise) alt hesaplarının oturumları kapatılır.
         if password_hash.is_some() || suspended {

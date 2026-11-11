@@ -84,6 +84,7 @@ async fn create(State(state): State<AppState>, user: AuthUser, Path(id): Path<i6
     user.require(AREA)?;
     ensure_installed()?;
     let site = ftp_site(&state, &user, id)?;
+    crate::quota::check(&state.db, site.user_id, crate::quota::Resource::FtpAccount)?;
     let name = ftp::validate_name(&body.name)?;
     ftp::validate_password(&body.password)?;
     let (subdir, directory) = ftp::resolve_directory(&site.root(), &body.subdir)?;

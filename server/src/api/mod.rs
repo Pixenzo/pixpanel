@@ -22,6 +22,7 @@ mod jobs;
 mod logs;
 mod mail;
 mod notify;
+mod packages;
 mod panelcert;
 mod php;
 mod redis;
@@ -33,6 +34,9 @@ mod update;
 mod users;
 mod wordpress;
 
+/// Hesap adının biçim denetimi (hesap adı Linux kullanıcı adı ve klasör adıdır).
+pub use users::validate_username as validate_account_name;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
@@ -41,6 +45,7 @@ pub fn router() -> Router<AppState> {
         .nest("/jobs", jobs::router())
         .nest("/events", events::router())
         .nest("/health", health::router())
+        .nest("/packages", packages::router())
         .nest("/components", components::router())
         .nest("/databases", databases::router())
         .nest("/files", files::router())

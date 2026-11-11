@@ -131,6 +131,7 @@ async fn create_domain(State(state): State<AppState>, user: AuthUser, Json(body)
         }
         None => user.owner_id(),
     };
+    crate::quota::check(&state.db, owner_id, crate::quota::Resource::MailDomain)?;
     // Paylaşımlı sunucuda bir hesap başkasının (ya da dış dünyanın) alan adını
     // yerel posta alanı yapıp o adrese giden postayı ele geçirebilirdi; bu yüzden
     // yönetici dışındakiler yalnızca kendi sitelerinin adlarını kullanabilir.
@@ -293,6 +294,7 @@ async fn create_mailbox(
     user.require(AREA)?;
     ensure_installed()?;
     let domain = mail::get_domain(&state.db, &user, id)?;
+    crate::quota::check(&state.db, domain.user_id, crate::quota::Resource::Mailbox)?;
     let local = mail::validate_local(&body.local)?;
     auth::validate_password(&body.password)?;
     mail::validate_quota(body.quota_mb)?;

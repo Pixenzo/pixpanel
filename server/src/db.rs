@@ -341,6 +341,23 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX site_checks_site ON site_checks(site_id, checked_at);
     CREATE INDEX site_checks_time ON site_checks(checked_at);
     "#,
+    // 15: hizmet paketleri, hesaba paket atama ve ölçülen disk kullanımı.
+    r#"
+    CREATE TABLE packages (
+        id         INTEGER PRIMARY KEY,
+        owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL,
+        limits     TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        UNIQUE (owner_id, name)
+    );
+    ALTER TABLE users ADD COLUMN package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL;
+    CREATE TABLE account_usage (
+        user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        disk_bytes  INTEGER NOT NULL,
+        measured_at INTEGER NOT NULL
+    );
+    "#,
 ];
 
 #[derive(Clone)]
