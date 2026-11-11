@@ -275,8 +275,8 @@ function CreateDomainModal({ onClose, overview, isAdmin }: { onClose: () => void
 
 function ServiceStrip({ services, hostname }: { services: MailService[]; hostname: string }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-lg border border-line bg-surface px-4 sm:px-6 py-2.5">
-      <ul aria-label={t("Posta servisleri")} className="flex flex-wrap items-center gap-x-5 gap-y-1">
+    <div className="mb-5 flex flex-wrap items-center gap-x-8 gap-y-2 rounded-2xl border border-line bg-surface px-4 py-4 shadow-card sm:px-6">
+      <ul aria-label={t("Posta servisleri")} className="flex flex-wrap items-center gap-x-7 gap-y-2">
         {services.map((service) => (
           <li key={service.name} className="flex items-center gap-2 text-[13.5px]">
             <span className="text-ink-2">{service.label}</span>

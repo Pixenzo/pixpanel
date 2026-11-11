@@ -489,8 +489,8 @@ export function FilesPage() {
 
       <Panel flush className={classNames(dragging && "outline-2 outline-accent")}>
         <div onDragOver={(event) => (event.preventDefault(), setDragging(true))} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-          <nav aria-label={t("Klasör yolu")} className="flex flex-wrap items-center gap-1 border-b border-line px-3 py-2 font-mono text-[13.5px]">
-            <button type="button" className="rounded px-1.5 py-0.5 font-medium hover:bg-sunken" onClick={() => setPath("/")}>
+          <nav aria-label={t("Klasör yolu")} className="flex flex-wrap items-center gap-1 border-b border-line px-4 py-3.5 font-mono text-[14px] sm:px-6">
+            <button type="button" className="rounded-md px-2 py-1 font-medium hover:bg-sunken" onClick={() => setPath("/")}>
               {root?.label ?? "/"}
             </button>
             {crumbs.map((crumb, index) => (
@@ -498,7 +498,7 @@ export function FilesPage() {
                 <ChevronRight aria-hidden className="size-3.5 text-ink-3" />
                 <button
                   type="button"
-                  className="rounded px-1.5 py-0.5 hover:bg-sunken"
+                  className="rounded-md px-2 py-1 hover:bg-sunken"
                   aria-current={index === crumbs.length - 1 ? "location" : undefined}
                   onClick={() => setPath(`/${crumbs.slice(0, index + 1).join("/")}`)}
                 >
@@ -508,7 +508,7 @@ export function FilesPage() {
             ))}
           </nav>
 
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken/40 px-4 py-3 sm:px-6">
             <input ref={fileInput} type="file" multiple hidden onChange={(event) => (void upload(Array.from(event.target.files ?? [])), (event.target.value = ""))} />
             {selectedEntries.length === 0 ? (
               <>
