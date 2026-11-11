@@ -383,6 +383,26 @@ export interface SiteOptions {
   ips: { address: string; label: string; user_id: number | null }[];
 }
 
+/** Bu sunucudan bölge çeken bir ikincil ad sunucusu. */
+export interface DnsClusterSecondary {
+  address: string;
+  /** İkincil bir PixPanel ise panelinin adresi; boşsa bölge listesi eşitlenmez. */
+  panel_url: string;
+  token_set: boolean;
+  fingerprint: string;
+  last_sync_at: number | null;
+  last_error: string;
+  synced_zones: number | null;
+  conflicts: string[];
+}
+
+export interface DnsCluster {
+  local_installed: boolean;
+  secondaries: DnsClusterSecondary[];
+  /** Bu sunucunun ikincil olarak bölge çektiği birinciller. */
+  replica_of: { primary: string; zones: number }[];
+}
+
 /** Sunucunun bir IP adresi ve panelin onun hakkında bildikleri. */
 export interface ServerAddress {
   address: string;

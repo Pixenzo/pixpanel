@@ -6,6 +6,7 @@
 //! ve sertifika işlemleri gereken kayıtları bu modül üzerinden kendiliğinden ekler.
 
 pub mod cloudflare;
+pub mod cluster;
 pub mod local;
 
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -234,24 +235,46 @@ pub async fn list_records(state: &AppState, zone: &Zone) -> AppResult<Vec<Record
     Ok(records)
 }
 
+/// Yerel bölge değişince ikincil ad sunucularına hemen haber verilir; DNS sunucusu kendi
+/// başına değişikliği ancak bir sonraki denetiminde (dakikada bir) fark eder.
+async fn announce(state: &AppState, zone: &Zone) {
+    if !cluster::secondaries(&state.db).is_empty() {
+        if let Err(err) = local::notify(&zone.domain).await {
+            tracing::debug!(domain = %zone.domain, error = %err, "ikincillere bildirim gönderilemedi");
+        }
+    }
+}
+
 pub async fn create_record(state: &AppState, zone: &Zone, record: &Record) -> AppResult<()> {
     match zone.provider.as_str() {
         "cloudflare" => cloudflare_client(state, zone.user_id)?.create(&zone.cf_zone_id, record).await,
-        _ => local::create(&zone.domain, record).await,
+        _ => {
+            local::create(&zone.domain, record).await?;
+            announce(state, zone).await;
+            Ok(())
+        }
     }
 }
 
 pub async fn update_record(state: &AppState, zone: &Zone, old: &Record, new: &Record) -> AppResult<()> {
     match zone.provider.as_str() {
         "cloudflare" => cloudflare_client(state, zone.user_id)?.update(&zone.cf_zone_id, &old.id, new).await,
-        _ => local::update(&zone.domain, old, new).await,
+        _ => {
+            local::update(&zone.domain, old, new).await?;
+            announce(state, zone).await;
+            Ok(())
+        }
     }
 }
 
 pub async fn delete_record(state: &AppState, zone: &Zone, record: &Record) -> AppResult<()> {
     match zone.provider.as_str() {
         "cloudflare" => cloudflare_client(state, zone.user_id)?.delete(&zone.cf_zone_id, &record.id).await,
-        _ => local::delete(&zone.domain, record).await,
+        _ => {
+            local::delete(&zone.domain, record).await?;
+            announce(state, zone).await;
+            Ok(())
+        }
     }
 }
 
@@ -491,7 +514,12 @@ pub async fn seed_local_zone(state: &AppState, zone: &Zone, vanity_nameservers: 
     let site_ip = site_ip_for(&state.db, &zone.domain);
     let mut report = Vec::new();
     for (index, name) in names.iter().enumerate() {
-        let record = if index < 2 { site_address_record(&state.db, name, &site_ip) } else { Record::new("A", name, &ip) };
+        // `ns2` adı, tanımlıysa ilk ikincil ad sunucusunu gösterir.
+        let record = match index {
+            0 | 1 => site_address_record(&state.db, name, &site_ip),
+            3 => Record::new("A", name, &cluster::second_nameserver_address(&state.db)),
+            _ => Record::new("A", name, &ip),
+        };
         report.push(ensure(state, zone, &existing, record, Policy::IfNoAddress).await);
     }
     report

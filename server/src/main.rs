@@ -172,6 +172,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_disk_measurement(state.clone());
     tasks::spawn_stats_collector(state.clone());
     tasks::spawn_metrics_archive(state.clone());
+    tasks::spawn_dns_cluster_sync(state.clone());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");

@@ -61,7 +61,7 @@ postfix postfix/mailname string {}
         }
         if component.id == "dns" {
             ctx.log("DNS sunucusu yapılandırılıyor");
-            crate::dns::local::setup().await?;
+            crate::dns::local::setup(&crate::dns::cluster::transfer(&job_state.db)).await?;
         }
         if component.id == "ftp" {
             ctx.log("FTP sunucusu yapılandırılıyor");

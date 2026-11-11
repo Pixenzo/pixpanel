@@ -1,5 +1,6 @@
 //! Sunucudaki yetkili DNS: PowerDNS (SQLite arka ucu), HTTP API'si üzerinden yönetilir.
 
+use std::net::IpAddr;
 use std::path::Path;
 use std::time::Duration;
 
@@ -58,7 +59,33 @@ DNSStubListener=no
     Ok(())
 }
 
-pub async fn setup() -> AppResult<()> {
+/// Bölge aktarımı ayarları: bu sunucudan bölge çeken ikinciller ve bu sunucunun
+/// (ikincil olarak) bölge çektiği birinciller. İkisi de boşsa sunucu tek başına çalışır.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Transfer {
+    pub secondaries: Vec<IpAddr>,
+    pub primaries: Vec<IpAddr>,
+}
+
+fn join(addresses: &[IpAddr]) -> String {
+    addresses.iter().map(IpAddr::to_string).collect::<Vec<_>>().join(",")
+}
+
+/// Aktarım ayarlarının yapılandırma satırları.
+pub fn transfer_conf(transfer: &Transfer) -> String {
+    let mut conf = String::new();
+    if !transfer.secondaries.is_empty() {
+        let list = join(&transfer.secondaries);
+        // Bildirim yalnızca tanımlı ikincillere gider; bölgedeki NS adlarına (çoğu bu sunucunun kendisi) gitmez.
+        conf.push_str(&format!("primary=yes\nallow-axfr-ips=127.0.0.1,::1,{list}\nalso-notify={list}\nonly-notify={list}\n"));
+    }
+    if !transfer.primaries.is_empty() {
+        conf.push_str(&format!("secondary=yes\nallow-notify-from={}\n", join(&transfer.primaries)));
+    }
+    conf
+}
+
+pub async fn setup(transfer: &Transfer) -> AppResult<()> {
     let pdns = sysuser::lookup("pdns").ok_or_else(|| AppError::internal("pdns kullanıcısı bulunamadı"))?;
     if !Path::new(DB_FILE).exists() {
         let schema = std::fs::read_to_string(SCHEMA_FILE)?;
@@ -88,7 +115,9 @@ pub async fn setup() -> AppResult<()> {
          webserver-address=127.0.0.1\n\
          webserver-port=8053\n\
          webserver-allow-from=127.0.0.1\n\
-         default-soa-content=ns1.@ hostmaster.@ 0 10800 3600 604800 3600\n"
+         default-soa-content=ns1.@ hostmaster.@ 0 10800 3600 604800 3600\n\
+         {}",
+        transfer_conf(transfer)
     );
     // Dosya API anahtarını içerdiğinden yalnızca PowerDNS okuyabilir.
     atomic_write(Path::new(CONF_FILE), conf.as_bytes(), 0o640)?;
@@ -211,7 +240,8 @@ fn from_wire(kind: &str, name: &str, ttl: u32, content: &str) -> Record {
 pub async fn create_zone(domain: &str, nameservers: &[String]) -> AppResult<()> {
     let body = json!({
         "name": dotted(domain),
-        "kind": "Native",
+        // Birincil türündeki bölge, değiştikçe ikincillere bildirim gönderir; ikincil yokken zararsızdır.
+        "kind": "Master",
         "nameservers": nameservers.iter().map(|ns| dotted(ns)).collect::<Vec<_>>(),
         "soa_edit_api": "DEFAULT",
     });
@@ -228,6 +258,49 @@ pub async fn delete_zone(domain: &str) -> AppResult<()> {
         Ok(_) | Err(AppError::NotFound) => Ok(()),
         Err(err) => Err(err),
     }
+}
+
+/// DNS sunucusundaki bir bölgenin aktarım açısından durumu.
+#[derive(Debug, Clone)]
+pub struct ZoneState {
+    pub domain: String,
+    /// Bölge başka bir sunucudan mı çekiliyor?
+    pub secondary: bool,
+    pub masters: Vec<String>,
+}
+
+/// Sunucudaki bütün bölgeler (panelin açtıkları ve başka sunucudan çekilenler).
+pub async fn zones() -> AppResult<Vec<ZoneState>> {
+    let list = request(reqwest::Method::GET, "/zones", None).await?;
+    Ok(list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|zone| ZoneState {
+            domain: undotted(zone["name"].as_str().unwrap_or("")),
+            secondary: matches!(zone["kind"].as_str().unwrap_or("").to_ascii_lowercase().as_str(), "slave" | "secondary"),
+            masters: zone["masters"].as_array().into_iter().flatten().filter_map(|master| master.as_str().map(str::to_string)).collect(),
+        })
+        .collect())
+}
+
+/// Panelin açtığı bölgeyi birincil türüne çevirir (eski kurulumlarda bölgeler bildirim göndermeyen türdeydi).
+pub async fn make_primary(domain: &str) -> AppResult<()> {
+    request(reqwest::Method::PUT, &format!("/zones/{}", dotted(domain)), Some(json!({ "kind": "Master" }))).await.map(|_| ())
+}
+
+/// Bölgenin ikincillerine değişiklik bildirimi gönderir.
+pub async fn notify(domain: &str) -> AppResult<()> {
+    request(reqwest::Method::PUT, &format!("/zones/{}/notify", dotted(domain)), None).await.map(|_| ())
+}
+
+/// Başka sunucudan çekilecek bölge açar ve ilk aktarımı başlatır.
+pub async fn create_secondary_zone(domain: &str, primary: IpAddr) -> AppResult<()> {
+    let body = json!({ "name": dotted(domain), "kind": "Slave", "masters": [primary.to_string()] });
+    request(reqwest::Method::POST, "/zones", Some(body)).await?;
+    // İlk aktarım kendi sırasını beklemeden başlar; başaramazsa sunucu sonra yeniden dener.
+    let _ = request(reqwest::Method::PUT, &format!("/zones/{}/axfr-retrieve", dotted(domain)), None).await;
+    Ok(())
 }
 
 /// Bölgedeki bütün kayıtlar (SOA hariç; onu sunucu yönetir).

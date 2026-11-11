@@ -54,6 +54,20 @@ pub fn spawn_update_check(state: AppState) {
     });
 }
 
+/// Bölge listesini ikincil ad sunucularına düzenli olarak yeniden iletir; kaçırılmış bir
+/// eşitleme (ikincil o an kapalıydı) böylece kendiliğinden kapanır.
+pub fn spawn_dns_cluster_sync(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(120)).await;
+        loop {
+            if crate::dns::cluster::secondaries(&state.db).iter().any(|item| !item.panel_url.is_empty()) {
+                let _ = crate::dns::cluster::sync(&state).await;
+            }
+            tokio::time::sleep(Duration::from_secs(30 * 60)).await;
+        }
+    });
+}
+
 /// Kendi kendine bakım denetimlerini düzenli çalıştırır (bkz. `health`).
 pub fn spawn_health_monitor(state: AppState) {
     tokio::spawn(async move {

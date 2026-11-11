@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { DnsCluster } from "../components/DnsCluster";
 import { useFeedback } from "../components/feedback";
 import {
   Badge,
@@ -694,12 +695,13 @@ function SettingsTab({ localInstalled }: { localInstalled: boolean }) {
 
 // ---- Sayfa ----
 
-type DnsTab = "zones" | "cloudflare" | "settings";
+type DnsTab = "zones" | "cloudflare" | "cluster" | "settings";
 
 /** Sekmenin adres çubuğundaki karşılığı (`?sekme=`). */
 const tabParams: Record<DnsTab, string> = {
   zones: "bolgeler",
   cloudflare: "cloudflare",
+  cluster: "kume",
   settings: "ayarlar",
 };
 
@@ -712,7 +714,8 @@ export function DnsPage() {
   const overview = useQuery({ queryKey: ["dns"], queryFn: () => api.get<DnsOverview>("/dns") });
 
   const requested = (Object.keys(tabParams) as DnsTab[]).find((item) => tabParams[item] === searchParams.get("sekme"));
-  const tab: DnsTab = requested === "settings" && !isAdmin ? "zones" : (requested ?? "zones");
+  const adminOnly = requested === "settings" || requested === "cluster";
+  const tab: DnsTab = adminOnly && !isAdmin ? "zones" : (requested ?? "zones");
 
   if (overview.isPending) return <LoadingBlock />;
   if (overview.isError) return <ErrorBlock message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} />;
@@ -721,7 +724,7 @@ export function DnsPage() {
   const tabs: { id: DnsTab; label: string }[] = [
     { id: "zones", label: t("Bölgeler") },
     { id: "cloudflare", label: "Cloudflare" },
-    ...(isAdmin ? [{ id: "settings" as const, label: t("Ayarlar") }] : []),
+    ...(isAdmin ? [{ id: "cluster" as const, label: t("Küme") }, { id: "settings" as const, label: t("Ayarlar") }] : []),
   ];
 
   return (
@@ -743,6 +746,7 @@ export function DnsPage() {
       />
       {tab === "zones" && <ZonesTab overview={data} isAdmin={isAdmin} showOwner={showOwner} onAdd={() => setAdding("blank")} />}
       {tab === "cloudflare" && <CloudflareTab overview={data} onLink={(domain) => setAdding({ provider: "cloudflare", domain })} />}
+      {tab === "cluster" && <DnsCluster localInstalled={data.local_installed} />}
       {tab === "settings" && <SettingsTab localInstalled={data.local_installed} />}
       {adding && (
         <AddZoneModal

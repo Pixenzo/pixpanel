@@ -1611,6 +1611,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "webpki-roots",
  "x509-parser",
  "zip",
 ]

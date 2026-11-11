@@ -145,7 +145,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 7. Site şablonları: uygulamaya göre hazır nginx ayarı
 8. Komut satırı: panelin işlemlerini betikten yapabilmek — **tamamlandı**
 9. Birden çok IP: sunucuya IP ekleme, siteye özel IP — **tamamlandı**
-10. DNS kümesi: ikincil ad sunucusuna eşitleme (18. madde)
+10. DNS kümesi: ikincil ad sunucusuna eşitleme (18. madde) — **tamamlandı**
 11. Çoklu dil: İngilizce çeviri (alt ajana verildi)
 
 ---

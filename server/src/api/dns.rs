@@ -29,6 +29,10 @@ pub fn router() -> Router<AppState> {
         .route("/zones/{id}/sync", post(sync_zone))
         .route("/zones/{id}/cloudflare", post(cloudflare_settings))
         .route("/zones/{id}/purge", post(purge_cache))
+        .route("/cluster", get(cluster_view).put(cluster_save))
+        .route("/cluster/sync", post(cluster_sync))
+        .route("/replica", axum::routing::put(replica_apply))
+        .route("/replica/{primary}", axum::routing::delete(replica_detach))
 }
 
 #[derive(Serialize)]
@@ -74,7 +78,7 @@ async fn run_setup(State(state): State<AppState>, user: AuthUser) -> AppResult<J
         return Err(AppError::bad("DNS sunucusu kurulu değil; önce Bileşenler sayfasından kurun"));
     }
     let _guard = state.sys_lock.lock().await;
-    local::setup().await?;
+    local::setup(&dns::cluster::transfer(&state.db)).await?;
     auth::audit(&state.db, &user, "dns.setup", "", "");
     Ok(Json(json!({ "ok": true })))
 }
@@ -119,6 +123,84 @@ async fn save_settings(State(state): State<AppState>, user: AuthUser, Json(body)
     }
     auth::audit(&state.db, &user, "dns.settings", "", "");
     Ok(Json(settings_view(&state)))
+}
+
+// ---- DNS kümesi (yönetici) ----
+
+/// Küme görünümü: bu sunucunun ikincilleri (anahtarlar gizli) ve ikincili olduğu birinciller.
+async fn cluster_json(state: &AppState) -> Value {
+    let statuses = dns::cluster::statuses(&state.db);
+    let secondaries: Vec<Value> = dns::cluster::secondaries(&state.db)
+        .into_iter()
+        .map(|item| {
+            let status = statuses.get(&item.address);
+            json!({
+                "address": item.address,
+                "panel_url": item.panel_url,
+                "token_set": !item.token.is_empty(),
+                "fingerprint": item.fingerprint,
+                "last_sync_at": status.map(|status| status.at),
+                "last_error": status.map(|status| status.error.clone()).unwrap_or_default(),
+                "synced_zones": status.map(|status| status.zones),
+                "conflicts": status.map(|status| status.conflicts.clone()).unwrap_or_default(),
+            })
+        })
+        .collect();
+    let replica_of: Vec<Value> = dns::cluster::replica_summary(&state.db).await.into_iter().map(|(primary, zones)| json!({ "primary": primary, "zones": zones })).collect();
+    json!({ "local_installed": local::is_installed(), "secondaries": secondaries, "replica_of": replica_of })
+}
+
+async fn cluster_view(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Value>> {
+    user.require_admin()?;
+    Ok(Json(cluster_json(&state).await))
+}
+
+#[derive(Deserialize)]
+struct ClusterBody {
+    secondaries: Vec<dns::cluster::SecondaryInput>,
+}
+
+async fn cluster_save(State(state): State<AppState>, user: AuthUser, Json(body): Json<ClusterBody>) -> AppResult<Json<Value>> {
+    user.require_admin()?;
+    let _guard = state.sys_lock.lock().await;
+    let detail = body.secondaries.iter().map(|item| item.address.trim().to_string()).collect::<Vec<_>>().join(", ");
+    dns::cluster::save(&state, body.secondaries).await?;
+    auth::audit(&state.db, &user, "dns.cluster", "", &detail);
+    Ok(Json(cluster_json(&state).await))
+}
+
+async fn cluster_sync(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Value>> {
+    user.require_admin()?;
+    dns::cluster::sync(&state).await?;
+    Ok(Json(cluster_json(&state).await))
+}
+
+#[derive(Deserialize)]
+struct ReplicaBody {
+    zones: Vec<String>,
+    /// Bölgelerin çekileceği adres; verilmezse isteğin geldiği adres.
+    primary: Option<String>,
+}
+
+/// Birincil panelin çağırdığı uç: bu sunucudaki ikincil bölgeleri gönderilen listeyle eşitler.
+async fn replica_apply(State(state): State<AppState>, user: AuthUser, Json(body): Json<ReplicaBody>) -> AppResult<Json<dns::cluster::ReplicaReport>> {
+    user.require_admin()?;
+    let primary: std::net::IpAddr = body.primary.as_deref().unwrap_or(&user.ip).trim().parse().map_err(|_| AppError::bad("Birincil sunucunun adresi geçersiz"))?;
+    let _guard = state.sys_lock.lock().await;
+    let report = dns::cluster::replica_apply(&state, primary, &body.zones).await?;
+    if !report.created.is_empty() || !report.removed.is_empty() {
+        auth::audit(&state.db, &user, "dns.replica", &primary.to_string(), &format!("+{} -{}", report.created.len(), report.removed.len()));
+    }
+    Ok(Json(report))
+}
+
+async fn replica_detach(State(state): State<AppState>, user: AuthUser, Path(primary): Path<String>) -> AppResult<Json<Value>> {
+    user.require_admin()?;
+    let primary: std::net::IpAddr = primary.trim().parse().map_err(|_| AppError::bad("Birincil sunucunun adresi geçersiz"))?;
+    let _guard = state.sys_lock.lock().await;
+    let removed = dns::cluster::replica_detach(&state, primary).await?;
+    auth::audit(&state.db, &user, "dns.replica.detach", &primary.to_string(), &format!("{removed} bölge"));
+    Ok(Json(cluster_json(&state).await))
 }
 
 // ---- Cloudflare bağlantısı ----
@@ -236,6 +318,9 @@ async fn create_zone(State(state): State<AppState>, user: AuthUser, Json(body): 
         // Yeni açılan yerel bölgeye hesabın site ve posta kayıtları da yazılır.
         report.extend(sync_records(&state, &zone).await?);
     }
+    if provider == "local" {
+        dns::cluster::sync_in_background(&state);
+    }
     auth::audit(&state.db, &user, "dns.zone.create", &domain, provider);
     Ok(Json(json!({ "zone": zone, "report": report })))
 }
@@ -307,6 +392,9 @@ async fn remove_zone(State(state): State<AppState>, user: AuthUser, Path(id): Pa
         local::delete_zone(&zone.domain).await?;
     }
     state.db.call(|conn| conn.execute("DELETE FROM dns_zones WHERE id = ?1", params![id]))?;
+    if zone.provider == "local" {
+        dns::cluster::sync_in_background(&state);
+    }
     auth::audit(&state.db, &user, "dns.zone.delete", &zone.domain, &zone.provider);
     Ok(Json(json!({ "ok": true })))
 }

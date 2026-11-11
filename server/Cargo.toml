@@ -17,6 +17,7 @@ futures-util = "0.3"
 axum = { version = "0.8", features = ["ws", "multipart", "macros"] }
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
 ring = "0.17"
+webpki-roots = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tower-http = { version = "0.6", features = ["compression-gzip", "trace"] }
 serde = { version = "1", features = ["derive"] }
