@@ -132,6 +132,17 @@ s 'systemctl start pixpanel'
 s "sh -c 'for i in \$(seq 1 30); do curl -sk -o /dev/null https://127.0.0.1:8443/ && break; sleep 1; done'"
 check "panel dönünce eşitleme düzelir" "$(papi POST /dns/cluster/sync | jget 'd["secondaries"][0]["last_error"]')" ""
 
+say "İkincilin sertifikası değişirse"
+FP=$(papi GET /dns/cluster | jget 'd["secondaries"][0]["fingerprint"]')
+s 'rm -f /var/lib/pixpanel/tls/panel.crt /var/lib/pixpanel/tls/panel.key'
+s 'systemctl restart pixpanel'
+s "sh -c 'for i in \$(seq 1 30); do curl -sk -o /dev/null https://127.0.0.1:8443/ && break; sleep 1; done'"
+has "değişen sertifikaya anahtar gönderilmez" "$(papi POST /dns/cluster/sync | jget 'd["secondaries"][0]["last_error"]')" "sertifikası değişmiş"
+R=$(cluster "[{\"address\":\"$SECONDARY_IP\",\"panel_url\":\"https://$SECONDARY_IP:8443\"}]")
+check "yeniden kaydetmek sabiti sessizce yenilemez" "$(jget '(d["secondaries"][0]["fingerprint"] == "'$FP'", d["secondaries"][0]["last_error"] != "")' <<<"$R")" "(True, True)"
+R=$(cluster "[{\"address\":\"$SECONDARY_IP\",\"panel_url\":\"https://$SECONDARY_IP:8443\",\"repin\":true}]")
+check "yönetici onaylayınca yeni sertifika sabitlenir ve eşitleme düzelir" "$(jget '(d["secondaries"][0]["fingerprint"] != "'$FP'", d["secondaries"][0]["last_error"])' <<<"$R")" "(True, '')"
+
 say "Kümenin dağıtılması"
 check "ikincili kaldır" "$(cluster '[]' | jget 'len(d["secondaries"])')" 0
 check "birincil artık bildirim göndermez" "$(p 'grep -c also-notify /etc/powerdns/pdns.d/pixpanel.conf')" 0

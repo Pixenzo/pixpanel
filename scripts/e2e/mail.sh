@@ -88,8 +88,10 @@ hasnt "fatura gelen kutusunda değil" "$A" "fatura-$T"
 has "sıradan ileti gelen kutusunda (kaçış denemeli kural silmedi)" "$A" "siradan-$T"
 has "otomatik yanıt geldi" "$A" "Tatildeyim"
 check "kopyasız yönlendirme" "$(code PATCH /mail/mailboxes/$VELI -d '{"forward_to":["ali@posta.test"],"forward_keep":false,"auto_reply":{"enabled":false,"subject":"","body":"","start_date":"","end_date":""}}')" 200
-mf send ali@posta.test ali@posta.test veli@posta.test "ilet-$T" >/dev/null; sleep 4
-has "yönlendirilen ileti hedefe ulaştı" "$(mf list ali@posta.test)" "ilet-$T"
+mf send ali@posta.test ali@posta.test veli@posta.test "ilet-$T" >/dev/null
+# İleti iki teslimden geçer (önce veli, sonra ali); yüklü makinede birkaç saniye sürebilir.
+for _ in $(seq 1 15); do FORWARDED=$(mf list ali@posta.test); grep -qF "ilet-$T" <<<"$FORWARDED" && break; sleep 2; done
+has "yönlendirilen ileti hedefe ulaştı" "$FORWARDED" "ilet-$T"
 hasnt "kaynakta kopya kalmadı" "$(mf list veli@posta.test)" "ilet-$T"
 check "kurallar kaldırılınca betik silinir" "$(code PATCH /mail/mailboxes/$VELI -d '{"forward_to":[]}')" 200
 check "etkin betik yok" "$(ls -a /var/vmail/posta.test/veli | grep -c dovecot.sieve)" 0
