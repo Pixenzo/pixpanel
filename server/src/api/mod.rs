@@ -6,6 +6,7 @@ use crate::state::AppState;
 
 mod auth;
 mod backup;
+mod backup_mine;
 mod components;
 mod cron;
 mod databases;
@@ -58,7 +59,7 @@ pub fn router() -> Router<AppState> {
         .nest("/firewall", firewall::router())
         .nest("/fail2ban", fail2ban::router())
         .nest("/redis", redis::router())
-        .nest("/backup", backup::router())
+        .nest("/backup", backup::router().nest("/mine", backup_mine::router()))
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())

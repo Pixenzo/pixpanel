@@ -1,4 +1,4 @@
-//! Yedekleme uçları. İlk sürümde yalnızca yöneticiler.
+//! Yedekleme uçları (yönetici). Hesapların kendi yedekleri `backup_mine` içindedir.
 
 use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post, put};
@@ -215,7 +215,7 @@ struct FilesQuery {
 }
 
 /// Yedeğin gezilebilen kökü: site klasörü ya da posta alanının klasörü.
-fn browse_root(snapshot: &Snapshot) -> AppResult<String> {
+pub(super) fn browse_root(snapshot: &Snapshot) -> AppResult<String> {
     let prefix = match snapshot.kind.as_str() {
         "site" => "/home/",
         "mail" => "/var/vmail/",

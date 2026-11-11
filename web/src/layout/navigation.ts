@@ -56,6 +56,7 @@ export const navigation: NavGroup[] = [
       { to: "/files", label: "Dosyalar", icon: FolderOpen, visible: can("files") },
       { to: "/cron", label: "Zamanlı görevler", icon: CalendarClock, visible: can("cron") },
       { to: "/logs", label: "Günlükler", icon: FileText, visible: can("logs") },
+      { to: "/backups", label: "Yedekler", icon: Archive, visible: (me) => !isAdmin(me) && can("backups")(me) },
     ],
   },
   {

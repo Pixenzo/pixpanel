@@ -25,6 +25,7 @@ import { LoginPage } from "./pages/Login";
 import { LogsPage } from "./pages/Logs";
 import { MailPage } from "./pages/Mail";
 import { MailDomainPage } from "./pages/MailDomain";
+import { MyBackupsPage } from "./pages/MyBackups";
 import { OverviewPage } from "./pages/Overview";
 import { PhpPage } from "./pages/Php";
 import { ProcessesPage } from "./pages/Processes";
@@ -90,6 +91,8 @@ function App() {
         {can("files") && <Route path="/files" element={<FilesPage />} />}
         {can("cron") && <Route path="/cron" element={<CronPage />} />}
         {can("logs") && <Route path="/logs" element={<LogsPage />} />}
+        {/* Yönetici bütün sunucunun yedeklerini yönetir; öteki hesaplar yalnızca kendilerininkini. */}
+        {!isAdmin && can("backups") && <Route path="/backups" element={<MyBackupsPage />} />}
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

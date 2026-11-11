@@ -517,3 +517,29 @@ export interface WordPressStatus {
   themes: WordPressExtension[];
   problem: string | null;
 }
+
+// ---- Hesabın kendi yedekleri ----
+
+export interface MySnapshot {
+  target_id: number;
+  id: string;
+  short_id: string;
+  time: number;
+  /** `site`, `db` ya da `mail`. */
+  kind: string;
+  name: string;
+  size: number | null;
+  /** Elle alınmış yedek; hesap kendisi silebilir. */
+  manual: boolean;
+}
+
+export interface MyBackups {
+  /** Yedekleme kurulu ve en az bir yedek yeri tanımlı. */
+  available: boolean;
+  snapshots: MySnapshot[];
+  sites: { id: number; name: string }[];
+  databases: { id: number; name: string }[];
+  mail_domains: { id: number; name: string }[];
+  manual_count: number;
+  manual_limit: number;
+}
