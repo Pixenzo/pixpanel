@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/options", get(options))
         .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
+        .route("/{id}/clone", axum::routing::post(clone_site))
         .route("/{id}/uptime", get(uptime))
         .route("/{id}/stats", get(stats))
         .route("/{id}/node", get(node_status))
@@ -148,6 +149,64 @@ struct IpOption {
     label: String,
     /// Adresin ayrıldığı hesap; yönetici, siteyi sahibine ayrılmamış adrese de bağlayabilir.
     user_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct CloneBody {
+    domain: String,
+}
+
+/// Siteyi yeni bir alan adına kopyalar: ayarlar hemen, dosyalar (ve WordPress ise veritabanı)
+/// arka plan görevinde çoğaltılır.
+async fn clone_site(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<CloneBody>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let source = sites::get(&state.db, &user, id)?;
+    if source.status != "active" {
+        return Err(AppError::bad("Askıdaki site kopyalanamaz"));
+    }
+    crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Site)?;
+    let domain_name = domain::normalize(&body.domain)?;
+    let wordpress = crate::wordpress::is_wordpress(&source).await;
+    if wordpress {
+        crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Database)?;
+    }
+
+    let target = {
+        let _guard = state.sys_lock.lock().await;
+        let new_id = sites::insert(
+            &state.db,
+            &NewSite {
+                user_id: source.user_id,
+                domain: domain_name.clone(),
+                aliases: Vec::new(),
+                kind: source.kind.clone(),
+                php_version: source.php_version.clone(),
+                proxy_target: source.proxy_target.clone(),
+                node: source.node.clone(),
+            },
+        )?;
+        let mut target = sites::load(&state.db, new_id)?.ok_or(AppError::NotFound)?;
+        crate::clone::inherit_settings(&source, &mut target);
+        let prepared = match sites::save(&state.db, &target) {
+            Ok(()) => sites::provision(&target).await,
+            Err(err) => Err(err),
+        };
+        if let Err(err) = prepared {
+            if let Err(cleanup) = sites::deprovision(&target, true).await {
+                tracing::warn!(error = %cleanup, domain = %target.domain, "yarım kopya temizlenemedi");
+            }
+            sites::delete_row(&state.db, new_id)?;
+            return Err(err);
+        }
+        target
+    };
+
+    auth::audit(&state.db, &user, "site.clone", &source.domain, &domain_name);
+    let job_state = state.clone();
+    let title = format!("Site kopyalama: {} → {}", source.domain, domain_name);
+    let target_id = target.id;
+    let job_id = state.jobs.start("site.clone", &title, Some(user.id), move |ctx| async move { crate::clone::run(&ctx, &job_state, &source, &target, wordpress).await })?;
+    Ok(Json(json!({ "job_id": job_id, "site_id": target_id })))
 }
 
 async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Options>> {

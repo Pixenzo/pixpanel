@@ -5,6 +5,7 @@ mod api;
 mod auth;
 mod backup;
 mod cli;
+mod clone;
 mod components;
 mod config;
 mod db;

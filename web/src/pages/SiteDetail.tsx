@@ -28,6 +28,7 @@ import { FtpSection } from "./SiteFtp";
 import { GitSection } from "./SiteGit";
 import { NodeSection } from "./SiteNode";
 import { ProxyRulesSection } from "./SiteProxyRules";
+import { CloneRow } from "./SiteClone";
 import { SiteRulesSection } from "./SiteRules";
 import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { UptimePanel } from "../components/UptimePanel";
@@ -207,6 +208,7 @@ function GeneralTab({ site }: { site: Site }) {
               </Button>
             </div>
           )}
+          <CloneRow site={site} />
           <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
             <div className="max-w-[60ch]">
               <p className="font-medium">{t("Siteyi sil")}</p>

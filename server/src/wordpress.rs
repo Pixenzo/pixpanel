@@ -444,6 +444,88 @@ async fn drop_database(state: &AppState, name: &str, drop_user: bool) {
     });
 }
 
+// ---- Kopyalama ----
+
+/// Site klasöründe çalışan bir WordPress kurulumu var mı?
+pub async fn is_wordpress(site: &Site) -> bool {
+    match Wp::for_site(site) {
+        Ok(wp) => wp.has_files().await,
+        Err(_) => false,
+    }
+}
+
+/// `wp-config.php` içindeki bir sabitin değerini değiştirir. Sabit bulunamazsa `None` döner.
+/// Değer yalnızca harf, rakam ve alt çizgiden oluşmalıdır (çağıran doğrular).
+fn replace_define(config: &str, key: &str, value: &str) -> Option<String> {
+    let pattern = regex::Regex::new(&format!(r#"(?m)^[ \t]*define\(\s*['"]{key}['"]\s*,.*$"#)).ok()?;
+    if !pattern.is_match(config) {
+        return None;
+    }
+    let line = format!("define( '{key}', '{value}' );");
+    Some(pattern.replace(config, regex::NoExpand(&line)).into_owned())
+}
+
+/// Kaynak sitedeki WordPress'in veritabanını hedef siteye kopyalar: hedef için yeni bir
+/// veritabanı açılır, kaynak dökülüp oraya yüklenir, hedefin ayar dosyası yeni veritabanını
+/// gösterecek şekilde düzeltilir ve içerikteki adresler yeni alan adına çevrilir.
+/// Dosyaların hedefe önceden kopyalanmış olması gerekir.
+pub async fn clone_database(ctx: &JobCtx, state: &AppState, source: &Site, target: &Site) -> AppResult<()> {
+    let from = Wp::for_site(source)?;
+    let to = Wp::for_site(target)?;
+    let old_url = from.run_ok(&["option", "get", "siteurl"]).await?;
+    let old_host = old_url.split("://").nth(1).unwrap_or(&source.domain).trim_end_matches('/').to_string();
+    if old_host.is_empty() || old_host.chars().any(|ch| ch.is_whitespace() || ch == '\'') {
+        return Err(AppError::bad("Kaynak sitenin adresi okunamadı"));
+    }
+
+    ctx.log("Veritabanı oluşturuluyor");
+    let (database, db_user, db_password) = create_database(state, target).await?;
+    let dump = format!("pixpanel-kopya-{}.sql", auth::random_token(8));
+    let dump_path = from.user.tmp_dir().join(&dump);
+    let dump_text = dump_path.to_string_lossy().into_owned();
+
+    let copied = async {
+        std::fs::create_dir_all(from.user.tmp_dir()).ok();
+        let _ = std::os::unix::fs::chown(from.user.tmp_dir(), Some(from.user.uid), Some(from.user.gid));
+        ctx.log("Kaynak veritabanı dökülüyor");
+        from.stream(ctx, &["db", "export", &dump_text, "--add-drop-table"], None).await?;
+
+        // Kopyalanan ayar dosyası hâlâ kaynağın veritabanını gösteriyor; yenisine çevrilir.
+        let config_path = to.docroot.join("wp-config.php");
+        let read = runas::output(runas::command(&to.user, &to.docroot, "cat", &["--", "wp-config.php"]), QUICK).await?;
+        if !read.success() {
+            return Err(AppError::bad("Kopyalanan sitede wp-config.php bulunamadı (yayın klasörünün içinde olmalı)"));
+        }
+        let mut config = read.stdout;
+        for (key, value) in [("DB_NAME", &database), ("DB_USER", &db_user), ("DB_PASSWORD", &db_password), ("DB_HOST", &"localhost".to_string())] {
+            config = replace_define(&config, key, value)
+                .ok_or_else(|| AppError::bad(format!("wp-config.php içinde {key} tanımı bulunamadı; veritabanı ayarı elle düzenlenmiş olabilir")))?;
+        }
+        write_as_user(&to, "wp-config.php", &config).await.map_err(|_| AppError::internal(format!("{} yazılamadı", config_path.display())))?;
+
+        ctx.log("Veritabanı yeni siteye yükleniyor");
+        to.stream(ctx, &["db", "import", &dump_text], None).await?;
+
+        let new_host = target.domain.as_str();
+        ctx.log(format!("Adresler çevriliyor: {old_host} → {new_host}"));
+        // Yeni sitenin henüz sertifikası yok; adresler http olarak yazılır (SSL açılınca WordPress ayarından değişir).
+        for scheme in ["https", "http"] {
+            to.stream(ctx, &["search-replace", &format!("{scheme}://{old_host}"), &format!("http://{new_host}"), "--all-tables", "--skip-columns=guid", "--report-changed-only"], None)
+                .await?;
+        }
+        let _ = to.run(&["cache", "flush"]).await;
+        AppResult::Ok(())
+    }
+    .await;
+    let _ = std::fs::remove_file(&dump_path);
+    if let Err(err) = copied {
+        drop_database(state, &database, true).await;
+        return Err(err);
+    }
+    ctx.log(format!("WordPress veritabanı kopyalandı: {database}"));
+    Ok(())
+}
+
 /// Kurulabilirliği görev başlamadan denetler (hata hemen kullanıcıya dönsün diye).
 pub async fn check_installable(site: &Site) -> AppResult<()> {
     ensure_cli().await?;
@@ -781,6 +863,21 @@ async fn write_as_user(wp: &Wp, relative: &str, content: &str) -> AppResult<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn define_replacement() {
+        let config = "<?php\ndefine( 'DB_NAME', 'eski' );\n  define(\"DB_PASSWORD\", 'a$1b');\n// define('DB_USER', 'yorum');\n$table_prefix = 'wp_';\n";
+        let out = replace_define(config, "DB_NAME", "yeni_ad").unwrap();
+        assert!(out.contains("define( 'DB_NAME', 'yeni_ad' );"));
+        assert!(!out.contains("'eski'"));
+        // Değerdeki `$` yer tutucu sayılmaz; satırın gerisi olduğu gibi kalır.
+        let out = replace_define(config, "DB_PASSWORD", "Yeni1Parola").unwrap();
+        assert!(out.contains("define( 'DB_PASSWORD', 'Yeni1Parola' );"));
+        assert!(out.contains("$table_prefix = 'wp_';"));
+        // Yorum satırındaki tanım sayılmaz; gerçek tanım yoksa değişiklik yapılmaz.
+        assert!(replace_define(config, "DB_USER", "x").is_none());
+        assert!(replace_define(config, "DB_HOST", "x").is_none());
+    }
 
     fn request() -> InstallRequest {
         InstallRequest {
