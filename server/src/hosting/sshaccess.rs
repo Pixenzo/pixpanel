@@ -107,11 +107,20 @@ async fn ensure_sshd() -> AppResult<()> {
         return Err(AppError::internal(format!("SSH yapılandırması geçersiz, uygulanmadı: {}", test.stderr.trim())));
     }
     // Çalışan sshd yeni ayarı yeniden yükleyince görür; yeniden yükleme açık bağlantıları
-    // (yöneticinin kendi oturumunu) kesmez. sshd soketle, bağlantı geldikçe başlatılıyorsa
-    // çalışan bir servis yoktur ve her yeni bağlantı ayarı baştan okur; yapılacak bir şey kalmaz.
+    // (yöneticinin kendi oturumunu) kesmez. sshd hiç çalışmıyorsa (soketle, bağlantı geldikçe
+    // başlatılıyor ve henüz bağlanan olmadıysa) yapılacak bir şey yoktur: ilk bağlantı ayarı okur.
+    //
+    // Soketle başlatılmış sshd yeniden yüklenemez (Debian 13: dinleme soketi systemd'den gelir,
+    // sshd kendini yeniden çalıştırırken onu bulamaz ve servis hata verir). O durumda servis
+    // yeniden başlatılır; açık oturumlar ayrı süreçlerde yürüdüğünden bundan etkilenmez.
+    let socket_activated = crate::sys::services::is_active("ssh.socket").await;
     for unit in ["ssh.service", "sshd.service"] {
-        if crate::sys::services::is_active(unit).await {
-            exec::run_ok("systemctl", &["reload", "--", unit]).await?;
+        if !crate::sys::services::is_active(unit).await {
+            continue;
+        }
+        let action = if socket_activated { "restart" } else { "reload" };
+        if exec::run_ok("systemctl", &[action, "--", unit]).await.is_err() {
+            exec::run_ok("systemctl", &["restart", "--", unit]).await?;
         }
     }
     Ok(())

@@ -155,6 +155,15 @@ suite twofactor
 suite events
 suite health ftp
 suite wordpress php-8.3 mariadb restic
+suite packages mail ftp dns mariadb
+suite backup-mine restic mariadb
+suite access
+suite stats
+suite metrics
+suite backup-ftp restic ftp
+suite templates php-8.3
+suite cli
+suite ips dns
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"

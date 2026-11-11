@@ -70,6 +70,7 @@ check "sağlık çıktısı" "$([ -s /tmp/cli-health.txt ] && echo dolu)" dolu
 check "çıkış kodu kritik bulguyla uyumlu" "$HEALTH" "$(grep -q '^KRİTİK' /tmp/cli-health.txt && echo 1 || echo 0)"
 
 say "İz bırakmama"
+pixpanel api GET /sites | head -c 1 >/dev/null; pixpanel site list | true
 check "geçici anahtar kalmadı (hatalı komutlardan sonra da)" "$(tokens)" 0
 check "işlemler denetim günlüğünde" "$(sqlite3 "$DB" "SELECT count(*) FROM audit_log WHERE action LIKE 'site.%' AND target LIKE '%$SITE%'" 2>/dev/null | awk '{print ($1>0)?"var":"yok"}')" var
 

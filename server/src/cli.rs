@@ -333,7 +333,13 @@ pub fn run(cfg: &Config, db: &Db, command: ApiCommand) -> anyhow::Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let client = Client::connect(cfg, db, username.as_deref())?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    let outcome = runtime.block_on(run_command(&client, command));
+    // Çıktı `head` gibi erken kapanan bir komuta aktarılırsa yazma hatası panik olarak gelir.
+    // Panik burada yakalanır ki geçici anahtar yine silinsin; ileti basılmaz, sessizce çıkılır.
+    std::panic::set_hook(Box::new(|_| {}));
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| runtime.block_on(run_command(&client, command))));
     client.revoke();
-    outcome
+    match outcome {
+        Ok(result) => result,
+        Err(_) => std::process::exit(141),
+    }
 }
