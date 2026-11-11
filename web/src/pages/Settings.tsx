@@ -91,7 +91,7 @@ function SmtpForm({ initial }: { initial: SmtpSettings }) {
 
   return (
     <div className="flex max-w-xl flex-col gap-6">
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-5">
         <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
           <Input
             label={t("Sunucu")}
@@ -100,7 +100,7 @@ function SmtpForm({ initial }: { initial: SmtpSettings }) {
             placeholder="smtp.ornek.com"
             spellCheck={false}
             autoComplete="off"
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
           />
           <Input label={t("Kapı (port)")} type="number" min={1} max={65535} value={port} onChange={(e) => setPort(Number(e.target.value))} />
         </div>
@@ -155,7 +155,7 @@ function SmtpForm({ initial }: { initial: SmtpSettings }) {
             {t("Gönder")}
           </Button>
         </div>
-        <p className="text-[12.5px] text-ink-3">
+        <p className="text-[13px] text-ink-3">
           {dirty
             ? t("Kaydedilmemiş değişiklikler var; denemek için önce kaydedin.")
             : initial.host === ""

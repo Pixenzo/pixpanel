@@ -86,7 +86,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           className="fixed top-[14vh] left-1/2 z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 animate-[pop-in_120ms_ease-out] overflow-hidden rounded-xl border border-line bg-surface shadow-pop"
         >
           <Dialog.Title className="sr-only">{t("Hızlı arama")}</Dialog.Title>
-          <div className="flex items-center gap-2.5 border-b border-line px-4">
+          <div className="flex items-center gap-2.5 border-b border-line px-4 sm:px-6">
             <Search aria-hidden className="size-4 shrink-0 text-ink-3" />
             <input
               role="combobox"
@@ -125,8 +125,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                 className={classNames("flex h-10 cursor-pointer items-center gap-2.5 rounded-md px-2.5", index === active && "bg-accent-soft")}
               >
                 <entry.icon aria-hidden className={classNames("size-4 shrink-0", index === active ? "text-accent" : "text-ink-3")} />
-                {entry.context && <span className="shrink-0 font-mono text-[12.5px] text-ink-2">{entry.context}</span>}
-                <span className={classNames("min-w-0 truncate", !entry.context && entry.key.startsWith("site-") && "font-mono text-[13px]")}>{entry.label}</span>
+                {entry.context && <span className="shrink-0 font-mono text-[13px] text-ink-2">{entry.context}</span>}
+                <span className={classNames("min-w-0 truncate", !entry.context && entry.key.startsWith("site-") && "font-mono text-[13.5px]")}>{entry.label}</span>
                 {index === active && <CornerDownLeft aria-hidden className="ml-auto size-3.5 shrink-0 text-ink-3" />}
               </li>
             ))}

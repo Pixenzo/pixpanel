@@ -130,9 +130,9 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
+    <form onSubmit={submit} className="flex flex-col gap-5">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input label={t("Bellek sınırı")} value={settings.memory_limit} onChange={(e) => set("memory_limit", e.target.value)} hint="memory_limit" className="font-mono text-[13px]" />
+        <Input label={t("Bellek sınırı")} value={settings.memory_limit} onChange={(e) => set("memory_limit", e.target.value)} hint="memory_limit" className="font-mono text-[13.5px]" />
         <Input
           label={t("Çalışma süresi (saniye)")}
           type="number"
@@ -146,9 +146,9 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
           value={settings.upload_max_filesize}
           onChange={(e) => set("upload_max_filesize", e.target.value)}
           hint="upload_max_filesize"
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
         />
-        <Input label={t("En büyük POST boyutu")} value={settings.post_max_size} onChange={(e) => set("post_max_size", e.target.value)} hint="post_max_size" className="font-mono text-[13px]" />
+        <Input label={t("En büyük POST boyutu")} value={settings.post_max_size} onChange={(e) => set("post_max_size", e.target.value)} hint="post_max_size" className="font-mono text-[13.5px]" />
         <Input
           label={t("En fazla form alanı")}
           type="number"
@@ -166,7 +166,7 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
             list={timezoneListId}
             spellCheck={false}
             autoComplete="off"
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
           />
           <datalist id={timezoneListId}>
             {commonTimezones.map((zone) => (
@@ -203,7 +203,7 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Ek php.ini yönergeleri")}</legend>
+        <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Ek php.ini yönergeleri")}</legend>
         {settings.custom.map((directive, index) => (
           <div key={index} className="flex items-center gap-2">
             <input
@@ -211,7 +211,7 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
               placeholder="realpath_cache_size"
               value={directive.key}
               onChange={(e) => setDirective(index, "key", e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]"
+              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]"
               spellCheck={false}
             />
             <input
@@ -219,7 +219,7 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
               placeholder="4M"
               value={directive.value}
               onChange={(e) => setDirective(index, "value", e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]"
+              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]"
               spellCheck={false}
             />
             <IconButton
@@ -245,7 +245,7 @@ function GlobalSettingsForm({ version, initial }: { version: string; initial: Ph
       {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
 
       <div className="flex flex-col gap-2 border-t border-line pt-4">
-        <p className="text-[12.5px] text-ink-3">
+        <p className="text-[13px] text-ink-3">
           {t("Kendi PHP ayarlarında değer belirleyen siteler onu korur; diğerleri yeni değerleri hemen devralır. Kaydetme, bu sürümü kullanan sitelerin havuzlarını yeniden oluşturduğu için birkaç saniye sürebilir.")}
         </p>
         <div>
@@ -311,14 +311,14 @@ function ExtensionsPanel({ version }: { version: string }) {
       {extensions.data && (
         <>
           {installed.length === 0 ? (
-            <p className="px-4 py-6 text-ink-3">{needle ? t("Aramayla eşleşen eklenti yok.") : t("Kurulu eklenti yok.")}</p>
+            <p className="px-4 sm:px-6 py-6 text-ink-3">{needle ? t("Aramayla eşleşen eklenti yok.") : t("Kurulu eklenti yok.")}</p>
           ) : (
             <ul className="max-h-[28rem] overflow-y-auto">
               {installed.map((extension) => (
-                <li key={extension.name} className="flex items-center justify-between gap-3 border-b border-line px-4 py-2 last:border-b-0">
+                <li key={extension.name} className="flex items-center justify-between gap-3 border-b border-line px-4 sm:px-6 py-2 last:border-b-0">
                   <Mono>{extension.name}</Mono>
                   <div className="flex items-center gap-2.5">
-                    <span className="w-14 text-right text-[12.5px] text-ink-3">{extension.enabled ? t("Açık") : t("Kapalı")}</span>
+                    <span className="w-14 text-right text-[13px] text-ink-3">{extension.enabled ? t("Açık") : t("Kapalı")}</span>
                     <Switch
                       checked={extension.enabled}
                       label={t("{name} eklentisi", { name: extension.name })}
@@ -333,13 +333,13 @@ function ExtensionsPanel({ version }: { version: string }) {
 
           {extensions.data.installable.length > 0 && (
             <div className="border-t border-line">
-              <h3 className="bg-sunken/60 px-4 py-2 text-[12.5px] font-medium text-ink-2">{t("Kurulabilir eklentiler")}</h3>
+              <h3 className="bg-sunken/60 px-4 sm:px-6 py-2 text-[13px] font-medium text-ink-2">{t("Kurulabilir eklentiler")}</h3>
               {installable.length === 0 ? (
-                <p className="px-4 py-4 text-ink-3">{t("Aramayla eşleşen eklenti yok.")}</p>
+                <p className="px-4 sm:px-6 py-4 text-ink-3">{t("Aramayla eşleşen eklenti yok.")}</p>
               ) : (
                 <ul className="max-h-64 overflow-y-auto">
                   {installable.map((name) => (
-                    <li key={name} className="flex items-center justify-between gap-3 border-b border-line px-4 py-1.5 last:border-b-0">
+                    <li key={name} className="flex items-center justify-between gap-3 border-b border-line px-4 sm:px-6 py-1.5 last:border-b-0">
                       <Mono>{name}</Mono>
                       <Button
                         size="sm"

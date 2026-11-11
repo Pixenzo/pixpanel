@@ -57,7 +57,7 @@ export function JobLog({ jobId, onDone }: { jobId: number; onDone?: (status: str
           const element = event.currentTarget;
           pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
         }}
-        className="h-[46vh] overflow-auto rounded-md border border-line bg-sunken p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap"
+        className="h-[46vh] overflow-auto rounded-md border border-line bg-sunken p-3 font-mono text-[13px] leading-relaxed whitespace-pre-wrap"
       >
         {lines.length === 0 ? t("Çıktı bekleniyor") : lines.join("\n")}
       </pre>

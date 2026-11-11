@@ -111,7 +111,7 @@ function CopyValue({ value }: { value: string }) {
   const [copied, copy] = useCopy();
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-sunken/60 px-3 py-1.5 font-mono text-[12.5px] select-all">{value}</code>
+      <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-sunken/60 px-3 py-1.5 font-mono text-[13px] select-all">{value}</code>
       <IconButton label={copied ? t("Kopyalandı") : t("Kopyala")} onClick={() => void copy(value)}>
         {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
       </IconButton>
@@ -164,7 +164,7 @@ function NameInput({ value, onChange, zone, autoFocus }: { value: string; onChan
   return (
     <div className="flex flex-col gap-1.5">
       <label className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-medium text-ink-2">{t("Ad")}</span>
+        <span className="text-[13.5px] font-medium text-ink-2">{t("Ad")}</span>
         <span className="flex">
           <input
             value={value}
@@ -174,12 +174,12 @@ function NameInput({ value, onChange, zone, autoFocus }: { value: string; onChan
             autoCapitalize="none"
             autoComplete="off"
             spellCheck={false}
-            className="h-9 min-w-0 flex-1 rounded-l-md border border-r-0 border-line-strong bg-surface px-3 font-mono text-[13px] text-ink transition-colors placeholder:text-ink-3 focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30"
+            className="h-9 min-w-0 flex-1 rounded-l-md border border-r-0 border-line-strong bg-surface px-3 font-mono text-[13.5px] text-ink transition-colors placeholder:text-ink-3 focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30"
           />
-          <span className="inline-flex h-9 max-w-[50%] items-center truncate rounded-r-md border border-line-strong bg-sunken px-3 font-mono text-[13px] text-ink-2">.{zone}</span>
+          <span className="inline-flex h-9 max-w-[50%] items-center truncate rounded-r-md border border-line-strong bg-sunken px-3 font-mono text-[13.5px] text-ink-2">.{zone}</span>
         </span>
       </label>
-      <p className="text-[12.5px] text-ink-3">{t("@ ya da boş: alan adının kendisi")}</p>
+      <p className="text-[13px] text-ink-3">{t("@ ya da boş: alan adının kendisi")}</p>
     </div>
   );
 }
@@ -260,7 +260,7 @@ function RecordModal({ detail, record, onClose }: { detail: ZoneDetail; record: 
         </>
       }
     >
-      <form id="dns-record-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="dns-record-form" onSubmit={submit} className="flex flex-col gap-5">
         <div className="grid gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
           <Select label={t("Tür")} value={type} disabled={record !== null} onChange={(event) => isRecordType(event.target.value) && setType(event.target.value)}>
             {(record ? [record.type] : availableTypes).map((item) => (
@@ -302,7 +302,7 @@ function RecordModal({ detail, record, onClose }: { detail: ZoneDetail; record: 
                 onChange={(event) => setContent(event.target.value)}
                 placeholder={field.placeholder}
                 hint={t(field.hint)}
-                className="font-mono text-[13px]"
+                className="font-mono text-[13.5px]"
                 autoCapitalize="none"
                 autoComplete="off"
                 spellCheck={false}
@@ -310,7 +310,7 @@ function RecordModal({ detail, record, onClose }: { detail: ZoneDetail; record: 
               />
               {type === "A" && detail.server_ip && (
                 <div>
-                  <button type="button" className="text-[12.5px] font-medium text-accent hover:underline" onClick={() => setContent(detail.server_ip)}>
+                  <button type="button" className="text-[13px] font-medium text-accent hover:underline" onClick={() => setContent(detail.server_ip)}>
                     {t("Bu sunucunun adresini kullan")} (<Mono>{detail.server_ip}</Mono>)
                   </button>
                 </div>
@@ -429,12 +429,12 @@ function CloudflareStrip({ zoneId, info }: { zoneId: number; info: CloudflareInf
   const knownSsl = sslModes.some((mode) => mode.id === sslValue);
 
   return (
-    <div className="mb-4 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-line bg-surface px-4 py-3">
+    <div className="mb-4 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-line bg-surface px-4 sm:px-6 py-3">
       <div className="flex min-w-48 flex-col gap-1">
         {info.ssl_mode === null ? (
           <>
-            <span className="text-[13px] font-medium text-ink-2">{t("SSL kipi")}</span>
-            <p className="max-w-64 text-[12.5px] text-ink-3">{t("Anahtarın Zone Settings izni yok; SSL kipi buradan değiştirilemez.")}</p>
+            <span className="text-[13.5px] font-medium text-ink-2">{t("SSL kipi")}</span>
+            <p className="max-w-64 text-[13px] text-ink-3">{t("Anahtarın Zone Settings izni yok; SSL kipi buradan değiştirilemez.")}</p>
           </>
         ) : (
           <Select
@@ -458,8 +458,8 @@ function CloudflareStrip({ zoneId, info }: { zoneId: number; info: CloudflareInf
       <div className="flex min-w-48 flex-col gap-1">
         {info.development_mode === null ? (
           <>
-            <span className="text-[13px] font-medium text-ink-2">{t("Geliştirme kipi")}</span>
-            <p className="max-w-64 text-[12.5px] text-ink-3">{t("Anahtarın Zone Settings izni yok; geliştirme kipi buradan değiştirilemez.")}</p>
+            <span className="text-[13.5px] font-medium text-ink-2">{t("Geliştirme kipi")}</span>
+            <p className="max-w-64 text-[13px] text-ink-3">{t("Anahtarın Zone Settings izni yok; geliştirme kipi buradan değiştirilemez.")}</p>
           </>
         ) : (
           <div className="sm:pt-5">
@@ -565,7 +565,7 @@ function RecordsPanel({
         />
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 sm:px-6 py-2">
             <SearchInput
               aria-label={t("Kayıtlarda ara")}
               placeholder={t("Ad ya da değer ara")}
@@ -586,7 +586,7 @@ function RecordsPanel({
                 </option>
               ))}
             </select>
-            <p className="tabular ml-auto text-[13px] text-ink-2">
+            <p className="tabular ml-auto text-[13.5px] text-ink-2">
               {rows.length === total ? t("{n} kayıt", { n: total }) : t("{shown} / {total} kayıt", { shown: rows.length, total })}
             </p>
           </div>
@@ -617,12 +617,12 @@ function RecordsPanel({
                       </Td>
                       <Td className="max-w-56">
                         <p className="truncate" title={record.name}>
-                          <Mono className="text-[13px] font-medium">{short}</Mono>
+                          <Mono className="text-[13.5px] font-medium">{short}</Mono>
                         </p>
                       </Td>
                       <Td className="max-w-md">
                         <p className="truncate" title={record.content}>
-                          {record.priority !== null && <span className="tabular mr-1.5 text-[12px] text-ink-3">{record.priority}</span>}
+                          {record.priority !== null && <span className="tabular mr-1.5 text-[12.5px] text-ink-3">{record.priority}</span>}
                           <Mono>{record.content}</Mono>
                         </p>
                       </Td>
@@ -705,7 +705,7 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
 
   return (
     <>
-      <Link to="/dns" className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink">
+      <Link to="/dns" className="mb-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-ink-2 hover:text-ink">
         <ArrowLeft className="size-3.5" /> {t("DNS")}
       </Link>
       <header className="mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">

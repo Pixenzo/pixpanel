@@ -265,7 +265,7 @@ export function formatUpcoming(unixSeconds: number): string {
 // ---- Ortak sınıflar ----
 
 export const COMPACT_SELECT_CLASS =
-  "h-8 max-w-full rounded-md border border-line-strong bg-surface px-2 pr-7 text-[13px] text-ink " +
+  "h-8 max-w-full rounded-md border border-line-strong bg-surface px-2 pr-7 text-[13.5px] text-ink " +
   "transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 disabled:bg-sunken disabled:text-ink-3";
 
 // ---- Küçük bileşenler ----
@@ -333,7 +333,7 @@ export function Segmented<T extends string>({
           disabled={disabled}
           onClick={() => onChange(option.id)}
           className={classNames(
-            "h-8 px-3 text-[13px] font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-55",
+            "h-8 px-3 text-[13.5px] font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-55",
             index > 0 && "border-l border-line-strong",
             value === option.id ? "bg-accent-soft text-accent" : "bg-surface text-ink-2 hover:bg-sunken hover:text-ink",
           )}
@@ -378,7 +378,7 @@ export function CopyBox({ value, label }: { value: string; label: string }) {
       <div
         tabIndex={0}
         aria-label={label}
-        className="max-h-32 min-w-0 flex-1 overflow-auto rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[12.5px] leading-relaxed break-all select-all"
+        className="max-h-32 min-w-0 flex-1 overflow-auto rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[13px] leading-relaxed break-all select-all"
       >
         {value}
       </div>

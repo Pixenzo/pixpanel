@@ -53,9 +53,9 @@ function niceCeiling(value: number): number {
 function Figure({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[12.5px] text-ink-3">{label}</dt>
+      <dt className="text-[13px] text-ink-3">{label}</dt>
       <dd className="tabular truncate font-mono text-[20px] leading-tight font-medium">{value}</dd>
-      {hint && <dd className="text-[12.5px] text-ink-3">{hint}</dd>}
+      {hint && <dd className="text-[13px] text-ink-3">{hint}</dd>}
     </div>
   );
 }
@@ -72,7 +72,7 @@ function VisitorsChart({ days }: { days: SiteDayStats[] }) {
   return (
     <div>
       <div className="flex gap-2">
-        <div className="tabular flex shrink-0 flex-col justify-between text-right text-[12px] text-ink-3" style={{ height: PLOT_HEIGHT }} aria-hidden>
+        <div className="tabular flex shrink-0 flex-col justify-between text-right text-[12.5px] text-ink-3" style={{ height: PLOT_HEIGHT }} aria-hidden>
           {ticks.map((tick) => (
             <span key={tick} className="leading-none">
               {numberFormat.format(tick)}
@@ -112,7 +112,7 @@ function VisitorsChart({ days }: { days: SiteDayStats[] }) {
             <div
               role="status"
               className={classNames(
-                "pointer-events-none absolute top-1 z-10 w-max max-w-[15rem] rounded-lg border border-line bg-surface px-3 py-2 text-[13px] shadow-pop",
+                "pointer-events-none absolute top-1 z-10 w-max max-w-[15rem] rounded-lg border border-line bg-surface px-3 py-2 text-[13.5px] shadow-pop",
                 // İpucu sütunun yanında durur; sağ yarıda sola açılır ki alanın dışına taşmasın.
                 active > days.length / 2 ? "-translate-x-full" : "",
               )}
@@ -131,7 +131,7 @@ function VisitorsChart({ days }: { days: SiteDayStats[] }) {
           )}
         </div>
       </div>
-      <div className="mt-1.5 flex justify-between pl-8 text-[12px] text-ink-3" aria-hidden>
+      <div className="mt-1.5 flex justify-between pl-8 text-[12.5px] text-ink-3" aria-hidden>
         {days.map((day, index) => (labelled.has(index) ? <span key={day.day}>{dayFormat.format(dayDate(day.day))}</span> : null))}
       </div>
     </div>
@@ -162,7 +162,7 @@ export function StatsSection({ site }: { site: Site }) {
   const hasData = requests > 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {/* Dönem seçimi grafiklerin üstünde tek satırda durur ve aşağıdaki her şeyi birlikte değiştirir. */}
       <div role="group" aria-label={t("Dönem")} className="inline-flex self-start rounded-md border border-line-strong bg-surface p-0.5">
         {PERIODS.map((value) => (
@@ -171,7 +171,7 @@ export function StatsSection({ site }: { site: Site }) {
             type="button"
             aria-pressed={period === value}
             onClick={() => setPeriod(value)}
-            className={classNames("h-8 rounded px-3 text-[13px] font-medium transition-colors max-sm:h-9", period === value ? "bg-accent-soft text-accent" : "text-ink-2 hover:text-ink")}
+            className={classNames("h-8 rounded px-3 text-[13.5px] font-medium transition-colors max-sm:h-9", period === value ? "bg-accent-soft text-accent" : "text-ink-2 hover:text-ink")}
           >
             {t("Son {days} gün", { days: value })}
           </button>
@@ -223,7 +223,7 @@ export function StatsSection({ site }: { site: Site }) {
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <Panel flush title={t("En çok görüntülenen sayfalar")}>
               {stats.data.top_paths.length === 0 ? (
-                <p className="px-4 py-6 text-ink-2">{t("Bu dönemde sayfa görüntülemesi yok.")}</p>
+                <p className="px-4 sm:px-6 py-6 text-ink-2">{t("Bu dönemde sayfa görüntülemesi yok.")}</p>
               ) : (
                 <Table>
                   <thead>

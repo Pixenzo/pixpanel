@@ -122,13 +122,13 @@ const TYPE_TONE: Record<RedisType, Tone> = {
 };
 
 const FIELD_BASE =
-  "min-w-0 rounded-md border border-line-strong bg-surface px-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-3 " +
+  "min-w-0 rounded-md border border-line-strong bg-surface px-2.5 font-mono text-[13px] text-ink placeholder:text-ink-3 " +
   "transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 disabled:bg-sunken disabled:text-ink-3";
 const FIELD_INPUT = `${FIELD_BASE} h-9`;
 const FIELD_AREA = `${FIELD_BASE} py-1.5`;
 const TOOLBAR_SELECT =
   "h-9 rounded-md border border-line-strong bg-surface px-3 text-ink transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30";
-const LINK_BUTTON = "text-[12.5px] text-accent hover:underline";
+const LINK_BUTTON = "text-[13px] text-accent hover:underline";
 
 const numberFormat = new Intl.NumberFormat("tr-TR");
 const collator = new Intl.Collator(undefined, { numeric: true });
@@ -237,7 +237,7 @@ function Segmented<T extends string>({
           aria-pressed={value === option.id}
           onClick={() => onChange(option.id)}
           className={classNames(
-            "rounded px-2.5 text-[13px] font-medium transition-colors",
+            "rounded px-2.5 text-[13.5px] font-medium transition-colors",
             value === option.id ? "bg-accent-soft text-accent" : "text-ink-2 hover:text-ink",
           )}
         >
@@ -694,7 +694,7 @@ function KeyPane({ query, rows, scopeKey, expandAll, selectedKey, onSelect, mode
         )}
         {query.data && entries.length === 0 && !hasMore && <EmptyState title={t("Bu kalıba uyan anahtar yok")} description={t("Veritabanını, kalıbı ya da tür süzgecini değiştirin.")} />}
         {query.data && entries.length === 0 && hasMore && (
-          <p className="px-4 py-4 text-ink-2">{t("Şu ana kadar taranan kısımda eşleşen anahtar çıkmadı; tarama sürüyor.")}</p>
+          <p className="px-4 sm:px-6 py-4 text-ink-2">{t("Şu ana kadar taranan kısımda eşleşen anahtar çıkmadı; tarama sürüyor.")}</p>
         )}
         {entries.length > 0 && (
           <div style={{ paddingTop: start * ROW_HEIGHT, paddingBottom: (entries.length - end) * ROW_HEIGHT }}>
@@ -715,10 +715,10 @@ function KeyPane({ query, rows, scopeKey, expandAll, selectedKey, onSelect, mode
                     className={classNames("flex h-7 cursor-pointer items-center gap-1.5 pr-3 select-none", tone)}
                   >
                     <ChevronRight aria-hidden className={classNames("size-3.5 shrink-0 text-ink-3 transition-transform", entry.open && "rotate-90")} />
-                    <span title={`${entry.name}:`} className="min-w-0 flex-1 truncate font-mono text-[12.5px] font-medium">
+                    <span title={`${entry.name}:`} className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium">
                       {entry.name === "" ? t("(boş)") : entry.name}:
                     </span>
-                    <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{formatNumber(entry.count)}</span>
+                    <span className="shrink-0 text-[12.5px] text-ink-3 tabular-nums">{formatNumber(entry.count)}</span>
                   </div>
                 );
               }
@@ -733,11 +733,11 @@ function KeyPane({ query, rows, scopeKey, expandAll, selectedKey, onSelect, mode
                   className={classNames("flex h-7 cursor-pointer items-center gap-2 pr-3 select-none", tone)}
                 >
                   <TypeBadge type={entry.row.type} fixed />
-                  <span title={entry.row.key} className="min-w-0 flex-1 truncate font-mono text-[12.5px]">
+                  <span title={entry.row.key} className="min-w-0 flex-1 truncate font-mono text-[13px]">
                     {entry.name === "" ? t("(boş)") : entry.name}
                   </span>
-                  {ttl !== "" && <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{ttl}</span>}
-                  {mode === "list" && <span className="w-16 shrink-0 text-right text-[12px] text-ink-3 tabular-nums">{formatBytes(entry.row.size)}</span>}
+                  {ttl !== "" && <span className="shrink-0 text-[12.5px] text-ink-3 tabular-nums">{ttl}</span>}
+                  {mode === "list" && <span className="w-16 shrink-0 text-right text-[12.5px] text-ink-3 tabular-nums">{formatBytes(entry.row.size)}</span>}
                 </div>
               );
             })}
@@ -746,7 +746,7 @@ function KeyPane({ query, rows, scopeKey, expandAll, selectedKey, onSelect, mode
       </div>
 
       <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 border-t border-line px-3 py-2">
-        <span className="text-[12.5px] text-ink-3">{t("{n} anahtar yüklendi", { n: formatNumber(rows.length) })}</span>
+        <span className="text-[13px] text-ink-3">{t("{n} anahtar yüklendi", { n: formatNumber(rows.length) })}</span>
         <div className="ml-auto flex items-center gap-2">
           {loadingAll ? (
             <>
@@ -956,7 +956,7 @@ function DetailPane({ db, keyName, onSelect }: { db: number; keyName: string; on
 
         {isCollection && (
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="text-[12.5px] text-ink-3">{t("{shown} / {total} öğe", { shown: formatNumber(shown), total: formatNumber(head.length) })}</span>
+            <span className="text-[13px] text-ink-3">{t("{shown} / {total} öğe", { shown: formatNumber(shown), total: formatNumber(head.length) })}</span>
             {detail.hasNextPage && (
               <Button size="sm" loading={detail.isFetchingNextPage} onClick={() => void detail.fetchNextPage()}>
                 {t("Daha fazla yükle")}
@@ -985,8 +985,8 @@ interface DetailHeaderProps {
 function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <dt className="text-[12.5px] text-ink-3">{label}</dt>
-      <dd className="text-[13px]">{children}</dd>
+      <dt className="text-[13px] text-ink-3">{label}</dt>
+      <dd className="text-[13.5px]">{children}</dd>
     </div>
   );
 }
@@ -1002,7 +1002,7 @@ function DetailHeader({ detail, keyName, fetching, busy, disabled, onCopy, onRef
   }, [keyName]);
 
   return (
-    <div className={classNames("shrink-0 border-b border-line px-4 py-3", disabled && "pointer-events-none")}>
+    <div className={classNames("shrink-0 border-b border-line px-4 sm:px-6 py-3", disabled && "pointer-events-none")}>
       <div className="flex items-start gap-3">
         <span className="mt-0.5">
           <TypeBadge type={detail.type} />
@@ -1019,7 +1019,7 @@ function DetailHeader({ detail, keyName, fetching, busy, disabled, onCopy, onRef
               onCancel={() => setRenaming(false)}
             />
           ) : (
-            <Mono className="text-[13.5px] leading-snug break-all">{detail.key}</Mono>
+            <Mono className="text-[14px] leading-snug break-all">{detail.key}</Mono>
           )}
         </div>
         <div className="flex shrink-0 gap-0.5">
@@ -1229,7 +1229,7 @@ function ExpandableValue({ value }: { value: string }) {
   const [raw, setRaw] = useState(false);
   const pretty = useMemo(() => (open ? prettyJson(value) : null), [open, value]);
 
-  if (value === "") return <span className="text-[12.5px] text-ink-3">{t("(boş)")}</span>;
+  if (value === "") return <span className="text-[13px] text-ink-3">{t("(boş)")}</span>;
 
   const long = value.length > PREVIEW_CHARS || value.includes("\n");
   if (!long) return <Mono className="break-all">{value}</Mono>;
@@ -1237,7 +1237,7 @@ function ExpandableValue({ value }: { value: string }) {
   if (!open) {
     return (
       <div>
-        <div className="line-clamp-2 font-mono text-[12.5px] break-all">{value.slice(0, PREVIEW_CHARS)}</div>
+        <div className="line-clamp-2 font-mono text-[13px] break-all">{value.slice(0, PREVIEW_CHARS)}</div>
         <button type="button" className={classNames(LINK_BUTTON, "mt-0.5")} onClick={() => setOpen(true)}>
           {t("tamamını göster")}
         </button>
@@ -1259,7 +1259,7 @@ function ExpandableValue({ value }: { value: string }) {
           ]}
         />
       )}
-      <pre className="max-h-72 w-full overflow-auto rounded-md border border-line bg-sunken/50 p-2.5 font-mono text-[12.5px] break-all whitespace-pre-wrap">
+      <pre className="max-h-72 w-full overflow-auto rounded-md border border-line bg-sunken/50 p-2.5 font-mono text-[13px] break-all whitespace-pre-wrap">
         {pretty !== null && !raw ? pretty : value}
       </pre>
       <button type="button" className={LINK_BUTTON} onClick={() => setOpen(false)}>
@@ -1305,7 +1305,7 @@ function ValueTable({ head, widths, children }: { head: ReactNode[]; widths: str
         <thead>
           <tr>
             {head.map((label, index) => (
-              <th key={index} scope="col" className="border-b border-line bg-sunken/60 px-3 py-2 text-[12.5px] font-medium whitespace-nowrap text-ink-2">
+              <th key={index} scope="col" className="border-b border-line bg-sunken/60 px-3 py-2 text-[13px] font-medium whitespace-nowrap text-ink-2">
                 {label}
               </th>
             ))}
@@ -1359,7 +1359,7 @@ function StringView({ keyName, bytes, value, ops }: { keyName: string; bytes: nu
             ]}
           />
         )}
-        <span className="text-[12.5px] text-ink-3">{t("{size} ({n} bayt)", { size: formatBytes(value.bytes), n: formatNumber(value.bytes) })}</span>
+        <span className="text-[13px] text-ink-3">{t("{size} ({n} bayt)", { size: formatBytes(value.bytes), n: formatNumber(value.bytes) })}</span>
         {!editing && (
           <Button size="sm" className="ml-auto" disabled={!canEdit} icon={<Pencil className="size-3.5" />} onClick={startEdit}>
             {t("Düzenle")}
@@ -1368,7 +1368,7 @@ function StringView({ keyName, bytes, value, ops }: { keyName: string; bytes: nu
       </div>
 
       {!canEdit && (
-        <p className="text-[12.5px] text-warn">
+        <p className="text-[13px] text-warn">
           {value.binary
             ? t("Bu değer ikili veri içeriyor; burada yalnızca önizlenir, düzenlenemez.")
             : t("Değer çok büyük olduğu için kısaltıldı ({size}); düzenlenemez.", { size: formatBytes(bytes) })}
@@ -1377,7 +1377,7 @@ function StringView({ keyName, bytes, value, ops }: { keyName: string; bytes: nu
 
       {editing ? (
         <>
-          {draftIsFormatted && <p className="text-[12.5px] text-warn">{t("Biçimli metin düzenleniyor; kaydettiğinizde değer bu biçimli hâliyle yazılır, özgün boşluklar değişir.")}</p>}
+          {draftIsFormatted && <p className="text-[13px] text-warn">{t("Biçimli metin düzenleniyor; kaydettiğinizde değer bu biçimli hâliyle yazılır, özgün boşluklar değişir.")}</p>}
           <textarea
             autoFocus
             aria-label={t("Değer")}
@@ -1396,7 +1396,7 @@ function StringView({ keyName, bytes, value, ops }: { keyName: string; bytes: nu
           </div>
         </>
       ) : (
-        <pre className="max-h-[60vh] min-h-24 overflow-auto rounded-md border border-line bg-sunken/50 p-3 font-mono text-[12.5px] break-all whitespace-pre-wrap">
+        <pre className="max-h-[60vh] min-h-24 overflow-auto rounded-md border border-line bg-sunken/50 p-3 font-mono text-[13px] break-all whitespace-pre-wrap">
           {showPretty && pretty !== null ? pretty : text}
         </pre>
       )}
@@ -1630,7 +1630,7 @@ function ZsetView({ keyName, pairs, ops }: { keyName: string; pairs: ZsetPair[];
 function StreamView({ entries }: { entries: StreamEntry[] }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[12.5px] text-ink-3">{t("En yeni 100 kayıt gösteriliyor. Akışlar burada yalnızca okunur.")}</p>
+      <p className="text-[13px] text-ink-3">{t("En yeni 100 kayıt gösteriliyor. Akışlar burada yalnızca okunur.")}</p>
       {entries.length === 0 && <NoMatches filtered={false} />}
       {entries.map((entry) => (
         <div key={entry.id} className="rounded-md border border-line px-3 py-2">
@@ -1740,8 +1740,8 @@ function NewKeyModal({ db, onClose, onCreated }: { db: number; onClose: () => vo
         </>
       }
     >
-      <form id="redis-new-key-form" onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
-        <Input label={t("Anahtar adı")} value={name} autoFocus spellCheck={false} autoComplete="off" className="font-mono text-[13px]" placeholder="oturum:abc123" onChange={(event) => setName(event.target.value)} />
+      <form id="redis-new-key-form" onSubmit={(event) => void submit(event)} className="flex flex-col gap-5">
+        <Input label={t("Anahtar adı")} value={name} autoFocus spellCheck={false} autoComplete="off" className="font-mono text-[13.5px]" placeholder="oturum:abc123" onChange={(event) => setName(event.target.value)} />
         <Select
           label={t("Tür")}
           value={type}
@@ -1761,16 +1761,16 @@ function NewKeyModal({ db, onClose, onCreated }: { db: number; onClose: () => vo
         {type === "string" && <Textarea label={t("Değer")} value={first} spellCheck={false} onChange={(event) => setFirst(event.target.value)} />}
         {type === "hash" && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input label={t("Alan")} value={first} spellCheck={false} className="font-mono text-[13px]" onChange={(event) => setFirst(event.target.value)} />
-            <Input label={t("Değer")} value={second} spellCheck={false} className="font-mono text-[13px]" onChange={(event) => setSecond(event.target.value)} />
+            <Input label={t("Alan")} value={first} spellCheck={false} className="font-mono text-[13.5px]" onChange={(event) => setFirst(event.target.value)} />
+            <Input label={t("Değer")} value={second} spellCheck={false} className="font-mono text-[13.5px]" onChange={(event) => setSecond(event.target.value)} />
           </div>
         )}
-        {type === "list" && <Input label={t("İlk değer")} value={first} spellCheck={false} className="font-mono text-[13px]" onChange={(event) => setFirst(event.target.value)} />}
-        {type === "set" && <Input label={t("İlk üye")} value={first} spellCheck={false} className="font-mono text-[13px]" onChange={(event) => setFirst(event.target.value)} />}
+        {type === "list" && <Input label={t("İlk değer")} value={first} spellCheck={false} className="font-mono text-[13.5px]" onChange={(event) => setFirst(event.target.value)} />}
+        {type === "set" && <Input label={t("İlk üye")} value={first} spellCheck={false} className="font-mono text-[13.5px]" onChange={(event) => setFirst(event.target.value)} />}
         {type === "zset" && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input label={t("Üye")} value={first} spellCheck={false} className="font-mono text-[13px]" onChange={(event) => setFirst(event.target.value)} />
-            <Input label={t("Puan")} value={second} inputMode="decimal" spellCheck={false} className="font-mono text-[13px]" onChange={(event) => setSecond(event.target.value)} />
+            <Input label={t("Üye")} value={first} spellCheck={false} className="font-mono text-[13.5px]" onChange={(event) => setFirst(event.target.value)} />
+            <Input label={t("Puan")} value={second} inputMode="decimal" spellCheck={false} className="font-mono text-[13.5px]" onChange={(event) => setSecond(event.target.value)} />
           </div>
         )}
 

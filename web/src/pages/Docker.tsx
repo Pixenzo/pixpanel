@@ -690,7 +690,7 @@ function ContainerRow({
       </Td>
       <Td>
         <Status tone={state.tone}>{state.label}</Status>
-        <p className="mt-0.5 text-[12px] text-ink-3">{container.status_text}</p>
+        <p className="mt-0.5 text-[12.5px] text-ink-3">{container.status_text}</p>
       </Td>
       <Td>
         {ports.length === 0 ? (
@@ -709,7 +709,7 @@ function ContainerRow({
                 {port.protocol === "tcp" && (
                   <Link
                     to={`/sites?yeni=vekil&hedef=${encodeURIComponent("http://127.0.0.1:" + port.host_port)}`}
-                    className="text-[12.5px] text-accent hover:underline"
+                    className="text-[13px] text-accent hover:underline"
                   >
                     {t("Alan adına bağla")}
                   </Link>
@@ -803,7 +803,7 @@ function ContainerLogs({ containerId }: { containerId: string }) {
           const element = event.currentTarget;
           pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
         }}
-        className="h-[50vh] overflow-auto rounded-md border border-line bg-sunken/50 px-3 py-2 font-mono text-[12.5px] leading-relaxed"
+        className="h-[50vh] overflow-auto rounded-md border border-line bg-sunken/50 px-3 py-2 font-mono text-[13px] leading-relaxed"
       >
         {logs.isError && <ErrorBlock message={errorMessage(logs.error)} />}
         {logs.data && lines.length === 0 && <p className="font-sans text-ink-2">{t("Konteyner henüz günlük üretmedi.")}</p>}
@@ -826,7 +826,7 @@ function ContainerLogs({ containerId }: { containerId: string }) {
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-[13px] text-ink-2">{label}</dt>
+      <dt className="text-[13.5px] text-ink-2">{label}</dt>
       <dd className="min-w-0 break-words">{children}</dd>
     </>
   );
@@ -872,7 +872,7 @@ function ContainerDetails({ container }: { container: Container }) {
       </DetailRow>
       <DetailRow label={t("Durum")}>
         <Status tone={state.tone}>{state.label}</Status>
-        <span className="ml-2 text-[13px] text-ink-3">{container.status_text}</span>
+        <span className="ml-2 text-[13.5px] text-ink-3">{container.status_text}</span>
       </DetailRow>
       {info.error && (
         <DetailRow label={t("Hata")}>
@@ -914,7 +914,7 @@ function ContainerDetails({ container }: { container: Container }) {
               >
                 {reveal ? t("Gizle") : t("Göster")}
               </Button>
-              <span className="ml-2 text-[12.5px] text-ink-3">{t("Değerler parola gibi gizli bilgiler içerebilir.")}</span>
+              <span className="ml-2 text-[13px] text-ink-3">{t("Değerler parola gibi gizli bilgiler içerebilir.")}</span>
             </div>
             <ul className="flex flex-col gap-0.5">
               {env.map((entry, index) => (
@@ -959,12 +959,12 @@ function FormSection({ title, hint, addLabel, onAdd, children }: { title: string
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-[13px] font-medium text-ink-2">{title}</h3>
+        <h3 className="text-[13.5px] font-medium text-ink-2">{title}</h3>
         <Button size="sm" icon={<Plus className="size-3.5" />} onClick={onAdd}>
           {addLabel}
         </Button>
       </div>
-      {hint && <p className="text-[12.5px] text-ink-3">{hint}</p>}
+      {hint && <p className="text-[13px] text-ink-3">{hint}</p>}
       {children}
     </section>
   );
@@ -1125,7 +1125,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
           {ports.map((row) => (
             <div key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <input
-                className={classNames(ROW_INPUT_CLASS, "w-36 font-mono text-[12.5px]")}
+                className={classNames(ROW_INPUT_CLASS, "w-36 font-mono text-[13px]")}
                 placeholder={t("Ana makine portu")}
                 aria-label={t("Ana makine portu")}
                 inputMode="numeric"
@@ -1136,7 +1136,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
                 →
               </span>
               <input
-                className={classNames(ROW_INPUT_CLASS, "w-36 font-mono text-[12.5px]")}
+                className={classNames(ROW_INPUT_CLASS, "w-36 font-mono text-[13px]")}
                 placeholder={t("Konteyner portu")}
                 aria-label={t("Konteyner portu")}
                 inputMode="numeric"
@@ -1164,7 +1164,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
           {envRows.map((row) => (
             <div key={row.key} className="flex items-center gap-2">
               <input
-                className={classNames(ROW_INPUT_CLASS, "w-2/5 font-mono text-[12.5px]")}
+                className={classNames(ROW_INPUT_CLASS, "w-2/5 font-mono text-[13px]")}
                 placeholder="DEGISKEN_ADI"
                 aria-label={t("Değişken adı")}
                 spellCheck={false}
@@ -1172,7 +1172,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
                 onChange={(event) => setEnvRows((rows) => updateRow(rows, row.key, { name: event.target.value }))}
               />
               <input
-                className={classNames(ROW_INPUT_CLASS, "flex-1 font-mono text-[12.5px]")}
+                className={classNames(ROW_INPUT_CLASS, "flex-1 font-mono text-[13px]")}
                 placeholder={t("Değer")}
                 aria-label={t("Değer")}
                 spellCheck={false}
@@ -1195,7 +1195,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
           {volumes.map((row) => (
             <div key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <input
-                className={classNames(ROW_INPUT_CLASS, "min-w-40 flex-1 font-mono text-[12.5px]")}
+                className={classNames(ROW_INPUT_CLASS, "min-w-40 flex-1 font-mono text-[13px]")}
                 placeholder="/srv/veri"
                 aria-label={t("Kaynak")}
                 spellCheck={false}
@@ -1206,7 +1206,7 @@ function CreateContainerModal({ onClose, onJob }: { onClose: () => void; onJob: 
                 →
               </span>
               <input
-                className={classNames(ROW_INPUT_CLASS, "min-w-40 flex-1 font-mono text-[12.5px]")}
+                className={classNames(ROW_INPUT_CLASS, "min-w-40 flex-1 font-mono text-[13px]")}
                 placeholder="/data"
                 aria-label={t("Hedef")}
                 spellCheck={false}
@@ -1483,7 +1483,7 @@ function StackEditorModal({
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {mode === "create" && (
           <Input
             label={t("Yığın adı")}
@@ -1502,13 +1502,13 @@ function StackEditorModal({
         {saveError && <ErrorBlock message={saveError} />}
         {ready && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[13px] font-medium text-ink-2">{t("Compose dosyası (YAML)")}</span>
+            <span className="text-[13.5px] font-medium text-ink-2">{t("Compose dosyası (YAML)")}</span>
             <div className="h-80 overflow-hidden rounded-md border border-line-strong">
               <Suspense fallback={<LoadingBlock />}>
                 <CodeEditor filename="compose.yaml" initialValue={content} dark={dark} onChange={setEdited} onSave={() => submit(false)} />
               </Suspense>
             </div>
-            <p className="text-[12.5px] text-ink-3">{t("Ctrl+S ile kaydedebilirsiniz. Kaydetmek çalışan yığını etkilemez; değişiklikler “Kaydet ve başlat” ile uygulanır.")}</p>
+            <p className="text-[13px] text-ink-3">{t("Ctrl+S ile kaydedebilirsiniz. Kaydetmek çalışan yığını etkilemez; değişiklikler “Kaydet ve başlat” ile uygulanır.")}</p>
           </div>
         )}
       </div>

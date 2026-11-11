@@ -49,7 +49,7 @@ export function ComponentsPage() {
       />
       {components.isError && <ErrorBlock message={errorMessage(components.error)} onRetry={() => void components.refetch()} />}
       {components.isPending && <LoadingBlock />}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {components.data &&
           categories.map((category) => {
             const items = components.data.filter((component) => component.category === category.id);
@@ -58,10 +58,10 @@ export function ComponentsPage() {
               <Panel key={category.id} flush title={t(category.title)}>
                 <ul>
                   {items.map((component) => (
-                    <li key={component.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line px-4 py-3 last:border-b-0">
+                    <li key={component.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line px-4 sm:px-6 py-3 last:border-b-0">
                       <div className="min-w-48 flex-1">
                         <p className="font-medium">{component.name}</p>
-                        <p className="text-[13px] text-ink-2">{t(component.description)}</p>
+                        <p className="text-[13.5px] text-ink-2">{t(component.description)}</p>
                       </div>
                       {component.installed ? (
                         <>

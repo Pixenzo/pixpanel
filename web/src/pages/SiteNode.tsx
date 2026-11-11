@@ -23,7 +23,7 @@ const stateView: Record<string, { tone: Tone; label: string }> = {
   inactive: { tone: "idle", label: "Durdu" },
 };
 
-const rowInput = "h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]";
+const rowInput = "h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]";
 
 function StatusPanel({ site }: { site: Site }) {
   const feedback = useFeedback();
@@ -46,7 +46,7 @@ function StatusPanel({ site }: { site: Site }) {
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
             <Status tone={view.tone}>{t(view.label)}</Status>
-            <dl className="tabular mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-ink-2">
+            <dl className="tabular mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13.5px] text-ink-2">
               <div className="flex gap-1.5">
                 <dt>{t("Port")}</dt>
                 <dd>
@@ -79,7 +79,7 @@ function StatusPanel({ site }: { site: Site }) {
               )}
             </dl>
             {data.state === "failed" && (
-              <p className="mt-2 max-w-[70ch] text-[13px] text-bad">
+              <p className="mt-2 max-w-[70ch] text-[13.5px] text-bad">
                 {t("Uygulama başlatılamıyor. Nedenini uygulama günlüğünde görebilirsiniz; çoğu zaman eksik bağımlılık ya da yanlış başlatma komutudur.")}
               </p>
             )}
@@ -177,12 +177,12 @@ function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) 
               ? t("Site klasöründe, sanal ortam etkinken çalışır. Örnek: gunicorn app:app --bind 127.0.0.1:$PORT ya da uvicorn app:app --host 127.0.0.1 --port $PORT")
               : t("Site klasöründe, sitenin kullanıcısıyla çalışır. Örnek: npm start ya da node dist/server.js")
           }
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           spellCheck={false}
           required
         />
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Ortam değişkenleri")}</legend>
+          <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Ortam değişkenleri")}</legend>
           {settings.env.map((variable, index) => (
             <div key={index} className="flex items-center gap-2">
               <input
@@ -210,7 +210,7 @@ function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) 
               {t("Değişken ekle")}
             </Button>
           </div>
-          <p className="max-w-[75ch] text-[12.5px] text-ink-3">
+          <p className="max-w-[75ch] text-[13px] text-ink-3">
             {site.kind === "python"
               ? t("PORT ve HOST değişkenlerini panel belirler; uygulamanız PORT değişkenindeki portu dinlemelidir.")
               : t("PORT ve HOST değişkenlerini panel belirler; uygulamanız PORT değişkenindeki portu dinlemelidir. NODE_ENV tanımlamazsanız production olur.")}
@@ -251,7 +251,7 @@ function NpmPanel({ site }: { site: Site }) {
       <p className="mb-3 max-w-[75ch] text-ink-2">{t("Komutlar site klasöründe, sitenin kullanıcısıyla ve seçili Node.js sürümüyle çalışır; çıktısını canlı izlersiniz.")}</p>
       <div className="flex flex-wrap gap-2">
         {presets.map((preset) => (
-          <Button key={preset.script} title={preset.hint} loading={run.isPending && run.variables === preset.script} onClick={() => run.mutate(preset.script)} className="font-mono text-[13px]">
+          <Button key={preset.script} title={preset.hint} loading={run.isPending && run.variables === preset.script} onClick={() => run.mutate(preset.script)} className="font-mono text-[13.5px]">
             {preset.label}
           </Button>
         ))}
@@ -270,7 +270,7 @@ function NpmPanel({ site }: { site: Site }) {
             onChange={(event) => setCustom(event.target.value)}
             placeholder="migrate"
             hint={t("package.json içindeki betiğin adı; “npm run” ile çalıştırılır.")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             spellCheck={false}
           />
         </div>
@@ -317,7 +317,7 @@ function PipPanel({ site }: { site: Site }) {
         {t("Uygulamanızın gereksinimlerini site klasöründeki requirements.txt dosyasına yazın. Paketler yalnızca bu sitenin sanal ortamına kurulur; sunucudaki öteki uygulamaları etkilemez.")}
       </p>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Button loading={run.isPending} onClick={() => run.mutate()} className="font-mono text-[13px]">
+        <Button loading={run.isPending} onClick={() => run.mutate()} className="font-mono text-[13.5px]">
           pip install -r requirements.txt
         </Button>
         <Checkbox label={t("Komut bitince uygulamayı yeniden başlat")} checked={restart} onChange={(event) => setRestart(event.target.checked)} />
@@ -339,7 +339,7 @@ function PipPanel({ site }: { site: Site }) {
 
 export function NodeSection({ site, options }: { site: Site; options: SiteOptions }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <StatusPanel site={site} />
       <SettingsPanel key={JSON.stringify(site.node)} site={site} options={options} />
       {site.kind === "python" ? <PipPanel site={site} /> : <NpmPanel site={site} />}

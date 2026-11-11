@@ -12,8 +12,8 @@ import { t } from "../lib/i18n";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-accent-ink hover:bg-accent-hover border-transparent",
-  secondary: "bg-surface text-ink border-line-strong hover:bg-sunken",
+  primary: "bg-accent text-accent-ink hover:bg-accent-hover border-transparent shadow-[0_1px_2px_rgb(21_32_43/0.18)]",
+  secondary: "bg-surface text-ink border-line-strong hover:bg-sunken shadow-[0_1px_1px_rgb(21_32_43/0.04)]",
   ghost: "bg-transparent text-ink-2 border-transparent hover:bg-sunken hover:text-ink",
   danger: "bg-bad text-white border-transparent hover:brightness-110",
 };
@@ -41,9 +41,9 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       className={classNames(
-        "inline-flex items-center justify-center gap-1.5 rounded-md border font-medium whitespace-nowrap transition-colors",
+        "inline-flex items-center justify-center gap-2 rounded-lg border font-medium whitespace-nowrap transition-colors",
         "disabled:cursor-not-allowed disabled:opacity-55",
-        size === "sm" ? "h-7 px-2.5 text-[13px] max-sm:h-9 max-sm:px-3" : "h-9 px-3.5 max-sm:h-10.5",
+        size === "sm" ? "h-8 px-3 text-[13.5px] max-sm:h-9" : "h-9.5 px-4 max-sm:h-11",
         buttonVariants[variant],
         className,
       )}
@@ -68,7 +68,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={classNames(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-ink-2 transition-colors max-sm:size-10",
+        "inline-flex size-8.5 shrink-0 items-center justify-center rounded-lg text-ink-2 transition-colors max-sm:size-10",
         "hover:bg-sunken hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
         className,
       )}
@@ -87,7 +87,7 @@ export function Spinner({ className }: { className?: string }) {
 
 // Telefonda 16 px yazı: iOS, daha küçük yazılı alana odaklanınca sayfayı yakınlaştırır.
 const controlClass =
-  "h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-ink placeholder:text-ink-3 max-sm:h-10.5 max-sm:text-[16px] " +
+  "h-9.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 text-ink placeholder:text-ink-3 max-sm:h-11 max-sm:text-[16px] " +
   "transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 " +
   "disabled:bg-sunken disabled:text-ink-3";
 
@@ -100,8 +100,8 @@ interface FieldProps {
 export function Input({ label, hint, error, className, ...rest }: FieldProps & InputHTMLAttributes<HTMLInputElement>) {
   const id = useId();
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
+    <div className="flex flex-col gap-2">
+      <label htmlFor={id} className="text-[14px] font-medium text-ink">
         {label}
       </label>
       <input
@@ -112,7 +112,7 @@ export function Input({ label, hint, error, className, ...rest }: FieldProps & I
         {...rest}
       />
       {(error || hint) && (
-        <p id={`${id}-hint`} className={classNames("text-[12.5px]", error ? "text-bad" : "text-ink-3")}>
+        <p id={`${id}-hint`} className={classNames("text-[13px]", error ? "text-bad" : "text-ink-3")}>
           {error || hint}
         </p>
       )}
@@ -129,14 +129,14 @@ export function Select({
 }: FieldProps & SelectHTMLAttributes<HTMLSelectElement>) {
   const id = useId();
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
+    <div className="flex flex-col gap-2">
+      <label htmlFor={id} className="text-[14px] font-medium text-ink">
         {label}
       </label>
       <select id={id} className={classNames(controlClass, "pr-8", className)} {...rest}>
         {children}
       </select>
-      {hint && <p className="text-[12.5px] text-ink-3">{hint}</p>}
+      {hint && <p className="text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }
@@ -151,7 +151,7 @@ export function Checkbox({
       <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-(--accent) max-sm:size-5" {...rest} />
       <span>
         <span className="text-ink">{label}</span>
-        {hint && <span className="block text-[12.5px] text-ink-3">{hint}</span>}
+        {hint && <span className="block text-[13px] text-ink-3">{hint}</span>}
       </span>
     </label>
   );
@@ -239,7 +239,7 @@ export function Status({ tone, children }: { tone: Tone; children: ReactNode }) 
 
 export function Badge({ tone = "idle", children }: { tone?: Tone; children: ReactNode }) {
   return (
-    <span className={classNames("inline-flex items-center rounded px-1.5 py-0.5 text-[12px] font-medium", toneSoft[tone])}>
+    <span className={classNames("inline-flex items-center rounded-md px-2 py-0.5 text-[12.5px] font-medium", toneSoft[tone])}>
       {children}
     </span>
   );
@@ -256,7 +256,7 @@ export function Meter({ value, label }: { value: number; label: string }) {
       aria-valuenow={Math.round(percent)}
       aria-valuemin={0}
       aria-valuemax={100}
-      className="h-1.5 w-full overflow-hidden rounded-full bg-sunken"
+      className="h-2 w-full overflow-hidden rounded-full bg-sunken"
     >
       <div className={classNames("h-full rounded-full transition-[width] duration-500", toneFill[tone])} style={{ width: `${percent}%` }} />
     </div>
@@ -275,10 +275,10 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 sm:mb-5">
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 sm:mb-8">
       <div className="min-w-0">
-        <h1 className="text-[20px] leading-tight font-semibold tracking-[-0.015em] sm:text-[22px]">{title}</h1>
-        {description && <p className="mt-1 max-w-[70ch] text-ink-2">{description}</p>}
+        <h1 className="text-[23px] leading-[1.15] font-semibold tracking-[-0.02em] sm:text-[27px]">{title}</h1>
+        {description && <p className="mt-2 max-w-[68ch] text-[15.5px] text-ink-2">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 max-sm:w-full max-sm:[&>*]:flex-1">{actions}</div>}
     </header>
@@ -300,24 +300,24 @@ export function Panel({
   flush?: boolean;
 }) {
   return (
-    <section className={classNames("rounded-xl border border-line bg-surface shadow-card", className)}>
+    <section className={classNames("px-panel overflow-hidden rounded-2xl border border-line bg-surface shadow-card", className)}>
       {(title || actions) && (
-        <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-line px-4 py-2">
-          <h2 className="min-w-0 font-semibold">{title}</h2>
+        <div className="flex min-h-15 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 sm:px-6 py-3 sm:px-6">
+          <h2 className="min-w-0 text-[16px] font-semibold tracking-[-0.01em]">{title}</h2>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
-      <div className={flush ? "" : "p-4"}>{children}</div>
+      <div className={flush ? "" : "p-4 sm:p-6"}>{children}</div>
     </section>
   );
 }
 
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-start gap-2 px-4 py-10 sm:items-center sm:text-center">
-      <p className="font-semibold">{title}</p>
-      {description && <p className="max-w-[52ch] text-ink-2">{description}</p>}
-      {action && <div className="mt-2">{action}</div>}
+    <div className="flex flex-col items-start gap-2.5 px-6 py-14 sm:items-center sm:text-center">
+      <p className="text-[17px] font-semibold tracking-[-0.01em]">{title}</p>
+      {description && <p className="max-w-[54ch] text-ink-2">{description}</p>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }
@@ -349,7 +349,7 @@ export function LoadingBlock() {
 
 export function ErrorBlock({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-bad/40 bg-bad-soft px-4 py-3 text-bad">
+    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-bad/40 bg-bad-soft px-4 sm:px-6 py-3 text-bad">
       <span className="min-w-0 flex-1">{message}</span>
       {onRetry && (
         <Button size="sm" onClick={onRetry}>
@@ -415,7 +415,7 @@ export function Th({ children, className, align }: { children?: ReactNode; class
     <th
       scope="col"
       className={classNames(
-        "border-b border-line bg-sunken/60 px-4 py-2 text-[12.5px] font-medium whitespace-nowrap text-ink-2",
+        "border-b border-line bg-sunken/50 px-4 sm:px-6 py-3 text-[13px] font-medium whitespace-nowrap text-ink-2",
         align === "right" && "text-right",
         className,
       )}
@@ -427,7 +427,7 @@ export function Th({ children, className, align }: { children?: ReactNode; class
 
 export function Td({ children, className, align }: { children?: ReactNode; className?: string; align?: "right" }) {
   return (
-    <td className={classNames("border-b border-line px-4 py-2 align-middle", align === "right" && "text-right", className)}>
+    <td className={classNames("border-b border-line px-4 sm:px-6 py-3.5 align-middle", align === "right" && "text-right", className)}>
       {children}
     </td>
   );
@@ -471,10 +471,10 @@ export function Modal({
           )}
         >
           <span aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong sm:hidden" />
-          <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
+          <div className="flex items-start justify-between gap-4 border-b border-line px-4 sm:px-6 py-4 sm:px-6 sm:py-5">
             <div className="min-w-0">
-              <Dialog.Title className="text-[16px] font-semibold">{title}</Dialog.Title>
-              {description && <p className="mt-0.5 text-ink-2">{description}</p>}
+              <Dialog.Title className="text-[18px] leading-snug font-semibold tracking-[-0.01em]">{title}</Dialog.Title>
+              {description && <p className="mt-1.5 text-ink-2">{description}</p>}
             </div>
             <Dialog.Close asChild>
               <IconButton label={t("Kapat")} className="-mr-2">
@@ -482,9 +482,9 @@ export function Modal({
               </IconButton>
             </Dialog.Close>
           </div>
-          <div className="overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">{children}</div>
+          <div className="overflow-y-auto overscroll-contain px-4 sm:px-6 py-5 sm:px-6 sm:py-6">{children}</div>
           {footer && (
-            <div className="flex justify-end gap-2 border-t border-line px-4 py-3 max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:[&>*]:flex-1 sm:px-5">
+            <div className="flex justify-end gap-2.5 border-t border-line bg-sunken/40 px-4 sm:px-6 py-4 max-sm:pb-[calc(1rem+env(safe-area-inset-bottom))] max-sm:[&>*]:flex-1 sm:px-6">
               {footer}
             </div>
           )}
@@ -496,7 +496,7 @@ export function Modal({
 
 /** Makine değerleri (yol, IP, komut) için eş aralıklı metin. */
 export function Mono({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={classNames("font-mono text-[12.5px]", className)}>{children}</span>;
+  return <span className={classNames("font-mono text-[13px]", className)}>{children}</span>;
 }
 
 // ---- Sekmeler ----
@@ -513,7 +513,7 @@ export function Tabs<T extends string>({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="no-scrollbar mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line max-sm:-mx-3 max-sm:px-3">
+    <div role="tablist" aria-label={label} className="no-scrollbar mb-6 flex gap-1.5 overflow-x-auto overflow-y-hidden border-b border-line max-sm:-mx-4 max-sm:px-4">
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -522,7 +522,7 @@ export function Tabs<T extends string>({
           aria-selected={value === tab.id}
           onClick={() => onChange(tab.id)}
           className={classNames(
-            "-mb-px h-9 shrink-0 border-b-2 px-3 font-medium whitespace-nowrap transition-colors max-sm:h-11",
+            "-mb-px h-11 shrink-0 border-b-2 px-3.5 font-medium whitespace-nowrap transition-colors",
             value === tab.id ? "border-accent text-accent" : "border-transparent text-ink-2 hover:text-ink",
           )}
         >
@@ -541,12 +541,12 @@ export function Textarea({
 }: FieldProps & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const id = useId();
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
+    <div className="flex flex-col gap-2">
+      <label htmlFor={id} className="text-[14px] font-medium text-ink">
         {label}
       </label>
-      <textarea id={id} className={classNames(controlClass, "h-auto min-h-28 py-2 font-mono text-[12.5px]", className)} {...rest} />
-      {hint && <p className="text-[12.5px] text-ink-3">{hint}</p>}
+      <textarea id={id} className={classNames(controlClass, "h-auto min-h-28 py-2 font-mono text-[13px]", className)} {...rest} />
+      {hint && <p className="text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }

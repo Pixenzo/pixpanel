@@ -78,10 +78,10 @@ function CopyField({ label, value, hint, multiline }: { label: string; value: st
   const [copied, copy] = useCopy();
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <p className="text-[13px] font-medium text-ink-2">{label}</p>
+      <p className="text-[13.5px] font-medium text-ink-2">{label}</p>
       <div className="flex items-start gap-2">
         <code
-          className={`min-w-0 flex-1 rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[12.5px] select-all ${multiline ? "break-all" : "truncate"}`}
+          className={`min-w-0 flex-1 rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[13px] select-all ${multiline ? "break-all" : "truncate"}`}
         >
           {value}
         </code>
@@ -89,7 +89,7 @@ function CopyField({ label, value, hint, multiline }: { label: string; value: st
           {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
         </IconButton>
       </div>
-      {hint && <p className="max-w-[75ch] text-[12.5px] text-ink-3">{hint}</p>}
+      {hint && <p className="max-w-[75ch] text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }
@@ -132,7 +132,7 @@ function PasswordField({
             label={label}
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             autoComplete="new-password"
             autoCapitalize="none"
             spellCheck={false}
@@ -146,7 +146,7 @@ function PasswordField({
           {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
         </IconButton>
       </div>
-      {hint && <p className="text-[12.5px] text-ink-3">{hint}</p>}
+      {hint && <p className="text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }
@@ -169,7 +169,7 @@ function LocalPartInput({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-[13px] font-medium text-ink-2">{label}</span>
+      <span className="text-[13.5px] font-medium text-ink-2">{label}</span>
       <span className="flex">
         <input
           value={value}
@@ -180,9 +180,9 @@ function LocalPartInput({
           autoComplete="off"
           spellCheck={false}
           required
-          className="h-9 min-w-0 flex-1 rounded-l-md border border-r-0 border-line-strong bg-surface px-3 font-mono text-[13px] text-ink transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 disabled:bg-sunken disabled:text-ink-3"
+          className="h-9 min-w-0 flex-1 rounded-l-md border border-r-0 border-line-strong bg-surface px-3 font-mono text-[13.5px] text-ink transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 disabled:bg-sunken disabled:text-ink-3"
         />
-        <span className="inline-flex h-9 items-center rounded-r-md border border-line-strong bg-sunken px-3 font-mono text-[13px] text-ink-2">@{domain}</span>
+        <span className="inline-flex h-9 items-center rounded-r-md border border-line-strong bg-sunken px-3 font-mono text-[13.5px] text-ink-2">@{domain}</span>
       </span>
     </label>
   );
@@ -205,7 +205,7 @@ function FormShell({
     onSubmit();
   }
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
+    <form onSubmit={submit} className="flex flex-col gap-5">
       {children}
       {error ? <ErrorBlock message={typeof error === "string" ? error : errorMessage(error)} /> : null}
       <div>
@@ -302,8 +302,8 @@ function ForwardTab({ mailbox }: { mailbox: Mailbox }) {
   return (
     <FormShell onSubmit={submit} saving={save.isPending} error={localError ?? save.error}>
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-[13px] font-medium text-ink-2">{t("Yönlendirme adresleri")}</legend>
-        <p className="mb-1 text-[12.5px] text-ink-3">{t("Bu kutuya gelen her ileti aşağıdaki adreslere de gönderilir. En fazla {n} adres eklenebilir.", { n: MAX_FORWARDS })}</p>
+        <legend className="mb-1 text-[13.5px] font-medium text-ink-2">{t("Yönlendirme adresleri")}</legend>
+        <p className="mb-1 text-[13px] text-ink-3">{t("Bu kutuya gelen her ileti aşağıdaki adreslere de gönderilir. En fazla {n} adres eklenebilir.", { n: MAX_FORWARDS })}</p>
         {addresses.length === 0 && <p className="text-ink-2">{t("Yönlendirme yok.")}</p>}
         {addresses.map((address, index) => (
           <div key={index} className="flex items-center gap-2">
@@ -313,7 +313,7 @@ function ForwardTab({ mailbox }: { mailbox: Mailbox }) {
               placeholder="adres@ornek.com"
               value={address}
               onChange={(event) => setAddresses((list) => list.map((item, i) => (i === index ? event.target.value : item)))}
-              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]"
+              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]"
               autoCapitalize="none"
               spellCheck={false}
             />
@@ -384,7 +384,7 @@ function AutoReplyTab({ mailbox }: { mailbox: Mailbox }) {
           onChange={(event) => set("end_date", event.target.value)}
         />
       </div>
-      <p className="-mt-2 text-[12.5px] text-ink-3">{t("Tarihler isteğe bağlıdır; boş bırakırsanız yanıt, kapatana kadar sürer.")}</p>
+      <p className="-mt-2 text-[13px] text-ink-3">{t("Tarihler isteğe bağlıdır; boş bırakırsanız yanıt, kapatana kadar sürer.")}</p>
     </FormShell>
   );
 }
@@ -490,14 +490,14 @@ function RuleEditor({
   return (
     <li className={classNames("rounded-lg border border-line-strong", !rule.enabled && "opacity-70")}>
       <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken/50 px-3 py-2">
-        <span className="tabular w-5 shrink-0 text-center text-[13px] font-medium text-ink-3">{index + 1}</span>
+        <span className="tabular w-5 shrink-0 text-center text-[13.5px] font-medium text-ink-3">{index + 1}</span>
         <input
           aria-label={t("Kural adı")}
           value={rule.name}
           onChange={(event) => onChange({ ...rule, name: event.target.value })}
           className={classNames(rowControl, "min-w-40 flex-1 font-medium")}
         />
-        <label className="inline-flex items-center gap-1.5 text-[13px] text-ink-2">
+        <label className="inline-flex items-center gap-1.5 text-[13.5px] text-ink-2">
           <input type="checkbox" className="size-4 accent-(--accent)" checked={rule.enabled} onChange={(event) => onChange({ ...rule, enabled: event.target.checked })} />
           {t("Etkin")}
         </label>
@@ -514,15 +514,15 @@ function RuleEditor({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 p-3">
+      <div className="flex flex-col gap-5 p-3">
         <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <div className="flex flex-wrap items-center gap-2 text-[13.5px]">
             <span className="font-medium text-ink-2">{t("Koşullar")}</span>
             <select
               aria-label={t("Koşulların eşleşme türü")}
               value={rule.match_all ? "all" : "any"}
               onChange={(event) => onChange({ ...rule, match_all: event.target.value === "all" })}
-              className={classNames(rowControl, "h-8 pr-7 text-[13px]")}
+              className={classNames(rowControl, "h-8 pr-7 text-[13.5px]")}
             >
               <option value="all">{t("Koşulların hepsi sağlanırsa")}</option>
               <option value="any">{t("Koşullardan herhangi biri sağlanırsa")}</option>
@@ -548,7 +548,7 @@ function RuleEditor({
                   placeholder="List-Id"
                   value={condition.header}
                   onChange={(event) => setCondition(at, { header: event.target.value })}
-                  className={classNames(rowControl, "w-32 font-mono text-[13px]")}
+                  className={classNames(rowControl, "w-32 font-mono text-[13.5px]")}
                   spellCheck={false}
                 />
               )}
@@ -578,7 +578,7 @@ function RuleEditor({
                     onChange={(event) => setCondition(at, { value: event.target.value })}
                     className={classNames(rowControl, "w-28")}
                   />
-                  <span className="text-[13px] text-ink-2">MB</span>
+                  <span className="text-[13.5px] text-ink-2">MB</span>
                 </>
               ) : (
                 <input
@@ -606,7 +606,7 @@ function RuleEditor({
         </div>
 
         <div className="flex flex-col gap-2 border-t border-line pt-3">
-          <span className="text-[13px] font-medium text-ink-2">{t("Eylemler")}</span>
+          <span className="text-[13.5px] font-medium text-ink-2">{t("Eylemler")}</span>
           {rule.actions.map((action, at) => (
             <div key={at} className="flex flex-wrap items-center gap-2">
               <select
@@ -689,7 +689,7 @@ function FiltersTab({ mailbox }: { mailbox: Mailbox }) {
         {t("Kurallar, ileti geldiğinde yukarıdan aşağıya sırayla çalışır. İstenmeyen postalar bu kurallardan önce Junk klasörüne taşınır.")}
       </p>
       {filters.length === 0 ? (
-        <p className="rounded-md border border-dashed border-line-strong px-4 py-6 text-center text-ink-2">{t("Henüz kural yok. İletileri klasörlere ayıran ilk kuralı ekleyin.")}</p>
+        <p className="rounded-md border border-dashed border-line-strong px-4 sm:px-6 py-6 text-center text-ink-2">{t("Henüz kural yok. İletileri klasörlere ayıran ilk kuralı ekleyin.")}</p>
       ) : (
         <ol className="flex flex-col gap-3">
           {filters.map((rule, index) => (
@@ -792,7 +792,7 @@ function CreateMailboxModal({ domain, onClose }: { domain: MailDomain; onClose: 
         </>
       }
     >
-      <form id="create-mailbox" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="create-mailbox" onSubmit={submit} className="flex flex-col gap-5">
         <LocalPartInput label={t("E-posta adresi")} value={local} onChange={setLocal} domain={domain.domain} autoFocus />
         <PasswordField label={t("Parola")} value={password} onChange={setPassword} hint={t("En az 10 karakter. Rastgele üretirseniz kutunun sahibine güvenli bir yolla iletin.")} required />
         <Input label={t("Kota (MB)")} type="number" min={1} value={quota} onChange={(event) => setQuota(event.target.value)} hint={t("1024 MB = 1 GB")} className="max-w-48" required />
@@ -837,7 +837,7 @@ function UsageCell({ mailbox }: { mailbox: Mailbox }) {
   const percent = quotaBytes > 0 ? (mailbox.used_bytes / quotaBytes) * 100 : 0;
   return (
     <div className="w-44">
-      <p className="tabular mb-1 text-[12.5px] text-ink-2">
+      <p className="tabular mb-1 text-[13px] text-ink-2">
         {formatBytes(mailbox.used_bytes)} / {quotaBytes > 0 ? formatBytes(quotaBytes) : t("sınırsız")}
       </p>
       <Meter value={percent} label={t("{address} kota kullanımı", { address: mailbox.address })} />
@@ -921,7 +921,7 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                 <tr key={mailbox.id} className="hover:bg-sunken/50">
                   <Td className="max-w-72">
                     <p className="truncate">
-                      <Mono className="text-[13.5px] font-medium">{mailbox.address}</Mono>
+                      <Mono className="text-[14px] font-medium">{mailbox.address}</Mono>
                     </p>
                   </Td>
                   <Td>
@@ -1010,7 +1010,7 @@ function AliasModal({ domain, alias, onClose }: { domain: MailDomain; alias: Mai
         </>
       }
     >
-      <form id="alias-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="alias-form" onSubmit={submit} className="flex flex-col gap-5">
         <LocalPartInput label={t("Takma ad")} value={local} onChange={setLocal} domain={domain.domain} disabled={alias !== null} autoFocus={alias === null} />
         <Textarea
           label={t("Hedef adresler")}
@@ -1094,7 +1094,7 @@ function AliasesSection({ detail }: { detail: DomainDetail }) {
                 <tr key={alias.id} className="align-top hover:bg-sunken/50">
                   <Td className="max-w-64">
                     <p className="truncate">
-                      <Mono className="text-[13.5px] font-medium">{alias.address}</Mono>
+                      <Mono className="text-[14px] font-medium">{alias.address}</Mono>
                     </p>
                   </Td>
                   <Td>
@@ -1167,10 +1167,10 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
         </Button>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {detail.dns_managed ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-accent-soft px-3 py-2.5">
-            <p className="max-w-[60ch] text-[13px] text-accent">
+            <p className="max-w-[60ch] text-[13.5px] text-accent">
               {t("Bu alan adının DNS'i panelde yönetiliyor; eksik kayıtları sizin yerinize ekleyebiliriz. Farklı değerdeki var olan kayıtlara dokunulmaz.")}
             </p>
             <Button size="sm" variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
@@ -1178,7 +1178,7 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
             </Button>
           </div>
         ) : (
-          <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13px] text-ink-2">
+          <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13.5px] text-ink-2">
             {t("Alan adının DNS bölgesini panele eklerseniz (bu sunucuda ya da Cloudflare'de) bu kayıtlar kendiliğinden yazılır.")}{" "}
             <Link to="/dns" className="font-medium text-accent hover:underline">
               {t("DNS sayfasına git")}
@@ -1186,7 +1186,7 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
           </p>
         )}
         {applied && (
-          <ul className="rounded-md border border-line px-3 py-2 font-mono text-[12.5px] text-ink-2">
+          <ul className="rounded-md border border-line px-3 py-2 font-mono text-[13px] text-ink-2">
             {applied.map((line) => (
               <li key={line}>{line}</li>
             ))}
@@ -1223,7 +1223,7 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
                     <CopyField label={t("Değer")} value={record.value} multiline />
                   </div>
                   {record.status !== "ok" && record.status !== "unknown" && record.found && (
-                    <p className="text-[12.5px] text-ink-2">
+                    <p className="text-[13px] text-ink-2">
                       {t("Şu an bulunan değer")}: <Mono className="break-all">{record.found}</Mono>
                     </p>
                   )}
@@ -1286,7 +1286,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel title={t("Hepsini yakala adresi")}>
         <form onSubmit={submitCatchAll} className="flex max-w-xl flex-col gap-4">
           <Input
@@ -1295,7 +1295,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
             onChange={(event) => setCatchAll(event.target.value)}
             placeholder={`info@${domain.domain}`}
             hint={t("Var olmayan adreslere gelen iletiler bu adrese teslim edilir. Boş bırakılırsa bu iletiler reddedilir.")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             autoCapitalize="none"
             spellCheck={false}
           />
@@ -1313,7 +1313,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
           <dt className="text-ink-2">{t("Web postası")}</dt>
           <dd>
-            <a href="/webmail/" target="_blank" rel="noreferrer" className="font-mono text-[12.5px] text-accent hover:underline">
+            <a href="/webmail/" target="_blank" rel="noreferrer" className="font-mono text-[13px] text-accent hover:underline">
               {window.location.origin}/webmail/
             </a>{" "}
             <span className="text-ink-3">{t("(kuruluysa; adres ve parolayla girilir)")}</span>
@@ -1335,7 +1335,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="max-w-[60ch]">
             <p className="font-medium">{t("Bu alan adı için postayı kaldır")}</p>
-            <p className="text-[13px] text-ink-2">{t("Kutular ve takma adlar silinir. Kutulardaki iletileri saklamayı ya da birlikte silmeyi seçebilirsiniz.")}</p>
+            <p className="text-[13.5px] text-ink-2">{t("Kutular ve takma adlar silinir. Kutulardaki iletileri saklamayı ya da birlikte silmeyi seçebilirsiniz.")}</p>
           </div>
           <div className="flex gap-2">
             <Button loading={remove.isPending} onClick={() => void confirmRemove(false)}>
@@ -1382,7 +1382,7 @@ export function MailDomainPage() {
 
   return (
     <>
-      <Link to="/mail" className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink">
+      <Link to="/mail" className="mb-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-ink-2 hover:text-ink">
         <ArrowLeft className="size-3.5" /> {t("Posta")}
       </Link>
       <header className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -1390,7 +1390,7 @@ export function MailDomainPage() {
         <Badge>{t("{n} kutu", { n: data.domain.mailbox_count })}</Badge>
         <Badge>{t("{n} takma ad", { n: data.domain.alias_count })}</Badge>
         {data.domain.catch_all && <Badge tone="accent">{t("Hepsini yakala")}</Badge>}
-        <span className="text-[13px] text-ink-3">{t("Oluşturulma")}: {formatDateTime(data.domain.created_at)}</span>
+        <span className="text-[13.5px] text-ink-3">{t("Oluşturulma")}: {formatDateTime(data.domain.created_at)}</span>
       </header>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -1407,7 +1407,7 @@ export function MailDomainPage() {
             >
               <item.icon className="size-4 shrink-0" />
               {item.label}
-              {item.count !== undefined && <span className="tabular ml-auto pl-2 text-[12.5px] font-normal text-ink-3">{item.count}</span>}
+              {item.count !== undefined && <span className="tabular ml-auto pl-2 text-[13px] font-normal text-ink-3">{item.count}</span>}
             </Link>
           ))}
         </nav>

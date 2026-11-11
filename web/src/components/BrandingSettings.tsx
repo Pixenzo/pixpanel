@@ -72,7 +72,7 @@ function BrandingForm({ initial }: { initial: Branding }) {
       />
 
       <div className="flex flex-col gap-2">
-        <p className="text-[13px] font-medium text-ink-2">{t("Logo")}</p>
+        <p className="text-[13.5px] font-medium text-ink-2">{t("Logo")}</p>
         <div className="flex flex-wrap items-center gap-4">
           <div className="grid size-14 shrink-0 place-items-center rounded-lg border border-line bg-sunken/60">
             {logo === "" ? <BrandMark className="size-7" /> : <img src={logo} alt="" className="max-h-10 max-w-10 object-contain" />}
@@ -87,7 +87,7 @@ function BrandingForm({ initial }: { initial: Branding }) {
           </div>
           <input ref={fileInput} type="file" accept={LOGO_TYPES.join(",")} onChange={chooseLogo} className="sr-only" tabIndex={-1} aria-label={t("Logo dosyası")} />
         </div>
-        <p className="text-[12.5px] text-ink-3">{t("Kare ya da kareye yakın, saydam zeminli bir görsel en iyi sonucu verir. Koyu yan menüde de okunaklı olmasına dikkat edin.")}</p>
+        <p className="text-[13px] text-ink-3">{t("Kare ya da kareye yakın, saydam zeminli bir görsel en iyi sonucu verir. Koyu yan menüde de okunaklı olmasına dikkat edin.")}</p>
         {logoError && <ErrorBlock message={logoError} />}
       </div>
 

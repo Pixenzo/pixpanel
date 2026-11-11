@@ -101,10 +101,10 @@ function CurrentCertificate({ site, status }: { site: Site; status: SslStatus })
         <dd className="min-w-0 break-words">{certificate.self_signed ? t("Kendinden imzalı") : certificate.issuer}</dd>
       </dl>
       {status.mode.startsWith("letsencrypt") && (
-        <p className="mt-3 text-[13px] text-ink-3">{t("Bitimine 30 gün kala kendiliğinden yenilenir.")}</p>
+        <p className="mt-3 text-[13.5px] text-ink-3">{t("Bitimine 30 gün kala kendiliğinden yenilenir.")}</p>
       )}
       {status.mode === "selfsigned" && (
-        <p className="mt-3 text-[13px] text-ink-3">
+        <p className="mt-3 text-[13.5px] text-ink-3">
           {t("Tarayıcılar kendinden imzalı sertifikaya güvenmez ve uyarı gösterir. Sınama ortamları ya da Cloudflare gibi bir vekil arkasındaki siteler için uygundur.")}
         </p>
       )}
@@ -177,7 +177,7 @@ function LetsEncryptPanel({ site, mode }: { site: Site; mode: SslStatus["mode"] 
               <input type="radio" name="le-method" className="mt-1 accent-(--accent)" checked={method === option.id} onChange={() => setMethod(option.id)} />
               <span>
                 <span className="font-medium">{option.title}</span>
-                <span className="block text-[12.5px] text-ink-3">{option.hint}</span>
+                <span className="block text-[13px] text-ink-3">{option.hint}</span>
               </span>
             </label>
           ))}
@@ -272,7 +272,7 @@ function CustomPanel({ site }: { site: Site }) {
     upload.mutate();
   }
 
-  const fileInput = "text-[13px] text-ink-2 file:mr-3 file:h-7 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-2.5 file:text-[13px] file:font-medium file:text-ink";
+  const fileInput = "text-[13.5px] text-ink-2 file:mr-3 file:h-7 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-2.5 file:text-[13.5px] file:font-medium file:text-ink";
 
   return (
     <Panel title={t("Kendi sertifikanızı yükleyin")}>
@@ -320,7 +320,7 @@ export function SslTab({ site }: { site: Site }) {
   if (status.isPending) return <LoadingBlock />;
   if (status.isError) return <ErrorBlock message={errorMessage(status.error)} onRetry={() => void status.refetch()} />;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <CurrentCertificate site={site} status={status.data} />
       <LetsEncryptPanel site={site} mode={status.data.mode} />
       <SelfSignedPanel site={site} />

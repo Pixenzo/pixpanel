@@ -51,7 +51,7 @@ function AddKeyModal({ accountId, onClose }: { accountId: number; onClose: () =>
         </>
       }
     >
-      <form id="add-ssh-key" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="add-ssh-key" onSubmit={submit} className="flex flex-col gap-5">
         <Textarea
           label={t("Açık anahtar")}
           value={publicKey}
@@ -145,7 +145,7 @@ export function AccessPanel({ accountId }: { accountId: number }) {
         <div className="flex flex-col gap-5">
           {data.can_change_mode ? (
             <fieldset disabled={setMode.isPending}>
-              <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Erişim düzeyi")}</legend>
+              <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Erişim düzeyi")}</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {MODES.filter((mode) => mode.id !== "shell" || data.can_grant_shell || data.mode === "shell").map((mode) => (
                   <label
@@ -159,7 +159,7 @@ export function AccessPanel({ accountId }: { accountId: number }) {
                       <input type="radio" name={`access-mode-${accountId}`} className="accent-(--accent)" checked={data.mode === mode.id} onChange={() => setMode.mutate(mode.id)} />
                       {t(mode.label)}
                     </span>
-                    <span className="text-[12.5px] text-ink-2">{t(mode.hint)}</span>
+                    <span className="text-[13px] text-ink-2">{t(mode.hint)}</span>
                   </label>
                 ))}
               </div>
@@ -176,7 +176,7 @@ export function AccessPanel({ accountId }: { accountId: number }) {
 
           {data.mode !== "none" && (
             <div>
-              <p className="mb-1.5 text-[13px] font-medium text-ink-2">{t("Bağlantı")}</p>
+              <p className="mb-1.5 text-[13.5px] font-medium text-ink-2">{t("Bağlantı")}</p>
               <div className="flex items-center gap-1 rounded-md border border-line bg-sunken/60 py-1 pr-1 pl-3">
                 <Mono className="min-w-0 flex-1 break-all">{command}</Mono>
                 <IconButton label={t("Komutu kopyala")} onClick={() => void navigator.clipboard.writeText(command).then(() => feedback.success(t("Kopyalandı")))}>
@@ -184,7 +184,7 @@ export function AccessPanel({ accountId }: { accountId: number }) {
                 </IconButton>
               </div>
               {data.mode === "sftp" && (
-                <p className="mt-1.5 text-[12.5px] text-ink-3">
+                <p className="mt-1.5 text-[13px] text-ink-3">
                   {t("FileZilla gibi programlarda: protokol SFTP, sunucu {host}, port {port}, kullanıcı {user}.", { host, port: data.port, user: data.username })}
                 </p>
               )}
@@ -193,7 +193,7 @@ export function AccessPanel({ accountId }: { accountId: number }) {
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-[13px] font-medium text-ink-2">{t("Açık anahtarlar")}</p>
+              <p className="text-[13.5px] font-medium text-ink-2">{t("Açık anahtarlar")}</p>
               <Button size="sm" icon={<Plus className="size-3.5" />} onClick={() => setAdding(true)}>
                 {t("Anahtar ekle")}
               </Button>
@@ -207,9 +207,9 @@ export function AccessPanel({ accountId }: { accountId: number }) {
                     <KeyRound aria-hidden className="size-4 shrink-0 text-ink-3" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{key.name}</p>
-                      <p className="truncate font-mono text-[12px] text-ink-3">{key.fingerprint}</p>
+                      <p className="truncate font-mono text-[12.5px] text-ink-3">{key.fingerprint}</p>
                     </div>
-                    <span className="shrink-0 text-[12.5px] text-ink-3 max-sm:hidden">{formatRelative(key.created_at)}</span>
+                    <span className="shrink-0 text-[13px] text-ink-3 max-sm:hidden">{formatRelative(key.created_at)}</span>
                     <IconButton label={t("{name} anahtarını sil", { name: key.name })} disabled={removeKey.isPending} onClick={() => removeKey.mutate(key.id)}>
                       <Trash2 className="size-4" />
                     </IconButton>
@@ -221,7 +221,7 @@ export function AccessPanel({ accountId }: { accountId: number }) {
 
           {data.mode === "sftp" && (
             <div>
-              <p className="mb-2 text-[13px] text-ink-2">
+              <p className="mb-2 text-[13.5px] text-ink-2">
                 {data.password_set ? t("Bu hesabın bir SFTP parolası var. Yenisini belirlerseniz eskisi geçersiz olur.") : t("Parolayla da bağlanmak isterseniz bir SFTP parolası belirleyin.")}
               </p>
               <PasswordForm accountId={accountId} />

@@ -135,8 +135,8 @@ function NameModal({
         </>
       }
     >
-      <form id="file-name-form" onSubmit={submit} className="flex flex-col gap-4">
-        <Input label={label} value={name} onChange={(event) => setName(event.target.value)} className="font-mono text-[13px]" spellCheck={false} autoFocus required />
+      <form id="file-name-form" onSubmit={submit} className="flex flex-col gap-5">
+        <Input label={label} value={name} onChange={(event) => setName(event.target.value)} className="font-mono text-[13.5px]" spellCheck={false} autoFocus required />
         {action.isError && <ErrorBlock message={errorMessage(action.error)} />}
       </form>
     </Modal>
@@ -168,9 +168,9 @@ function CompressModal({ count, suggested, onSubmit, onClose }: { count: number;
           event.preventDefault();
           action.mutate();
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
-        <Input label={t("Arşiv adı")} value={name} onChange={(event) => setName(event.target.value)} hint={t("Uzantı kendiliğinden eklenir: {ext}", { ext: extension })} className="font-mono text-[13px]" autoFocus required />
+        <Input label={t("Arşiv adı")} value={name} onChange={(event) => setName(event.target.value)} hint={t("Uzantı kendiliğinden eklenir: {ext}", { ext: extension })} className="font-mono text-[13.5px]" autoFocus required />
         <Select label={t("Biçim")} value={format} onChange={(event) => setFormat(event.target.value)}>
           <option value="zip">ZIP</option>
           <option value="tar_gz">tar.gz</option>
@@ -210,13 +210,13 @@ function PermissionsModal({ initial, hasFolder, count, onSubmit, onClose }: { in
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <table className="w-full text-left">
           <thead>
             <tr>
               <th />
               {permissionColumns.map(([label]) => (
-                <th key={label} scope="col" className="pb-2 text-[13px] font-medium text-ink-2">
+                <th key={label} scope="col" className="pb-2 text-[13.5px] font-medium text-ink-2">
                   {t(label)}
                 </th>
               ))}
@@ -246,7 +246,7 @@ function PermissionsModal({ initial, hasFolder, count, onSubmit, onClose }: { in
             ))}
           </tbody>
         </table>
-        <p className="font-mono text-[13px] text-ink-2">
+        <p className="font-mono text-[13.5px] text-ink-2">
           {octal(mode)} {modeString(mode)}
         </p>
         {hasFolder && (
@@ -299,8 +299,8 @@ function EditorModal({ scope, path, onClose }: { scope: string; path: string; on
 
   return (
     <div role="dialog" aria-modal="true" aria-label={t("{name} düzenleniyor", { name })} className="fixed inset-0 z-40 flex flex-col bg-surface">
-      <div className="flex h-13 shrink-0 items-center gap-3 border-b border-line px-4">
-        <span className="min-w-0 flex-1 truncate font-mono text-[13px]" title={path}>
+      <div className="flex h-13 shrink-0 items-center gap-3 border-b border-line px-4 sm:px-6">
+        <span className="min-w-0 flex-1 truncate font-mono text-[13.5px]" title={path}>
           {path}
           {dirty && <span className="ml-2 text-warn">{t("(kaydedilmedi)")}</span>}
         </span>
@@ -489,7 +489,7 @@ export function FilesPage() {
 
       <Panel flush className={classNames(dragging && "outline-2 outline-accent")}>
         <div onDragOver={(event) => (event.preventDefault(), setDragging(true))} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-          <nav aria-label={t("Klasör yolu")} className="flex flex-wrap items-center gap-1 border-b border-line px-3 py-2 font-mono text-[13px]">
+          <nav aria-label={t("Klasör yolu")} className="flex flex-wrap items-center gap-1 border-b border-line px-3 py-2 font-mono text-[13.5px]">
             <button type="button" className="rounded px-1.5 py-0.5 font-medium hover:bg-sunken" onClick={() => setPath("/")}>
               {root?.label ?? "/"}
             </button>
@@ -521,13 +521,13 @@ export function FilesPage() {
                 <Button size="sm" className={toolButton} icon={<FilePlus2 className="size-3.5" />} onClick={() => setDialog({ kind: "touch" })}>
                   {t("Yeni dosya")}
                 </Button>
-                <span className="ml-auto hidden text-[12.5px] text-ink-3 sm:block">{t("Yüklemek için dosyaları buraya sürükleyebilirsiniz.")}</span>
+                <span className="ml-auto hidden text-[13px] text-ink-3 sm:block">{t("Yüklemek için dosyaları buraya sürükleyebilirsiniz.")}</span>
               </>
             ) : (
               <>
-                <span className="mr-1 text-[13px] font-medium">{t("{count} öğe seçili", { count: selectedEntries.length })}</span>
+                <span className="mr-1 text-[13.5px] font-medium">{t("{count} öğe seçili", { count: selectedEntries.length })}</span>
                 {single && (
-                  <a href={downloadUrl(scope, joinPath(path, single.name))} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 text-[13px] font-medium hover:bg-sunken">
+                  <a href={downloadUrl(scope, joinPath(path, single.name))} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-surface px-2.5 text-[13.5px] font-medium hover:bg-sunken">
                     <Download className="size-3.5" /> {single.kind === "dir" ? t("Arşiv olarak indir") : t("İndir")}
                   </a>
                 )}
@@ -574,7 +574,7 @@ export function FilesPage() {
 
           {clipboard && clipboard.scope === scope && (
             <div className="flex flex-wrap items-center gap-3 border-b border-line bg-accent-soft px-3 py-2 text-accent">
-              <span className="text-[13px] font-medium">
+              <span className="text-[13.5px] font-medium">
                 {clipboard.mode === "copy" ? t("{count} öğe kopyalanmak üzere bekliyor", { count: clipboard.paths.length }) : t("{count} öğe taşınmak üzere bekliyor", { count: clipboard.paths.length })}
               </span>
               <Button size="sm" variant="primary" icon={<ClipboardPaste className="size-3.5" />} loading={run.isPending} onClick={paste}>
@@ -589,7 +589,7 @@ export function FilesPage() {
           {uploads.length > 0 && (
             <ul className="border-b border-line px-3 py-2">
               {uploads.map((item) => (
-                <li key={item.name} className="flex items-center gap-3 py-1 text-[13px]">
+                <li key={item.name} className="flex items-center gap-3 py-1 text-[13.5px]">
                   <Spinner className="size-3.5 text-accent" />
                   <span className="min-w-0 flex-1 truncate font-mono">{item.name}</span>
                   <span className="h-1.5 w-40 overflow-hidden rounded-full bg-sunken">
@@ -631,7 +631,7 @@ export function FilesPage() {
                   <tr className="hover:bg-sunken/50">
                     <Td />
                     <Td>
-                      <button type="button" className="flex items-center gap-2.5 font-mono text-[13px] text-ink-2" onClick={() => setPath(parentOf(path))}>
+                      <button type="button" className="flex items-center gap-2.5 font-mono text-[13.5px] text-ink-2" onClick={() => setPath(parentOf(path))}>
                         <Folder aria-hidden className="size-4" /> ..
                       </button>
                     </Td>
@@ -662,7 +662,7 @@ export function FilesPage() {
                         />
                       </Td>
                       <Td className="max-w-0">
-                        <button type="button" className="flex max-w-full items-center gap-2.5 text-left font-mono text-[13px] hover:text-accent" onClick={() => open(entry)}>
+                        <button type="button" className="flex max-w-full items-center gap-2.5 text-left font-mono text-[13.5px] hover:text-accent" onClick={() => open(entry)}>
                           <Icon aria-hidden className={classNames("size-4 shrink-0", entry.kind === "dir" ? "text-accent" : "text-ink-3")} />
                           <span className="truncate">{entry.name}</span>
                           {entry.target && <span className="truncate text-ink-3">→ {entry.target}</span>}
@@ -672,7 +672,7 @@ export function FilesPage() {
                         {entry.kind === "file" ? formatBytes(entry.size) : ""}
                       </Td>
                       <Td className="whitespace-nowrap text-ink-2">{formatDateTime(entry.mtime)}</Td>
-                      <Td className="font-mono text-[12.5px] whitespace-nowrap text-ink-2">
+                      <Td className="font-mono text-[13px] whitespace-nowrap text-ink-2">
                         <span title={modeString(entry.mode)}>{octal(entry.mode)}</span>
                       </Td>
                     </tr>
@@ -681,7 +681,7 @@ export function FilesPage() {
               </tbody>
             </Table>
           )}
-          {listing.data && entries.length === 0 && <p className="px-4 py-8 text-ink-2">{t("Bu klasör boş. Dosya yükleyin ya da yeni bir klasör oluşturun.")}</p>}
+          {listing.data && entries.length === 0 && <p className="px-4 sm:px-6 py-8 text-ink-2">{t("Bu klasör boş. Dosya yükleyin ya da yeni bir klasör oluşturun.")}</p>}
         </div>
       </Panel>
 

@@ -70,22 +70,22 @@ function AddModal({ current, onClose }: { current: DnsClusterSecondary[]; onClos
         </>
       }
     >
-      <form id="dns-secondary-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="dns-secondary-form" onSubmit={submit} className="flex flex-col gap-5">
         <Input
           label={t("İkincil sunucunun IP adresi")}
           value={address}
           onChange={(event) => setAddress(event.target.value)}
           placeholder="203.0.113.20"
           hint={t("Bu adrese bölge aktarımı izni verilir ve her değişiklikte bildirim gönderilir.")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           spellCheck={false}
           autoComplete="off"
           autoFocus
           required
         />
-        <fieldset className="flex flex-col gap-4 border-t border-line pt-4">
+        <fieldset className="flex flex-col gap-5 border-t border-line pt-4">
           <legend className="sr-only">{t("İkincil sunucu PixPanel ise")}</legend>
-          <p className="text-[13px] text-ink-2">
+          <p className="text-[13.5px] text-ink-2">
             {t("İkincil sunucuda da PixPanel kuruluysa panel adresini ve orada üretilmiş bir yönetici API anahtarını girin: bölgeler ikincilde kendiliğinden açılır ve silinir. Boş bırakırsanız her bölgeyi ikincilde elle tanımlamanız gerekir.")}
           </p>
           <Input
@@ -93,7 +93,7 @@ function AddModal({ current, onClose }: { current: DnsClusterSecondary[]; onClos
             value={panelUrl}
             onChange={(event) => setPanelUrl(event.target.value)}
             placeholder="https://203.0.113.20:8443"
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             spellCheck={false}
             autoComplete="off"
           />
@@ -104,7 +104,7 @@ function AddModal({ current, onClose }: { current: DnsClusterSecondary[]; onClos
             onChange={(event) => setToken(event.target.value)}
             placeholder="pix_…"
             hint={t("İkincil panelde Hesabım → API anahtarları bölümünden üretilir. İzinli adres olarak bu sunucunun adresini yazmanız önerilir.")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             autoComplete="new-password"
             required={panelUrl.trim() !== ""}
           />
@@ -118,7 +118,7 @@ function AddModal({ current, onClose }: { current: DnsClusterSecondary[]; onClos
 function SecondaryCard({ item, onRemove, onRepin, removing }: { item: DnsClusterSecondary; onRemove: () => void; onRepin: () => void; removing: boolean }) {
   const hasPanel = item.panel_url !== "";
   return (
-    <li className="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0">
+    <li className="flex flex-col gap-2 border-b border-line px-4 sm:px-6 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <Mono className="font-medium">{item.address}</Mono>
@@ -137,7 +137,7 @@ function SecondaryCard({ item, onRemove, onRepin, removing }: { item: DnsCluster
         </IconButton>
       </div>
       {hasPanel ? (
-        <dl className="grid gap-x-6 gap-y-1 text-[13px] sm:grid-cols-[auto_1fr]">
+        <dl className="grid gap-x-6 gap-y-1 text-[13.5px] sm:grid-cols-[auto_1fr]">
           <dt className="text-ink-3">{t("Panel")}</dt>
           <dd className="min-w-0 break-all font-mono">{item.panel_url}</dd>
           <dt className="text-ink-3">{t("Son eşitleme")}</dt>
@@ -147,10 +147,10 @@ function SecondaryCard({ item, onRemove, onRepin, removing }: { item: DnsCluster
               : t("{when}, {count} bölge", { when: formatRelative(item.last_sync_at), count: item.synced_zones ?? 0 })}
           </dd>
           <dt className="text-ink-3">{t("Sertifika parmak izi")}</dt>
-          <dd className="min-w-0 break-all font-mono text-[12px] text-ink-2">{groupFingerprint(item.fingerprint)}</dd>
+          <dd className="min-w-0 break-all font-mono text-[12.5px] text-ink-2">{groupFingerprint(item.fingerprint)}</dd>
         </dl>
       ) : (
-        <p className="text-[13px] text-ink-2">
+        <p className="text-[13.5px] text-ink-2">
           {t("Bu sunucu bölgeleri çekebilir; her bölgeyi orada ikincil olarak sizin tanımlamanız gerekir (birincil adresi olarak bu sunucuyu gösterin).")}
         </p>
       )}
@@ -163,7 +163,7 @@ function SecondaryCard({ item, onRemove, onRepin, removing }: { item: DnsCluster
         </div>
       )}
       {item.conflicts.length > 0 && (
-        <p className="rounded-md bg-sunken px-3 py-2 text-[13px] text-ink-2">
+        <p className="rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
           {t("İkincilde aynı adla başka bir bölge bulunduğu için açılamayanlar: {names}", { names: item.conflicts.join(", ") })}
         </p>
       )}
@@ -250,7 +250,7 @@ export function DnsCluster({ localInstalled }: { localInstalled: boolean }) {
   const hasPanel = data.secondaries.some((item) => item.panel_url !== "");
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel
         flush
         title={t("İkincil ad sunucuları")}
@@ -284,7 +284,7 @@ export function DnsCluster({ localInstalled }: { localInstalled: boolean }) {
                 <SecondaryCard key={item.address} item={item} onRemove={() => void confirmRemove(item)} onRepin={() => void confirmRepin(item)} removing={save.isPending} />
               ))}
             </ul>
-            <p className="border-t border-line px-4 py-3 text-[13px] text-ink-2">
+            <p className="border-t border-line px-4 sm:px-6 py-3 text-[13.5px] text-ink-2">
               {t("Alan adlarınızın ad sunucusu kayıtlarında ikincilin de yer aldığından emin olun. Bölgeye özel ad sunucusu kullanan bölgelerde ns2 kaydı ilk ikincilin adresini gösterir.")}
             </p>
           </>
@@ -295,10 +295,10 @@ export function DnsCluster({ localInstalled }: { localInstalled: boolean }) {
         <Panel flush title={t("Bu sunucunun ikincili olduğu sunucular")}>
           <ul>
             {data.replica_of.map((item) => (
-              <li key={item.primary} className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0">
+              <li key={item.primary} className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 sm:px-6 py-3 last:border-b-0">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <Mono className="font-medium">{item.primary}</Mono>
-                  <span className="text-[13px] text-ink-2">{t("{count} bölge çekiliyor", { count: item.zones })}</span>
+                  <span className="text-[13.5px] text-ink-2">{t("{count} bölge çekiliyor", { count: item.zones })}</span>
                 </div>
                 <Button size="sm" onClick={() => void confirmDetach(item.primary, item.zones)} loading={detach.isPending}>
                   {t("Bağlantıyı kes")}

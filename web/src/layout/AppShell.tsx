@@ -32,19 +32,19 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const me = useMe();
   return (
     <nav aria-label={t("Ana gezinme")} className="flex h-full flex-col overflow-y-auto bg-rail text-rail-ink">
-      <div className="flex h-13 shrink-0 items-center gap-2.5 border-b border-rail-line px-4">
-        <BrandLogo onDark />
-        <span className="min-w-0 truncate text-[16px] font-semibold tracking-[-0.01em]">
+      <div className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6">
+        <BrandLogo onDark className="size-6" />
+        <span className="min-w-0 truncate text-[17px] font-semibold tracking-[-0.015em] text-white">
           <BrandName />
         </span>
       </div>
-      <div className="flex flex-1 flex-col gap-5 px-2.5 py-4">
+      <div className="flex flex-1 flex-col gap-7 px-3 pt-2 pb-6">
         {navigation.map((group, index) => {
           const items = group.items.filter((item) => item.visible(me));
           if (items.length === 0) return null;
           return (
-            <div key={group.title ?? index} className="flex flex-col gap-px">
-              {group.title && <p className="px-2.5 pb-1.5 text-[12px] font-medium text-rail-ink-2">{t(group.title)}</p>}
+            <div key={group.title ?? index} className="flex flex-col gap-0.5">
+              {group.title && <p className="px-3 pb-2 text-[12.5px] font-medium tracking-[0.02em] text-rail-ink-2/80">{t(group.title)}</p>}
               {items.map((item) => (
                 <NavLink
                   key={item.to}
@@ -52,14 +52,16 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
                   onClick={onNavigate}
                   className={({ isActive }) =>
                     classNames(
-                      "flex h-8.5 items-center gap-2.5 rounded-md px-2.5 font-medium transition-colors outline-offset-[-2px] max-lg:h-11 max-lg:text-[15px]",
-                      isActive ? "bg-rail-raised text-white" : "text-rail-ink-2 hover:bg-rail-raised/60 hover:text-rail-ink",
+                      "relative flex h-9.5 items-center gap-3 rounded-lg px-3 text-[14.5px] font-medium transition-colors outline-offset-[-2px] max-lg:h-11 max-lg:text-[15.5px]",
+                      isActive
+                        ? "bg-rail-raised text-white before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-rail-accent"
+                        : "text-rail-ink-2 hover:bg-rail-raised/60 hover:text-rail-ink",
                     )
                   }
                 >
                   {({ isActive }) => (
                     <>
-                      <item.icon className={classNames("size-[16px] shrink-0", isActive && "text-rail-accent")} />
+                      <item.icon className={classNames("size-[18px] shrink-0", isActive && "text-rail-accent")} />
                       {t(item.label)}
                     </>
                   )}
@@ -69,7 +71,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           );
         })}
       </div>
-      <p className="shrink-0 border-t border-rail-line px-5 py-3 text-[12px] text-rail-ink-2">Pixenzo</p>
+      <p className="shrink-0 border-t border-rail-line px-4 sm:px-6 py-3 text-[12.5px] text-rail-ink-2">Pixenzo</p>
     </nav>
   );
 }
@@ -87,7 +89,7 @@ function LiveReadout() {
   const memory = current.mem_total > 0 ? (current.mem_used / current.mem_total) * 100 : 0;
   const cell = "flex items-baseline gap-1.5";
   return (
-    <dl className="tabular hidden items-center gap-4 text-[13px] xl:flex">
+    <dl className="tabular hidden items-center gap-4 text-[13.5px] xl:flex">
       <div className={cell}>
         <dt className="sr-only">{t("Sunucu")}</dt>
         <dd className="font-mono font-medium">{host.hostname}</dd>
@@ -121,7 +123,7 @@ function RunningJobs() {
       type="button"
       onClick={() => navigate("/jobs")}
       aria-label={t("{count} görev çalışıyor", { count: running.length })}
-      className="flex h-8 max-w-64 items-center gap-2 rounded-md bg-accent-soft px-2.5 text-[13px] font-medium text-accent"
+      className="flex h-8 max-w-64 items-center gap-2 rounded-md bg-accent-soft px-2.5 text-[13.5px] font-medium text-accent"
     >
       <Spinner className="size-3.5 shrink-0" />
       <span className="truncate max-sm:hidden">{running.length === 1 ? running[0].title : t("{count} görev çalışıyor", { count: running.length })}</span>
@@ -145,7 +147,7 @@ function LiveIndicator() {
       role="status"
       title={label}
       className={classNames(
-        "flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium",
+        "flex h-8 items-center gap-1.5 rounded-md px-2 text-[13.5px] font-medium",
         state === "offline" ? "bg-warn-soft text-warn" : "text-ink-3",
       )}
     >
@@ -172,7 +174,7 @@ function BottomBar({ onOpenMenu, menuOpen }: { onOpenMenu: () => void; menuOpen:
   const quick = QUICK_ROUTES.map((route) => all.find((item) => item.to === route))
     .filter((item): item is NavItem => Boolean(item))
     .slice(0, 4);
-  const cell = "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11.5px] font-medium";
+  const cell = "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[12px] font-medium";
   return (
     <nav
       aria-label={t("Hızlı gezinme")}
@@ -212,7 +214,7 @@ function UserMenu() {
         >
           <div className="px-2 py-1.5">
             <p className="font-medium">{me.username}</p>
-            <p className="text-[12.5px] text-ink-3">{t(roleLabels[me.role])}</p>
+            <p className="text-[13px] text-ink-3">{t(roleLabels[me.role])}</p>
           </div>
           <Dropdown.Separator className="my-1 h-px bg-line" />
           <Dropdown.Item className={itemClass} onSelect={() => navigate("/account")}>
@@ -246,7 +248,7 @@ function ImpersonationBar({ by, username }: { by: string; username: string }) {
     }
   }
   return (
-    <div role="status" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-b border-warn/40 bg-warn-soft px-3 py-2 text-[13px] text-warn">
+    <div role="status" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-b border-warn/40 bg-warn-soft px-3 py-2 text-[13.5px] text-warn">
       <span>
         {t("{by} olarak {username} hesabının panelindesiniz. Yaptığınız her işlem bu hesaba uygulanır.", { by, username })}
         {failed && ` ${t("Geri dönülemedi; yeniden deneyin.")}`}
@@ -281,7 +283,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-dvh max-lg:pb-[calc(3.75rem+env(safe-area-inset-bottom))] lg:pl-56">
+    <div className="min-h-dvh max-lg:pb-[calc(3.75rem+env(safe-area-inset-bottom))] lg:pl-62">
       <a
         href="#content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:rounded-md focus:bg-surface focus:px-3 focus:py-2"
@@ -289,7 +291,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {t("İçeriğe geç")}
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 lg:block">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-62 lg:block">
         <Sidebar onNavigate={() => {}} />
       </aside>
 
@@ -302,22 +304,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <header className="sticky top-0 z-20 flex h-13 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-4 lg:px-6">
+      <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-line bg-surface/90 px-4 backdrop-blur-md sm:gap-4 sm:px-6 lg:px-10">
         <span className="flex shrink-0 items-center lg:hidden">
           <BrandLogo />
         </span>
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
-          className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-ink-3 transition-colors hover:border-line-strong sm:max-w-80"
+          className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-line bg-bg px-3.5 text-ink-3 transition-colors hover:border-line-strong sm:max-w-96"
         >
           <Search aria-hidden className="size-4 shrink-0" />
           <span className="truncate">{t("Site, araç ya da sayfa ara")}</span>
-          <kbd className="ml-auto hidden shrink-0 rounded border border-line bg-surface px-1.5 font-mono text-[11.5px] text-ink-2 sm:inline">
+          <kbd className="ml-auto hidden shrink-0 rounded border border-line bg-surface px-1.5 font-mono text-[12px] text-ink-2 sm:inline">
             {isMac ? "⌘K" : "Ctrl K"}
           </kbd>
         </button>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-2.5">
           {me.role === "admin" && <LiveReadout />}
           <RunningJobs />
           <LiveIndicator />
@@ -330,7 +332,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {me.impersonated_by !== null && <ImpersonationBar by={me.impersonated_by} username={me.username} />}
 
-      <main id="content" className="mx-auto w-full max-w-[1400px] px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
+      <main id="content" className="mx-auto w-full max-w-[1360px] px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
         <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>
       </main>
 

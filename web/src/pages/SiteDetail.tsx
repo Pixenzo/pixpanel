@@ -127,7 +127,7 @@ function GeneralTab({ site }: { site: Site }) {
   const canSuspend = me.role === "admin" || (me.role === "reseller" && site.user_id !== me.id);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <SectionForm
         title={t("Adresler")}
         saving={save.isPending}
@@ -155,7 +155,7 @@ function GeneralTab({ site }: { site: Site }) {
             value={publicDir}
             onChange={(event) => setPublicDir(event.target.value)}
             hint={t("Site klasörünün içinde ziyaretçilere açılan alt klasör. Laravel için genellikle app/public gibi bir yol kullanılır.")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             spellCheck={false}
             required
           />
@@ -201,7 +201,7 @@ function GeneralTab({ site }: { site: Site }) {
             <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
               <div className="max-w-[60ch]">
                 <p className="font-medium">{site.status === "active" ? t("Siteyi askıya al") : t("Siteyi yeniden yayınla")}</p>
-                <p className="text-[13px] text-ink-2">{t("Askıdaki site ziyaretçilere 503 yanıtı verir; dosyaları ve ayarları korunur.")}</p>
+                <p className="text-[13.5px] text-ink-2">{t("Askıdaki site ziyaretçilere 503 yanıtı verir; dosyaları ve ayarları korunur.")}</p>
               </div>
               <Button loading={status.isPending} onClick={() => status.mutate({ status: site.status === "active" ? "suspended" : "active" })}>
                 {site.status === "active" ? t("Askıya al") : t("Yeniden yayınla")}
@@ -212,7 +212,7 @@ function GeneralTab({ site }: { site: Site }) {
           <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
             <div className="max-w-[60ch]">
               <p className="font-medium">{t("Siteyi sil")}</p>
-              <p className="text-[13px] text-ink-2">{t("Siteyi yayından kaldırır. Dosyaları saklamayı ya da birlikte silmeyi seçebilirsiniz.")}</p>
+              <p className="text-[13.5px] text-ink-2">{t("Siteyi yayından kaldırır. Dosyaları saklamayı ya da birlikte silmeyi seçebilirsiniz.")}</p>
             </div>
             <div className="flex gap-2">
               <Button loading={remove.isPending} onClick={() => void confirmRemove(false)}>
@@ -275,7 +275,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
         ))}
       </Select>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-sunken/70 px-3 py-2 text-[13px] text-ink-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-sunken/70 px-3 py-2 text-[13.5px] text-ink-2">
         <span>
           {overrides === 0
             ? t("Bu site PHP {version} sürümünün genel ayarlarını kullanıyor. Bir alanı doldurursanız yalnızca bu sitede o değer geçerli olur.", { version })
@@ -295,7 +295,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
           placeholder={defaults?.memory_limit}
           onChange={(e) => set("memory_limit", textOrNull(e.target.value))}
           hint={inherited("memory_limit", defaults?.memory_limit)}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
         />
         <Input
           label={t("Çalışma süresi (saniye)")}
@@ -312,7 +312,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
           placeholder={defaults?.upload_max_filesize}
           onChange={(e) => set("upload_max_filesize", textOrNull(e.target.value))}
           hint={inherited("upload_max_filesize", defaults?.upload_max_filesize)}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
         />
         <Input
           label={t("En büyük POST boyutu")}
@@ -320,7 +320,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
           placeholder={defaults?.post_max_size}
           onChange={(e) => set("post_max_size", textOrNull(e.target.value))}
           hint={inherited("post_max_size", defaults?.post_max_size)}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
         />
         <Input
           label={t("En fazla form alanı")}
@@ -367,7 +367,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Ek php.ini yönergeleri")}</legend>
+        <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Ek php.ini yönergeleri")}</legend>
         {settings.custom.map((directive, index) => (
           <div key={index} className="flex items-center gap-2">
             <input
@@ -375,7 +375,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
               placeholder="opcache.enable"
               value={directive.key}
               onChange={(e) => setDirective(index, "key", e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]"
+              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]"
               spellCheck={false}
             />
             <input
@@ -383,7 +383,7 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
               placeholder="1"
               value={directive.value}
               onChange={(e) => setDirective(index, "value", e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]"
+              className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]"
               spellCheck={false}
             />
             <IconButton label={t("Yönergeyi kaldır")} onClick={() => set("custom", settings.custom.filter((_, i) => i !== index))}>
@@ -417,7 +417,7 @@ function ProxyTab({ site }: { site: Site }) {
         value={target}
         onChange={(event) => setTarget(event.target.value)}
         hint={t("Ziyaretçi istekleri bu adrese iletilir. Örnek: http://127.0.0.1:3000")}
-        className="font-mono text-[13px]"
+        className="font-mono text-[13.5px]"
         spellCheck={false}
         required
       />
@@ -453,7 +453,7 @@ function OverviewSection({ site, options }: { site: Site; options: SiteOptions }
   const summaries = useQuery({ queryKey: ["sites-summary"], queryFn: () => api.get<SiteSummary[]>("/sites/summary"), refetchInterval: 15000 });
   const summary = summaries.data?.find((item) => item.site_id === site.id);
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <section aria-label={t("Site araçları")} className="overflow-hidden rounded-lg border border-line bg-surface">
         <SiteToolGrid site={site} summary={summary} options={options} />
       </section>
@@ -556,7 +556,7 @@ export function SiteDetailPage() {
 
   return (
     <>
-      <Link to="/sites" className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink">
+      <Link to="/sites" className="mb-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-ink-2 hover:text-ink">
         <ArrowLeft className="size-3.5" /> {t("Siteler")}
       </Link>
       <header className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2">

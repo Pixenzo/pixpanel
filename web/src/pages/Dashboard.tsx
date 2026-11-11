@@ -25,11 +25,11 @@ function Channel({
   children: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[9.5rem_1fr] items-center gap-4 border-b border-line px-4 py-3 last:border-b-0 max-sm:grid-cols-1 max-sm:gap-1">
+    <div className="grid grid-cols-[9.5rem_1fr] items-center gap-4 border-b border-line px-4 sm:px-6 py-3 last:border-b-0 max-sm:grid-cols-1 max-sm:gap-1">
       <div>
-        <p className="text-[13px] text-ink-2">{name}</p>
+        <p className="text-[13.5px] text-ink-2">{name}</p>
         <p className="tabular font-mono text-[20px] leading-tight font-medium">{value}</p>
-        <p className="tabular text-[12.5px] text-ink-3">{detail}</p>
+        <p className="tabular text-[13px] text-ink-3">{detail}</p>
       </div>
       {children}
     </div>
@@ -108,7 +108,7 @@ function ArchiveChannels({ range }: { range: Exclude<Range, "live"> }) {
   const points = archive.data;
   if (points.length < 2) {
     return (
-      <p className="px-4 py-8 text-ink-2">
+      <p className="px-4 sm:px-6 py-8 text-ink-2">
         {t("Bu aralık için henüz yeterli veri yok. Panel sunucu yükünü dakikada bir kaydeder; grafik zamanla dolar.")}
       </p>
     );
@@ -143,7 +143,7 @@ function ArchiveChannels({ range }: { range: Exclude<Range, "live"> }) {
       >
         <Trace label={t("Ağ trafiği")} values={received} secondary={sent} color="--warn" {...shared} />
       </Channel>
-      <div className="tabular flex justify-between gap-3 border-t border-line px-4 py-2 text-[12.5px] text-ink-3">
+      <div className="tabular flex justify-between gap-3 border-t border-line px-4 sm:px-6 py-2 text-[13px] text-ink-3">
         <span>{formatDateTime(points[0].ts)}</span>
         <span className={at ? "font-medium text-ink" : undefined}>{at ? formatDateTime(at.ts) : t("Bir ana bakmak için grafiğin üzerinde gezin")}</span>
         <span>{formatDateTime(points[points.length - 1].ts)}</span>
@@ -156,19 +156,19 @@ function Disks({ overview }: { overview: Overview }) {
   const swap = overview.current;
   return (
     <Panel title={t("Depolama")}>
-      <ul className="flex flex-col gap-4">
+      <ul className="flex flex-col gap-5">
         {overview.disks.map((disk) => {
           const percent = (disk.used / disk.total) * 100;
           return (
             <li key={disk.mount} className="flex flex-col gap-1.5">
               <div className="flex items-baseline justify-between gap-3">
                 <Mono className="font-medium">{disk.mount}</Mono>
-                <span className="tabular text-[13px] text-ink-2">
+                <span className="tabular text-[13.5px] text-ink-2">
                   {formatBytes(disk.used)} / {formatBytes(disk.total)}
                 </span>
               </div>
               <Meter value={percent} label={t("{mount} doluluk", { mount: disk.mount })} />
-              <p className="tabular text-[12.5px] text-ink-3">
+              <p className="tabular text-[13px] text-ink-3">
                 {t("{free} boş, {type}", { free: formatBytes(disk.available), type: disk.fs_type })}
               </p>
             </li>
@@ -178,7 +178,7 @@ function Disks({ overview }: { overview: Overview }) {
           <li className="flex flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-3">
               <span className="font-medium">{t("Takas alanı")}</span>
-              <span className="tabular text-[13px] text-ink-2">
+              <span className="tabular text-[13.5px] text-ink-2">
                 {formatBytes(swap.swap_used)} / {formatBytes(swap.swap_total)}
               </span>
             </div>
@@ -226,7 +226,7 @@ function TopProcesses() {
       flush
       title={t("En çok kaynak kullanan süreçler")}
       actions={
-        <Link to="/processes" className="text-[13px] font-medium text-accent hover:underline">
+        <Link to="/processes" className="text-[13.5px] font-medium text-accent hover:underline">
           {t("Tüm süreçler")}
         </Link>
       }
@@ -245,7 +245,7 @@ function TopProcesses() {
           {top.map((process) => (
             <tr key={process.pid}>
               <Td className="max-w-0 w-full">
-                <span className="block truncate font-mono text-[12.5px]" title={process.command}>
+                <span className="block truncate font-mono text-[13px]" title={process.command}>
                   {process.command}
                 </span>
               </Td>
@@ -284,7 +284,7 @@ export function DashboardPage() {
   const current = samples.at(-1) ?? overview.data.current;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <header className="mb-1">
         <h1 className="font-mono text-[22px] leading-tight font-medium tracking-[-0.01em]">{overview.data.host.hostname}</h1>
         <p className="mt-1 text-ink-2">
@@ -305,7 +305,7 @@ export function DashboardPage() {
                 type="button"
                 aria-pressed={range === item.id}
                 onClick={() => setRange(item.id)}
-                className={classNames("h-7 rounded px-2.5 text-[13px] font-medium transition-colors max-sm:h-9", range === item.id ? "bg-accent-soft text-accent" : "text-ink-2 hover:text-ink")}
+                className={classNames("h-7 rounded px-2.5 text-[13.5px] font-medium transition-colors max-sm:h-9", range === item.id ? "bg-accent-soft text-accent" : "text-ink-2 hover:text-ink")}
               >
                 {t(item.label)}
               </button>

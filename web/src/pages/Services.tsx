@@ -91,7 +91,7 @@ export function ServicesPage() {
               <Checkbox label={t("Yalnızca çalışanlar")} checked={onlyRunning} onChange={(event) => setOnlyRunning(event.target.checked)} />
             </div>
           }
-          actions={<span className="tabular text-[13px] text-ink-3">{t("{count} servis", { count: filtered.length })}</span>}
+          actions={<span className="tabular text-[13.5px] text-ink-3">{t("{count} servis", { count: filtered.length })}</span>}
         >
           <Table>
             <thead>
@@ -112,7 +112,7 @@ export function ServicesPage() {
                   <tr key={service.name} className="hover:bg-sunken/50">
                     <Td>
                       <Mono className="font-medium">{service.name.replace(/\.service$/, "")}</Mono>
-                      <p className="max-w-[60ch] truncate text-[12.5px] text-ink-3">{service.description}</p>
+                      <p className="max-w-[60ch] truncate text-[13px] text-ink-3">{service.description}</p>
                     </Td>
                     <Td className="whitespace-nowrap">
                       <Status tone={state.tone}>{state.label}</Status>
@@ -152,7 +152,7 @@ export function ServicesPage() {
               })}
             </tbody>
           </Table>
-          {filtered.length === 0 && <p className="px-4 py-8 text-ink-2">{t("Aramanıza uyan servis yok.")}</p>}
+          {filtered.length === 0 && <p className="px-4 sm:px-6 py-8 text-ink-2">{t("Aramanıza uyan servis yok.")}</p>}
         </Panel>
       )}
     </>

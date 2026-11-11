@@ -24,7 +24,7 @@ function SourceList({ title, items, selected, onToggle }: { title: string; items
   if (items.length === 0) return null;
   return (
     <fieldset>
-      <legend className="mb-2 text-[13px] font-medium text-ink-2">{title}</legend>
+      <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{title}</legend>
       <div className="flex flex-col gap-2">
         {items.map((item) => (
           <Checkbox key={item.id} label={item.name} checked={selected.includes(item.id)} onChange={(event) => onToggle(item.id, event.target.checked)} />
@@ -75,7 +75,7 @@ function RunModal({ data, onClose }: { data: MyBackups; onClose: () => void }) {
         <SourceList title={t("Siteler")} items={data.sites} selected={sites} onToggle={toggle(setSites)} />
         <SourceList title={t("Veritabanları")} items={data.databases} selected={databases} onToggle={toggle(setDatabases)} />
         <SourceList title={t("Posta")} items={data.mail_domains} selected={mail} onToggle={toggle(setMail)} />
-        <p className="text-[13px] text-ink-2">
+        <p className="text-[13.5px] text-ink-2">
           {t("Elle aldığınız yedekler siz silene kadar saklanır; en çok {limit} tane saklayabilirsiniz ({count} tane var).", {
             limit: data.manual_limit,
             count: data.manual_count,
@@ -113,7 +113,7 @@ function RestoreModal({ snapshot, onClose }: { snapshot: MySnapshot; onClose: ()
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <p className="text-ink-2">
           {t("{when} alınan yedekteki {what} şimdikinin üzerine yazılır. Yedekten sonra yapılan değişiklikler kaybolur.", {
             when: formatDateTime(snapshot.time),
@@ -220,7 +220,7 @@ export function MyBackupsPage() {
                       </Td>
                       <Td>
                         <Badge>{t(view.label)}</Badge>
-                        <span className="ml-2 text-[12.5px] text-ink-3">{snapshot.manual ? t("elle alındı") : t("düzenli yedek")}</span>
+                        <span className="ml-2 text-[13px] text-ink-3">{snapshot.manual ? t("elle alındı") : t("düzenli yedek")}</span>
                       </Td>
                       <Td className="whitespace-nowrap text-ink-2" >
                         <span title={formatDateTime(snapshot.time)}>{formatRelative(snapshot.time)}</span>

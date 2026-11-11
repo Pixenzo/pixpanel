@@ -77,7 +77,7 @@ function SourceGroup({
             <>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <SearchInput aria-label={t("{title} içinde ara", { title })} placeholder={t("Ara")} value={query} onChange={(event) => setQuery(event.target.value)} />
-                <span className="text-[12.5px] text-ink-3">{t("{n} seçili", { n: selected.length })}</span>
+                <span className="text-[13px] text-ink-3">{t("{n} seçili", { n: selected.length })}</span>
               </div>
               <ul className="max-h-48 overflow-y-auto rounded-md border border-line">
                 {visible.length === 0 && <li className="px-3 py-2 text-ink-3">{t("Eşleşen sonuç yok.")}</li>}
@@ -86,7 +86,7 @@ function SourceGroup({
                     <label className="flex items-center gap-2.5">
                       <input type="checkbox" className="size-4 accent-(--accent)" checked={selected.includes(item.id)} onChange={(event) => toggle(item.id, event.target.checked)} />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      <span className="shrink-0 text-[12.5px] text-ink-3">{item.hint}</span>
+                      <span className="shrink-0 text-[13px] text-ink-3">{item.hint}</span>
                     </label>
                   </li>
                 ))}

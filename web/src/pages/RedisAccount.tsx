@@ -32,9 +32,9 @@ function CopyField({ label, value, hint, secret }: { label: string; value: strin
   }
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[13px] font-medium text-ink-2">{label}</p>
+      <p className="text-[13.5px] font-medium text-ink-2">{label}</p>
       <div className="flex items-start gap-1">
-        <code className="min-w-0 flex-1 rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[12.5px] break-all whitespace-pre-wrap select-all">
+        <code className="min-w-0 flex-1 rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[13px] break-all whitespace-pre-wrap select-all">
           {shown ? value : "•".repeat(24)}
         </code>
         {secret && (
@@ -46,7 +46,7 @@ function CopyField({ label, value, hint, secret }: { label: string; value: strin
           {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
         </IconButton>
       </div>
-      {hint && <p className="max-w-[75ch] text-[12.5px] text-ink-3">{hint}</p>}
+      {hint && <p className="max-w-[75ch] text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }
@@ -101,23 +101,23 @@ function ConnectionTab({ instance }: { instance: RedisAccountInstance }) {
   const wordpress = `define('WP_REDIS_HOST', '127.0.0.1');\ndefine('WP_REDIS_PORT', ${instance.port});\ndefine('WP_REDIS_PASSWORD', '${password}');`;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel title={t("Durum")}>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           {instance.running ? <Status tone="ok">{t("Çalışıyor")}</Status> : <Status tone="bad">{t("Durmuş")}</Status>}
-          {instance.version !== "" && <span className="text-[13px] text-ink-2">Redis {instance.version}</span>}
-          {instance.keys !== null && <span className="text-[13px] text-ink-2">{t("{count} anahtar", { count: instance.keys })}</span>}
+          {instance.version !== "" && <span className="text-[13.5px] text-ink-2">Redis {instance.version}</span>}
+          {instance.keys !== null && <span className="text-[13.5px] text-ink-2">{t("{count} anahtar", { count: instance.keys })}</span>}
         </div>
         {instance.used_memory !== null && (
           <div className="mt-4 max-w-md">
-            <div className="mb-1 flex items-baseline justify-between gap-3 text-[13px]">
+            <div className="mb-1 flex items-baseline justify-between gap-3 text-[13.5px]">
               <span className="text-ink-2">{t("Bellek")}</span>
               <span className="tabular font-mono">
                 {formatBytes(instance.used_memory)} / {formatBytes(limit, 0)}
               </span>
             </div>
             <Meter value={(instance.used_memory / limit) * 100} label={t("Bellek")} />
-            <p className="mt-2 text-[12.5px] text-ink-3">{t("Sınır dolunca en uzun süredir kullanılmayan anahtarlar kendiliğinden atılır. Sınırı sunucu yöneticisi belirler.")}</p>
+            <p className="mt-2 text-[13px] text-ink-3">{t("Sınır dolunca en uzun süredir kullanılmayan anahtarlar kendiliğinden atılır. Sınırı sunucu yöneticisi belirler.")}</p>
           </div>
         )}
       </Panel>
@@ -136,7 +136,7 @@ function ConnectionTab({ instance }: { instance: RedisAccountInstance }) {
           <CopyField label={t("Laravel (.env)")} value={laravel} secret />
           <CopyField label={t("WordPress (wp-config.php)")} value={wordpress} secret hint={t("Redis Object Cache gibi bir eklentiyle birlikte kullanılır.")} />
         </div>
-        <p className="mt-4 max-w-[75ch] text-[12.5px] text-ink-3">
+        <p className="mt-4 max-w-[75ch] text-[13px] text-ink-3">
           {t("Birden çok siteniz aynı Redis'i kullanıyorsa her birine ayrı veritabanı numarası (0–15) verin; anahtarları birbirine karışmaz.")}
         </p>
       </Panel>
@@ -248,7 +248,7 @@ export function AccountRedisPage() {
           }
         />
         {enable.isError && (
-          <div className="px-4 pb-4">
+          <div className="px-4 sm:px-6 pb-4">
             <ErrorBlock message={errorMessage(enable.error)} />
           </div>
         )}
@@ -301,7 +301,7 @@ function MemoryModal({ instance, maxMemory, onClose }: { instance: RedisAccountI
         </>
       }
     >
-      <form id="redis-memory-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="redis-memory-form" onSubmit={submit} className="flex flex-col gap-5">
         <Input
           label={t("Bellek sınırı (MB)")}
           type="number"
@@ -384,7 +384,7 @@ export function RedisAccountsPanel() {
                   </Td>
                   <Td align="right">{instance.keys ?? "—"}</Td>
                   <Td align="right">
-                    <span className="tabular font-mono text-[13px]">
+                    <span className="tabular font-mono text-[13.5px]">
                       {instance.used_memory === null ? "—" : formatBytes(instance.used_memory)} / {instance.memory_mb} MB
                     </span>
                   </Td>

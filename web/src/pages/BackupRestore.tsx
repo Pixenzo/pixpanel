@@ -95,7 +95,7 @@ function FileBrowser({
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
       <div className="flex min-w-0 flex-col gap-2">
-        <nav aria-label={t("Klasör yolu")} className="flex min-h-6 flex-wrap items-center gap-1 text-[13px]">
+        <nav aria-label={t("Klasör yolu")} className="flex min-h-6 flex-wrap items-center gap-1 text-[13.5px]">
           {crumbs.map((crumb, index) => (
             <span key={crumb.path} className="flex items-center gap-1">
               {index > 0 && <ChevronRight aria-hidden className="size-3.5 text-ink-3" />}
@@ -118,7 +118,7 @@ function FileBrowser({
           ) : !data ? (
             <LoadingBlock />
           ) : data.entries.length === 0 ? (
-            <p className="px-4 py-6 text-ink-3">{t("Bu klasör boş.")}</p>
+            <p className="px-4 sm:px-6 py-6 text-ink-3">{t("Bu klasör boş.")}</p>
           ) : (
             <ul className={classNames(query.isFetching && "opacity-60 transition-opacity")}>
               {data.entries.map((entry) => (
@@ -138,8 +138,8 @@ function FileBrowser({
                   ) : (
                     <span className="min-w-0 flex-1 truncate">{entry.name}</span>
                   )}
-                  <span className="w-20 shrink-0 text-right text-[12.5px] text-ink-3 tabular-nums">{entry.kind === "file" ? formatBytes(entry.size) : ""}</span>
-                  <span className="hidden w-32 shrink-0 text-right text-[12.5px] text-ink-3 tabular-nums sm:block">{formatDateTime(entry.mtime)}</span>
+                  <span className="w-20 shrink-0 text-right text-[13px] text-ink-3 tabular-nums">{entry.kind === "file" ? formatBytes(entry.size) : ""}</span>
+                  <span className="hidden w-32 shrink-0 text-right text-[13px] text-ink-3 tabular-nums sm:block">{formatDateTime(entry.mtime)}</span>
                 </li>
               ))}
             </ul>
@@ -148,7 +148,7 @@ function FileBrowser({
       </div>
 
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-h-6 items-center justify-between text-[13px] font-medium text-ink-2">
+        <div className="flex min-h-6 items-center justify-between text-[13.5px] font-medium text-ink-2">
           <span>{t("Seçilenler ({n})", { n: picked.length })}</span>
           {picked.length > 0 && (
             <button type="button" onClick={() => onChange([])} className="text-accent hover:underline">
@@ -182,7 +182,7 @@ function Choice({ name, checked, onChange, children, hint, disabled }: { name: s
       <input type="radio" name={name} className="mt-1 accent-(--accent)" checked={checked} disabled={disabled} onChange={onChange} />
       <span>
         <span className="text-ink">{children}</span>
-        {hint && <span className="block text-[12.5px] text-ink-3">{hint}</span>}
+        {hint && <span className="block text-[13px] text-ink-3">{hint}</span>}
       </span>
     </label>
   );
@@ -410,7 +410,7 @@ export function RestoreWizard({ target, snapshot, sources, onClose }: { target: 
               />
             </div>
           )}
-          {problem && <p className="text-[12.5px] text-ink-3">{problem}</p>}
+          {problem && <p className="text-[13px] text-ink-3">{problem}</p>}
           {restore.isError && <Notice tone="bad">{errorMessage(restore.error)}</Notice>}
         </div>
       </div>

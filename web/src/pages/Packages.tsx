@@ -72,11 +72,11 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
         </>
       }
     >
-      <form id="package-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="package-form" onSubmit={submit} className="flex flex-col gap-5">
         <Input label={t("Paket adı")} value={name} onChange={(event) => setName(event.target.value)} placeholder={t("Başlangıç")} maxLength={60} autoFocus required />
         <fieldset>
-          <legend className="text-[13px] font-medium text-ink-2">{t("Sınırlar")}</legend>
-          <p className="mt-0.5 mb-3 text-[12.5px] text-ink-3">{t("Boş bıraktığınız alan sınırsız olur. 0 yazarsanız o kaynak pakette hiç bulunmaz.")}</p>
+          <legend className="text-[13.5px] font-medium text-ink-2">{t("Sınırlar")}</legend>
+          <p className="mt-0.5 mb-3 text-[13px] text-ink-3">{t("Boş bıraktığınız alan sınırsız olur. 0 yazarsanız o kaynak pakette hiç bulunmaz.")}</p>
           <div className="grid gap-3 sm:grid-cols-2">
             {LIMIT_FIELDS.map((field) => (
               <Input
@@ -93,7 +93,7 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
           </div>
         </fieldset>
         {pack && pack.accounts > 0 && (
-          <p className="rounded-md bg-sunken px-3 py-2 text-[13px] text-ink-2">
+          <p className="rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
             {t("Bu paketi {count} hesap kullanıyor. Sınırı düşürürseniz var olan kaynaklar silinmez; yalnızca yenisi açılamaz.", { count: pack.accounts })}
           </p>
         )}
@@ -234,7 +234,7 @@ function UsageRow({ label, used, limit, text }: { label: string; used: number; l
     <div>
       <div className="flex items-baseline justify-between gap-3">
         <dt className="text-ink-2">{label}</dt>
-        <dd className="tabular font-mono text-[13px]">{text}</dd>
+        <dd className="tabular font-mono text-[13.5px]">{text}</dd>
       </div>
       {limit !== null && limit > 0 && (
         <div className="mt-1">
@@ -286,10 +286,10 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
       </dl>
       <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
         <span className="text-ink-2">{t("Aylık trafik")}</span>
-        <span className="tabular font-mono text-[13px]">{formatBytes(data.traffic_bytes)}</span>
+        <span className="tabular font-mono text-[13.5px]">{formatBytes(data.traffic_bytes)}</span>
       </p>
       {data.disk_measured_at !== null && (
-        <p className="mt-3 text-[12.5px] text-ink-3">{t("Disk kullanımı saatte bir ölçülür; son ölçüm {when}.", { when: formatRelative(data.disk_measured_at) })}</p>
+        <p className="mt-3 text-[13px] text-ink-3">{t("Disk kullanımı saatte bir ölçülür; son ölçüm {when}.", { when: formatRelative(data.disk_measured_at) })}</p>
       )}
     </Panel>
   );

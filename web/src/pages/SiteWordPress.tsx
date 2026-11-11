@@ -117,7 +117,7 @@ function InstallProgress({ jobId, credentials, onClose }: { jobId: number; crede
   const [status, setStatus] = useState<string | null>(null);
   return (
     <Panel title={status === "success" ? t("WordPress kuruldu") : status === "failed" ? t("Kurulum tamamlanamadı") : t("WordPress kuruluyor")}>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <JobLog jobId={jobId} onDone={setStatus} />
         {status === "success" && (
           <div className="rounded-lg border border-line bg-sunken/60 p-3">
@@ -138,7 +138,7 @@ function InstallProgress({ jobId, credentials, onClose }: { jobId: number; crede
                 </IconButton>
               </dd>
             </dl>
-            <p className="mt-2 text-[13px] text-ink-2">{t("Bu sayfadan çıkınca parola bir daha gösterilmez.")}</p>
+            <p className="mt-2 text-[13.5px] text-ink-2">{t("Bu sayfadan çıkınca parola bir daha gösterilmez.")}</p>
           </div>
         )}
         {status && (
@@ -311,7 +311,7 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel>
         <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
           <div className="min-w-0 flex-1 basis-64">
@@ -347,17 +347,17 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
 
       <Panel flush title={t("Bakım ve güncelleme")}>
         <ul className="divide-y divide-line">
-          <li className="flex items-start gap-3 px-4 py-3">
+          <li className="flex items-start gap-3 px-4 sm:px-6 py-3">
             <div className="min-w-0 flex-1">
               <p className="font-medium">{t("Bakım kipi")}</p>
-              <p className="mt-0.5 text-[13px] text-ink-2">{t("Ziyaretçiler “kısa süreli bakım” iletisi görür; yöneticiler siteyi kullanmayı sürdürür.")}</p>
+              <p className="mt-0.5 text-[13.5px] text-ink-2">{t("Ziyaretçiler “kısa süreli bakım” iletisi görür; yöneticiler siteyi kullanmayı sürdürür.")}</p>
             </div>
             <Switch label={t("Bakım kipi")} checked={status.maintenance} disabled={settings.isPending} onChange={(next) => settings.mutate({ maintenance: next })} />
           </li>
-          <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-6 py-3">
             <div className="min-w-0 flex-1 basis-56">
               <p className="font-medium">{t("WordPress'in kendini güncellemesi")}</p>
-              <p className="mt-0.5 text-[13px] text-ink-2">{t("Güvenlik sürümlerinin kendiliğinden kurulması önerilir.")}</p>
+              <p className="mt-0.5 text-[13.5px] text-ink-2">{t("Güvenlik sürümlerinin kendiliğinden kurulması önerilir.")}</p>
             </div>
             <select
               aria-label={t("WordPress'in kendini güncellemesi")}
@@ -373,7 +373,7 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
               ))}
             </select>
           </li>
-          <li className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <li className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3">
             <p className="min-w-0 flex-1 basis-56 text-ink-2">{t("Bütün eklenti ve temaların kendiliğinden güncellenmesini tek seferde açabilirsiniz.")}</p>
             <Button size="sm" loading={settings.isPending} onClick={() => settings.mutate({ auto_plugins: true, auto_themes: true })}>
               {t("Hepsinde aç")}

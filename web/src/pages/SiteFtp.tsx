@@ -38,7 +38,7 @@ function PasswordInput({ value, onChange, label, hint }: { value: string; onChan
   return (
     <div className="flex items-end gap-2">
       <div className="min-w-0 flex-1">
-        <Input label={label} value={value} onChange={(event) => onChange(event.target.value)} className="font-mono text-[13px]" autoComplete="off" spellCheck={false} required hint={hint} />
+        <Input label={label} value={value} onChange={(event) => onChange(event.target.value)} className="font-mono text-[13.5px]" autoComplete="off" spellCheck={false} required hint={hint} />
       </div>
       <div className={hint ? "mb-[1.6rem] flex gap-1" : "flex gap-1"}>
         <IconButton label={t("Rastgele üret")} onClick={() => onChange(randomPassword())}>
@@ -86,7 +86,7 @@ function AccountModal({ site, account, onClose, onSaved }: { site: Site; account
         </>
       }
     >
-      <form id="ftp-account" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="ftp-account" onSubmit={submit} className="flex flex-col gap-5">
         {!account && (
           <Input
             label={t("Kullanıcı adı")}
@@ -94,7 +94,7 @@ function AccountModal({ site, account, onClose, onSaved }: { site: Site; account
             onChange={(event) => setName(event.target.value.toLowerCase())}
             placeholder={`${site.owner}_ftp`}
             hint={t("Sunucu genelinde benzersiz olmalı; küçük harf, rakam, _ - . kullanın.")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             autoComplete="off"
             spellCheck={false}
             autoFocus
@@ -113,7 +113,7 @@ function AccountModal({ site, account, onClose, onSaved }: { site: Site; account
           onChange={(event) => setSubdir(event.target.value)}
           placeholder={t("boş: sitenin bütün klasörü")}
           hint={t("Hesap bu klasörün dışına çıkamaz. Örnek: {dir}. Klasör önceden var olmalı.", { dir: site.kind === "node" ? "public" : `${site.public_dir}/yuklemeler` })}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           spellCheck={false}
         />
         {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
@@ -177,9 +177,9 @@ export function FtpSection({ site }: { site: Site }) {
 
   const root = `sites/${site.domain}`;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {!data.running && (
-        <div role="alert" className="rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-warn">
+        <div role="alert" className="rounded-lg border border-warn/40 bg-warn-soft px-4 sm:px-6 py-3 text-warn">
           {t("FTP servisi çalışmıyor; hesaplar bağlanamaz. Servisler sayfasından başlatın.")}
         </div>
       )}

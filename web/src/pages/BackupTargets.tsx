@@ -68,7 +68,7 @@ function CheckResult({ target, checking }: { target: Target; checking: boolean }
   return (
     <div className="flex flex-col gap-1">
       <Status tone="bad">{t("Bağlanılamadı")}</Status>
-      {target.last_check_error && <p className="text-[13px] break-words text-bad">{target.last_check_error}</p>}
+      {target.last_check_error && <p className="text-[13.5px] break-words text-bad">{target.last_check_error}</p>}
     </div>
   );
 }
@@ -258,7 +258,7 @@ export function TargetModal({ editing, targets, onClose }: { editing: Target | n
   if (createdId !== null) {
     return (
       <Modal open onClose={onClose} wide title={t("Yedek yeri eklendi")} footer={<Button variant="primary" onClick={onClose}>{t("Bitti")}</Button>}>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           {created?.kind === "sftp" && <SftpKeyHint publicKey={created.public_key} />}
           {created?.kind === "sftp" && (
             <div>
@@ -295,7 +295,7 @@ export function TargetModal({ editing, targets, onClose }: { editing: Target | n
       }
     >
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           if (!problem) save.mutate();
@@ -318,7 +318,7 @@ export function TargetModal({ editing, targets, onClose }: { editing: Target | n
                   {card.icon}
                   {targetKindLabel(card.id)}
                 </span>
-                <span className="text-[12.5px] text-ink-2">{t(card.description)}</span>
+                <span className="text-[13px] text-ink-2">{t(card.description)}</span>
               </label>
             ))}
           </div>
@@ -476,7 +476,7 @@ function TargetCard({
   deleting: boolean;
 }) {
   return (
-    <li className="flex flex-col gap-3 border-b border-line px-4 py-4 last:border-b-0">
+    <li className="flex flex-col gap-3 border-b border-line px-4 sm:px-6 py-4 last:border-b-0">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -513,14 +513,14 @@ function TargetCard({
         ) : (
           <div className="flex flex-col gap-0.5">
             <CheckResult target={target} checking={false} />
-            {target.last_check_at !== null && target.last_check_ok && <span className="text-[12.5px] text-ink-3">{formatRelative(target.last_check_at)}</span>}
+            {target.last_check_at !== null && target.last_check_ok && <span className="text-[13px] text-ink-3">{formatRelative(target.last_check_at)}</span>}
           </div>
         )}
         <span className="text-ink-2">{target.plan_count > 0 ? t("{n} planda kullanılıyor", { n: target.plan_count }) : t("Hiçbir planda kullanılmıyor")}</span>
       </div>
 
       {target.kind === "local" && (
-        <Notice tone="warn" className="text-[13px]">
+        <Notice tone="warn" className="text-[13.5px]">
           {t("Bu yedekler sitelerle aynı sunucuda duruyor; sunucu ya da diski kaybedilirse yedekler de gider. Asıl yedek için SFTP ya da S3 kullanın.")}
         </Notice>
       )}

@@ -81,7 +81,7 @@ function JobModal({ job, accounts, onClose }: { job: CronJob | null; accounts: s
         </>
       }
     >
-      <form id="cron-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="cron-form" onSubmit={submit} className="flex flex-col gap-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <Select label={t("Ne zaman")} value={presetValue} onChange={(event) => event.target.value !== "custom" && setSchedule(event.target.value)}>
             {presets.map((item) => (
@@ -96,7 +96,7 @@ function JobModal({ job, accounts, onClose }: { job: CronJob | null; accounts: s
             value={schedule}
             onChange={(event) => setSchedule(event.target.value)}
             hint={t("dakika saat gün ay haftanın-günü")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             spellCheck={false}
             required
           />
@@ -106,7 +106,7 @@ function JobModal({ job, accounts, onClose }: { job: CronJob | null; accounts: s
           value={command}
           onChange={(event) => setCommand(event.target.value)}
           hint={t("Tek satır. Örnek: php /home/hesap/sites/ornek.com/artisan schedule:run")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           spellCheck={false}
           autoFocus
           required
@@ -217,13 +217,13 @@ export function CronPage() {
                     </Td>
                     <Td className="whitespace-nowrap">
                       <Mono className="font-medium">{job.schedule}</Mono>
-                      {describeSchedule(job.schedule) && <p className="text-[12.5px] text-ink-3">{describeSchedule(job.schedule)}</p>}
+                      {describeSchedule(job.schedule) && <p className="text-[13px] text-ink-3">{describeSchedule(job.schedule)}</p>}
                     </Td>
                     <Td className="max-w-0">
-                      <span className="block truncate font-mono text-[12.5px]" title={job.command}>
+                      <span className="block truncate font-mono text-[13px]" title={job.command}>
                         {job.command}
                       </span>
-                      {job.comment && <p className="truncate text-[12.5px] text-ink-3">{job.comment}</p>}
+                      {job.comment && <p className="truncate text-[13px] text-ink-3">{job.comment}</p>}
                     </Td>
                     {isAdmin && (
                       <Td>

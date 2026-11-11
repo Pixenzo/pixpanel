@@ -132,7 +132,7 @@ export function LogsPage() {
             const element = event.currentTarget;
             pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
           }}
-          className="min-h-0 flex-1 overflow-auto bg-sunken/50 px-3 py-2 font-mono text-[12.5px] leading-relaxed"
+          className="min-h-0 flex-1 overflow-auto bg-sunken/50 px-3 py-2 font-mono text-[13px] leading-relaxed"
         >
           {log.isError && <ErrorBlock message={errorMessage(log.error)} />}
           {log.data && !log.data.exists && <p className="font-sans text-ink-2">{t("Bu günlük henüz oluşmadı; ilk kayıt düştüğünde burada görünür.")}</p>}

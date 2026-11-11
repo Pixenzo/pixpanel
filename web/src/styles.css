@@ -14,11 +14,11 @@
 
 /* Renk belirteçleri: açık tema */
 :root {
-  --bg: #f2f5f8;
+  --bg: #f3f5f8;
   --surface: #ffffff;
-  --sunken: #e8edf2;
-  --line: #d8dfe7;
-  --line-strong: #bcc7d2;
+  --sunken: #eef1f5;
+  --line: #e1e6ec;
+  --line-strong: #c5ced8;
   --ink: #15202b;
   --ink-2: #485868;
   --ink-3: #788795;
@@ -34,7 +34,7 @@
   --bad-soft: #f9e1de;
   --idle: #9aa7b4;
   --shadow-pop: 0 12px 32px -8px rgb(21 32 43 / 0.22), 0 2px 6px rgb(21 32 43 / 0.08);
-  --shadow-card: 0 1px 2px rgb(21 32 43 / 0.05);
+  --shadow-card: 0 1px 2px rgb(21 32 43 / 0.04), 0 2px 8px -2px rgb(21 32 43 / 0.06);
   /* Grafik serisi rengi: vurgu renginin daha doygun tonu; renk körlüğü ve karşıtlık denetiminden geçirildi. */
   --chart-1: #0b7ea3;
   /* Yan gezinme iki temada da koyudur; içerik alanından net ayrılır. */
@@ -111,15 +111,28 @@
 @layer base {
   html {
     font-family: var(--font-sans);
-    font-size: 14px;
-    line-height: 1.45;
+    /* Boşluklar ve denetim boyutları bu tabana göre ölçeklenir. */
+    font-size: 16px;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   body {
     background: var(--bg);
     color: var(--ink);
     min-height: 100dvh;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   /* Sayılar tablo ve göstergelerde hizalı dursun */
@@ -141,6 +154,12 @@
   [role="menuitem"] {
     cursor: pointer;
   }
+}
+
+/* Alt alta dizilen paneller arasında nefes payı. Esnek ya da ızgara kapsayıcılar aralığı
+   kendileri verir; kural yalnızca düz akışta art arda gelen panellere uygulanır. */
+:where(:not(.flex):not(.grid)) > .px-panel + .px-panel {
+  margin-top: 1.5rem;
 }
 
 /* Kaydırma çubuğu gizli, kaydırma açık (sekme şeritleri gibi yatay listeler için). */

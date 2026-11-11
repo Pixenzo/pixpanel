@@ -52,7 +52,7 @@ function percentText(value: number | null): string {
 function Figure({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>
-      <dt className="text-[12.5px] text-ink-3">{label}</dt>
+      <dt className="text-[13px] text-ink-3">{label}</dt>
       <dd className={classNames("tabular font-mono text-[18px] leading-tight font-medium", tone)}>{value}</dd>
     </div>
   );
@@ -94,7 +94,7 @@ export function UptimePanel({ siteId }: { siteId: number }) {
     <Panel
       title={t("Erişilebilirlik")}
       actions={
-        <span className={classNames("text-[13px] font-medium", down ? "text-bad" : "text-ok")}>
+        <span className={classNames("text-[13.5px] font-medium", down ? "text-bad" : "text-ok")}>
           {down ? t("Şu an yanıt vermiyor") : t("Şu an yayında")}
         </span>
       }
@@ -109,7 +109,7 @@ export function UptimePanel({ siteId }: { siteId: number }) {
           <span key={bar.at} title={barTitle(bar)} className={classNames("min-w-0 flex-1 rounded-[2px]", barTone(bar))} />
         ))}
       </div>
-      <div className="mt-1.5 flex justify-between text-[12.5px] text-ink-3">
+      <div className="mt-1.5 flex justify-between text-[13px] text-ink-3">
         <span>{t("24 saat önce")}</span>
         <span>{t("şimdi")}</span>
       </div>

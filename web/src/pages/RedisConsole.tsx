@@ -200,7 +200,7 @@ export function RedisConsole({ info }: { info: BrowserInfo }) {
       <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-line bg-surface">
         <div
           ref={screenRef}
-          className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-[12.5px] leading-relaxed"
+          className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed"
           onClick={() => {
             // Metin seçilirken odak çalınmasın.
             if (!window.getSelection()?.toString()) inputRef.current?.focus();
@@ -218,7 +218,7 @@ export function RedisConsole({ info }: { info: BrowserInfo }) {
                       event.stopPropagation();
                       fillExample(example);
                     }}
-                    className="rounded-md border border-line-strong bg-surface px-2.5 py-1 font-mono text-[12.5px] transition-colors hover:bg-sunken"
+                    className="rounded-md border border-line-strong bg-surface px-2.5 py-1 font-mono text-[13px] transition-colors hover:bg-sunken"
                   >
                     {example}
                   </button>
@@ -231,9 +231,9 @@ export function RedisConsole({ info }: { info: BrowserInfo }) {
         </div>
 
         <div className="border-t border-line px-3 py-2">
-          <p className="mb-1.5 text-[12.5px] text-ink-3">{t("Sunucuyu durduran ya da yapılandırmayı değiştiren komutlar konsoldan çalıştırılamaz; yapılan her komut denetim günlüğüne yazılır.")}</p>
+          <p className="mb-1.5 text-[13px] text-ink-3">{t("Sunucuyu durduran ya da yapılandırmayı değiştiren komutlar konsoldan çalıştırılamaz; yapılan her komut denetim günlüğüne yazılır.")}</p>
           <label className="flex items-center gap-2">
-            <span className="shrink-0 font-mono text-[12.5px] text-accent">{prompt}</span>
+            <span className="shrink-0 font-mono text-[13px] text-accent">{prompt}</span>
             <input
               ref={inputRef}
               value={input}
@@ -244,7 +244,7 @@ export function RedisConsole({ info }: { info: BrowserInfo }) {
               readOnly={running}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={onKeyDown}
-              className="h-8 min-w-0 flex-1 bg-transparent font-mono text-[12.5px] text-ink outline-none placeholder:text-ink-3"
+              className="h-8 min-w-0 flex-1 bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-ink-3"
             />
             {running && <Spinner className="text-ink-3" />}
           </label>

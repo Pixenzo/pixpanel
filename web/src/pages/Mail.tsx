@@ -218,7 +218,7 @@ function CreateDomainModal({ onClose, overview, isAdmin }: { onClose: () => void
         </>
       }
     >
-      <form id="create-mail-domain" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="create-mail-domain" onSubmit={submit} className="flex flex-col gap-5">
         {nothingToAdd ? (
           <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
             {t("Posta açabileceğiniz bir alan adı yok. Posta, hesabınızdaki sitelerin alan adlarıyla kullanılır;")}{" "}
@@ -235,7 +235,7 @@ function CreateDomainModal({ onClose, overview, isAdmin }: { onClose: () => void
               onChange={(event) => setDomain(event.target.value)}
               list="mail-available-domains"
               placeholder="ornek.com"
-              className="font-mono text-[13px]"
+              className="font-mono text-[13.5px]"
               autoCapitalize="none"
               spellCheck={false}
               autoFocus
@@ -275,17 +275,17 @@ function CreateDomainModal({ onClose, overview, isAdmin }: { onClose: () => void
 
 function ServiceStrip({ services, hostname }: { services: MailService[]; hostname: string }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-lg border border-line bg-surface px-4 py-2.5">
+    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-lg border border-line bg-surface px-4 sm:px-6 py-2.5">
       <ul aria-label={t("Posta servisleri")} className="flex flex-wrap items-center gap-x-5 gap-y-1">
         {services.map((service) => (
-          <li key={service.name} className="flex items-center gap-2 text-[13px]">
+          <li key={service.name} className="flex items-center gap-2 text-[13.5px]">
             <span className="text-ink-2">{service.label}</span>
             <Status tone={service.running ? "ok" : "bad"}>{service.running ? t("çalışıyor") : t("durdu")}</Status>
           </li>
         ))}
       </ul>
       {hostname && (
-        <p className="ml-auto text-[13px] text-ink-2">
+        <p className="ml-auto text-[13.5px] text-ink-2">
           {t("Sunucu adı")}: <Mono>{hostname}</Mono>
         </p>
       )}
@@ -323,11 +323,11 @@ function DomainsTab({ overview, isAdmin, showOwner, onAdd }: { overview: MailOve
               {overview.domains.map((domain) => (
                 <tr key={domain.id} className="hover:bg-sunken/50">
                   <Td>
-                    <Link to={`/mail/${domain.id}`} className="font-mono text-[13.5px] font-medium hover:text-accent hover:underline">
+                    <Link to={`/mail/${domain.id}`} className="font-mono text-[14px] font-medium hover:text-accent hover:underline">
                       {domain.domain}
                     </Link>
                     {domain.catch_all && (
-                      <p className="text-[12px] text-ink-3">
+                      <p className="text-[12.5px] text-ink-3">
                         {t("Hepsini yakala")}: <Mono>{domain.catch_all}</Mono>
                       </p>
                     )}
@@ -406,7 +406,7 @@ function QueueTab() {
         </>
       }
     >
-      <p className="border-b border-line px-4 py-2.5 text-[13px] text-ink-2">
+      <p className="border-b border-line px-4 sm:px-6 py-2.5 text-[13.5px] text-ink-2">
         {t("Kuyrukta, henüz teslim edilemeyen iletiler bekler. Sistem bunları belirli aralıklarla kendiliğinden yeniden dener; liste 15 saniyede bir yenilenir.")}
       </p>
       {queue.isPending && <LoadingBlock />}
@@ -448,7 +448,7 @@ function QueueTab() {
                         <p className="truncate">
                           <Mono>{recipient.address}</Mono>
                         </p>
-                        {recipient.reason && <p className="truncate text-[12.5px] text-ink-3">{recipient.reason}</p>}
+                        {recipient.reason && <p className="truncate text-[13px] text-ink-3">{recipient.reason}</p>}
                       </li>
                     ))}
                   </ul>
@@ -537,7 +537,7 @@ function SpamForm({ settings }: { settings: MailSettings }) {
           hint={t(
             "MX kayıtlarınız bu adı göstermelidir. Bu adla bir site açıp Let's Encrypt sertifikası alırsanız posta servisleri de o sertifikayı kullanır.",
           )}
-          className="max-w-md font-mono text-[13px]"
+          className="max-w-md font-mono text-[13.5px]"
           autoCapitalize="none"
           spellCheck={false}
           required
@@ -545,8 +545,8 @@ function SpamForm({ settings }: { settings: MailSettings }) {
       </Panel>
 
       <Panel title={t("Puanlama eşikleri")}>
-        <div className="flex flex-col gap-4">
-          <p className="max-w-[75ch] text-[13px] text-ink-2">
+        <div className="flex flex-col gap-5">
+          <p className="max-w-[75ch] text-[13.5px] text-ink-2">
             {t("Her gelen ileti bir istenmeyen posta puanı alır; puan yükseldikçe ileti daha şüphelidir. Eşikler bu puanlara göre ne yapılacağını belirler.")}
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -656,12 +656,12 @@ function ActivityTab() {
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
           {summary.map((item) => (
             <div key={item.label}>
-              <dt className="text-[12.5px] text-ink-2">{item.label}</dt>
+              <dt className="text-[13px] text-ink-2">{item.label}</dt>
               <dd className="tabular text-[20px] leading-tight font-semibold">{item.value === null ? "—" : item.value.toLocaleString("tr-TR")}</dd>
             </div>
           ))}
@@ -699,7 +699,7 @@ function ActivityTab() {
                       <p className="truncate">
                         <Mono>{message.sender || t("(boş gönderen)")}</Mono>
                       </p>
-                      {message.ip && <p className="truncate text-[12px] text-ink-3">{message.ip}</p>}
+                      {message.ip && <p className="truncate text-[12.5px] text-ink-3">{message.ip}</p>}
                     </Td>
                     <Td className="max-w-56">
                       {recipients.length === 0 ? (
@@ -819,7 +819,7 @@ export function MailPage() {
         }
       />
       {overview.data && !overview.data.webmail && isAdmin && (
-        <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-2.5 text-[13px] text-ink-2">
+        <p className="mb-4 rounded-lg border border-line bg-surface px-4 sm:px-6 py-2.5 text-[13.5px] text-ink-2">
           {t("Kutu sahiplerinin postalarına tarayıcıdan erişebilmesi için web postasını (Roundcube) kurabilirsiniz.")}{" "}
           <Link to="/components" className="font-medium text-accent hover:underline">
             {t("Bileşenler sayfasına git")}

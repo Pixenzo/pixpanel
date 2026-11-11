@@ -132,10 +132,10 @@ function NotificationForm({ initial }: { initial: NotificationSettingsData }) {
             placeholder="123456789"
             autoComplete="off"
             spellCheck={false}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
           />
         </div>
-        <div className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[13px] text-ink-2">
+        <div className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[13.5px] text-ink-2">
           <p className="mb-1 font-medium text-ink">{t("Nasıl ayarlanır?")}</p>
           <ol className="list-decimal space-y-0.5 pl-5">
             <li>{t("{bot} ile bir bot oluşturun ve verdiği anahtarı (token) kopyalayın.", { bot: "@BotFather" })}</li>
@@ -159,7 +159,7 @@ function NotificationForm({ initial }: { initial: NotificationSettingsData }) {
         <Button loading={test.isPending && test.variables === "telegram"} disabled={!telegramTestable} onClick={() => test.mutate("telegram")}>
           {t("Telegram denemesi gönder")}
         </Button>
-        {dirty && <span className="text-[12.5px] text-ink-3">{t("Denemeler kayıtlı ayarlarla yapılır; önce kaydedin.")}</span>}
+        {dirty && <span className="text-[13px] text-ink-3">{t("Denemeler kayıtlı ayarlarla yapılır; önce kaydedin.")}</span>}
       </div>
     </form>
   );

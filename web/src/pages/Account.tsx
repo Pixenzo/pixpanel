@@ -219,12 +219,12 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
         <div className="flex flex-col gap-3">
           <p className="text-ink-2">{t("Bu anahtar yalnızca şimdi gösterilir. Güvenli bir yere kaydedin; kaybederseniz yenisini oluşturmanız gerekir.")}</p>
           <div className="flex items-center gap-2 rounded-md border border-line bg-sunken p-2.5">
-            <code className="min-w-0 flex-1 font-mono text-[12.5px] break-all">{created}</code>
+            <code className="min-w-0 flex-1 font-mono text-[13px] break-all">{created}</code>
             <IconButton label={t("Kopyala")} onClick={() => void copy()}>
               <Copy className="size-4" />
             </IconButton>
           </div>
-          <p className="text-[12.5px] text-ink-3">
+          <p className="text-[13px] text-ink-3">
             {t("Kullanım:")} <code className="font-mono">Authorization: Bearer {created.slice(0, 8)}…</code>
           </p>
         </div>
@@ -252,7 +252,7 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
           event.preventDefault();
           create.mutate();
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
         <Input label={t("Ad")} value={name} onChange={(e) => setName(e.target.value)} hint={t("Anahtarı nerede kullandığınızı hatırlatacak bir ad")} maxLength={64} required />
         <Select label={t("Geçerlilik")} value={expiry} onChange={(e) => setExpiry(e.target.value)}>
@@ -367,7 +367,7 @@ export function AccountPage() {
   return (
     <>
       <PageHeader title={t("Hesabım")} description={t("Parolanız, iki adımlı doğrulamanız, bildirim tercihleriniz, açık oturumlarınız ve API anahtarlarınız.")} />
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {/* Yöneticinin sınırı yoktur; öteki hesaplar paketlerini ve ne kadarını kullandıklarını görür. */}
         {role !== "admin" && <UsagePanel path="/packages/usage" />}
         <PasswordPanel />

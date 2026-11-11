@@ -57,10 +57,10 @@ function CopyField({ label, value, hint, multiline }: { label: string; value: st
   }
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[13px] font-medium text-ink-2">{label}</p>
+      <p className="text-[13.5px] font-medium text-ink-2">{label}</p>
       <div className="flex items-start gap-2">
         <code
-          className={`min-w-0 flex-1 rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[12.5px] select-all ${multiline ? "break-all" : "truncate"}`}
+          className={`min-w-0 flex-1 rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[13px] select-all ${multiline ? "break-all" : "truncate"}`}
         >
           {value}
         </code>
@@ -68,7 +68,7 @@ function CopyField({ label, value, hint, multiline }: { label: string; value: st
           {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
         </IconButton>
       </div>
-      {hint && <p className="max-w-[75ch] text-[12.5px] text-ink-3">{hint}</p>}
+      {hint && <p className="max-w-[75ch] text-[13px] text-ink-3">{hint}</p>}
     </div>
   );
 }
@@ -103,7 +103,7 @@ function DeploymentLog({ siteId, deploymentId, onClose }: { siteId: number; depl
           <pre
             ref={box}
             tabIndex={0}
-            className="max-h-[52vh] overflow-auto rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[12.5px] leading-relaxed break-all whitespace-pre-wrap"
+            className="max-h-[52vh] overflow-auto rounded-md border border-line bg-sunken/60 px-3 py-2 font-mono text-[13px] leading-relaxed break-all whitespace-pre-wrap"
           >
             {detail.data?.log || t("Günlük henüz boş.")}
           </pre>
@@ -141,7 +141,7 @@ function SettingsForm({ site, config, onSaved }: { site: Site; config: GitConfig
         onChange={(event) => setRepoUrl(event.target.value)}
         placeholder="git@github.com:kullanici/depo.git"
         hint={t("Özel depolar için SSH adresini kullanın; herkese açık depolar için https adresi de olur.")}
-        className="font-mono text-[13px]"
+        className="font-mono text-[13.5px]"
         autoCapitalize="none"
         spellCheck={false}
         required
@@ -151,7 +151,7 @@ function SettingsForm({ site, config, onSaved }: { site: Site; config: GitConfig
         value={branch}
         onChange={(event) => setBranch(event.target.value)}
         hint={t("Yalnızca bu dala yapılan gönderimler yayınlanır.")}
-        className="max-w-xs font-mono text-[13px]"
+        className="max-w-xs font-mono text-[13.5px]"
         autoCapitalize="none"
         spellCheck={false}
         required
@@ -174,7 +174,7 @@ function SettingsForm({ site, config, onSaved }: { site: Site; config: GitConfig
           className="min-h-40"
           spellCheck={false}
         />
-        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+        <div className="flex flex-wrap items-center gap-2 text-[13.5px]">
           <span className="text-ink-2">{t("Hazır betik:")}</span>
           {scriptPresets.map((preset) => (
             <Button key={preset.id} size="sm" onClick={() => setScript(preset.script)}>
@@ -292,12 +292,12 @@ export function GitSection({ site }: { site: Site }) {
   const webhookUrl = `${window.location.origin}${webhookPath ?? ""}`;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate font-mono text-[13.5px] font-medium">{config.repo_url}</p>
-            <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-2">
+            <p className="truncate font-mono text-[14px] font-medium">{config.repo_url}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-ink-2">
               <span>
                 {t("Dal")}: <Mono>{config.branch}</Mono>
               </span>
@@ -344,7 +344,7 @@ export function GitSection({ site }: { site: Site }) {
                     {deployment.commit_hash ? (
                       <>
                         <p className="truncate">{deployment.commit_subject}</p>
-                        <p className="truncate text-[12.5px] text-ink-3">
+                        <p className="truncate text-[13px] text-ink-3">
                           <Mono>{deployment.commit_hash.slice(0, 8)}</Mono> · {deployment.commit_author}
                         </p>
                       </>
@@ -420,7 +420,7 @@ export function GitSection({ site }: { site: Site }) {
           <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
             <div className="max-w-[60ch]">
               <p className="font-medium">{t("Depo bağlantısını kaldır")}</p>
-              <p className="text-[13px] text-ink-2">{t("Kendiliğinden yayınlama durur. Sitenin dosyaları ve yayın geçmişi silinmez.")}</p>
+              <p className="text-[13.5px] text-ink-2">{t("Kendiliğinden yayınlama durur. Sitenin dosyaları ve yayın geçmişi silinmez.")}</p>
             </div>
             <Button loading={disconnect.isPending} disabled={running} onClick={() => void confirmDisconnect()}>
               {t("Bağlantıyı kaldır")}

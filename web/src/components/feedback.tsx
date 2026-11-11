@@ -90,7 +90,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
           </>
         }
       >
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           {pending?.description && <p className="text-ink-2">{pending.description}</p>}
           {pending?.typeToConfirm && (
             <Input

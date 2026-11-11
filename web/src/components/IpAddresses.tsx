@@ -49,14 +49,14 @@ function AddModal({ interfaces, onClose }: { interfaces: string[]; onClose: () =
         </>
       }
     >
-      <form id="ip-add-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="ip-add-form" onSubmit={submit} className="flex flex-col gap-5">
         <div className="grid gap-4 sm:grid-cols-[1fr_7rem]">
           <Input
             label={t("IP adresi")}
             value={address}
             onChange={(event) => setAddress(event.target.value)}
             placeholder="203.0.113.10"
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             spellCheck={false}
             autoComplete="off"
             autoFocus
@@ -74,7 +74,7 @@ function AddModal({ interfaces, onClose }: { interfaces: string[]; onClose: () =
           </Select>
         )}
         <Input label={t("Etiket")} value={label} onChange={(event) => setLabel(event.target.value)} placeholder={t("İsteğe bağlı; ör. müşteri adı")} maxLength={60} />
-        <p className="rounded-md bg-sunken px-3 py-2 text-[13px] text-ink-2">
+        <p className="rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
           {t("Yalnızca sağlayıcınızın bu sunucuya tanımladığı adresleri ekleyin. Size ait olmayan bir adres ağdaki başka bir sunucunun bağlantısını bozabilir.")}
         </p>
         {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
@@ -121,7 +121,7 @@ function EditModal({ item, onClose }: { item: ServerAddress; onClose: () => void
         </>
       }
     >
-      <form id="ip-edit-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="ip-edit-form" onSubmit={submit} className="flex flex-col gap-5">
         <Input label={t("Etiket")} value={label} onChange={(event) => setLabel(event.target.value)} maxLength={60} autoFocus />
         <Select
           label={t("Ayrıldığı hesap")}
@@ -144,7 +144,7 @@ function EditModal({ item, onClose }: { item: ServerAddress; onClose: () => void
           onChange={(event) => setPublicAddress(event.target.value)}
           placeholder={t("Boş: adresin kendisi")}
           hint={t("Sunucu bir yönlendiricinin arkasındaysa bu adresin internetten görünen karşılığı. DNS kayıtlarına bu yazılır.")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           spellCheck={false}
           autoComplete="off"
         />
@@ -206,7 +206,7 @@ export function IpAddresses() {
         )}
         {ips.data && (
           <>
-            <p className="max-w-[75ch] px-4 pt-3 pb-3 text-ink-2">
+            <p className="max-w-[75ch] px-4 sm:px-6 pt-3 pb-3 text-ink-2">
               {t("Siteler varsayılan olarak sunucunun bütün adreslerinden yayınlanır. Bir siteyi yalnızca belirli bir adresten yayınlamak için site sayfasındaki Adresler ve yayın bölümünden adres seçin.")}
             </p>
             <Table>
@@ -232,7 +232,7 @@ export function IpAddresses() {
                         {!item.present && <Badge tone="bad">{t("Sunucuda yok")}</Badge>}
                       </div>
                       {item.public_address !== "" && (
-                        <div className="mt-0.5 text-[12.5px] text-ink-3">
+                        <div className="mt-0.5 text-[13px] text-ink-3">
                           {t("Dış adres")}: <span className="font-mono">{item.public_address}</span>
                         </div>
                       )}

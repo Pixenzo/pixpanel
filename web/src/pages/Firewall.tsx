@@ -79,8 +79,8 @@ type UpdateSettings = (change: (current: Settings) => Settings) => void;
 const QUERY_KEY = ["firewall"] as const;
 const POLL_INTERVAL_MS = 5000;
 
-const CELL_CLASS = "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px] placeholder:font-sans placeholder:text-ink-3 disabled:bg-sunken disabled:text-ink-3";
-const SELECT_CLASS = "h-9 rounded-md border border-line-strong bg-surface px-2 text-[13px] disabled:bg-sunken disabled:text-ink-3";
+const CELL_CLASS = "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px] placeholder:font-sans placeholder:text-ink-3 disabled:bg-sunken disabled:text-ink-3";
+const SELECT_CLASS = "h-9 rounded-md border border-line-strong bg-surface px-2 text-[13.5px] disabled:bg-sunken disabled:text-ink-3";
 
 const EMPTY_RULE: Rule = { label: "", protocol: "tcp", ports: "", source: "", action: "accept" };
 
@@ -184,7 +184,7 @@ function AccessPicker({ value, onChange, label }: { value: Access; onChange: (ne
             aria-checked={selected}
             onClick={() => !selected && onChange(option.value)}
             className={classNames(
-              "h-7 rounded-[5px] px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed",
+              "h-7 rounded-[5px] px-2.5 text-[13.5px] font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed",
               "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent",
               !selected && "text-ink-2 hover:text-ink",
               selected && option.value === "everyone" && "bg-surface text-ok shadow-sm",
@@ -216,19 +216,19 @@ interface Door {
 
 function DoorRow({ door, yourIp, onSourceBlur }: { door: Door; yourIp: string; onSourceBlur: () => void }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 sm:px-6 py-3">
       <div className="min-w-0 flex-1 basis-56">
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-medium">{door.label}</span>
           {door.ports !== "" && <Mono className="text-ink-3">{door.ports}</Mono>}
         </div>
-        {door.description !== "" && <div className="text-[13px] text-ink-2">{door.description}</div>}
+        {door.description !== "" && <div className="text-[13.5px] text-ink-2">{door.description}</div>}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         {door.access === "restricted" && (
           <>
             {yourIp !== "" && door.source !== yourIp && (
-              <button type="button" onClick={() => door.onSource(yourIp)} className="text-[12.5px] whitespace-nowrap text-accent hover:underline disabled:opacity-55">
+              <button type="button" onClick={() => door.onSource(yourIp)} className="text-[13px] whitespace-nowrap text-accent hover:underline disabled:opacity-55">
                 {t("Benim adresim")}
               </button>
             )}
@@ -375,7 +375,7 @@ function DoorsPanel({ view, draft, onUpdate, onAddPort }: { view: FirewallView; 
         </Button>
       }
     >
-      <p className="border-b border-line px-4 py-2.5 text-[13px] text-ink-2">
+      <p className="border-b border-line px-4 sm:px-6 py-2.5 text-[13.5px] text-ink-2">
         {draft.enabled
           ? t("{open} kapı açık. Bu listede “Kapalı” görünen ya da listede hiç olmayan her porta dışarıdan erişim reddedilir.", { open: openCount })
           : t("Güvenlik duvarı kapalıyken bu seçimler uygulanmaz; açtığınızda geçerli olurlar.")}
@@ -385,7 +385,7 @@ function DoorsPanel({ view, draft, onUpdate, onAddPort }: { view: FirewallView; 
           <DoorRow key={door.id} door={door} yourIp={view.your_ip} onSourceBlur={() => door.source.trim() === "" && dropAwaiting(door.id)} />
         ))}
       </ul>
-      <p className="border-t border-line px-4 py-2.5 text-[12.5px] text-ink-3">
+      <p className="border-t border-line px-4 sm:px-6 py-2.5 text-[13px] text-ink-3">
         {t("“Tek adres” seçtiğinizde yalnızca yazdığınız adres ya da ağ (örneğin 203.0.113.0/24) bağlanabilir.")}{" "}
         {blockRules > 0 && t("Ayrıca {n} engelleme kuralı var; gelişmiş bölümde görebilirsiniz.", { n: blockRules })}
       </p>
@@ -444,7 +444,7 @@ function AddPortModal({ open, yourIp, onClose, onAdd }: { open: boolean; yourIp:
         </>
       }
     >
-      <form id="add-port-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="add-port-form" onSubmit={submit} className="flex flex-col gap-5">
         <div className="grid grid-cols-[1fr_8.5rem] gap-3">
           <Input label={t("Port")} placeholder="8080" value={ports} onChange={(event) => setPorts(event.target.value)} className="font-mono" autoFocus spellCheck={false} autoComplete="off" />
           <Select label={t("Tür")} value={protocol} onChange={(event) => setProtocol(parseProtocol(event.target.value))}>
@@ -455,7 +455,7 @@ function AddPortModal({ open, yourIp, onClose, onAdd }: { open: boolean; yourIp:
         </div>
         <Input label={t("Ne için? (isteğe bağlı)")} placeholder={t("Örneğin: oyun sunucusu")} value={label} onChange={(event) => setLabel(event.target.value)} autoComplete="off" />
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-          <legend className="mb-1.5 text-[13px] font-medium text-ink-2">{t("Kimler bağlanabilsin?")}</legend>
+          <legend className="mb-1.5 text-[13.5px] font-medium text-ink-2">{t("Kimler bağlanabilsin?")}</legend>
           <label className="flex items-center gap-2.5">
             <input type="radio" name="port-access" className="size-4 accent-(--accent)" checked={!restricted} onChange={() => setRestricted(false)} />
             <span>{t("Herkes")}</span>
@@ -485,8 +485,8 @@ function AddPortModal({ open, yourIp, onClose, onAdd }: { open: boolean; yourIp:
             />
           )}
         </fieldset>
-        {error !== "" && <p className="text-[13px] text-bad">{error}</p>}
-        <p className="text-[12.5px] text-ink-3">{t("Port, sayfanın üstündeki “Uygula” düğmesine bastığınızda açılır.")}</p>
+        {error !== "" && <p className="text-[13.5px] text-bad">{error}</p>}
+        <p className="text-[13px] text-ink-3">{t("Port, sayfanın üstündeki “Uygula” düğmesine bastığınızda açılır.")}</p>
       </form>
     </Modal>
   );
@@ -513,7 +513,7 @@ function BlockedPanel({ draft, onUpdate }: { draft: Settings; onUpdate: UpdateSe
         <ul className="mb-3 flex flex-wrap gap-2">
           {entries.map((entry) => (
             <li key={entry} className="flex items-center gap-1 rounded-md border border-line bg-sunken py-0.5 pr-0.5 pl-2.5">
-              <Mono className="text-[13px]">{entry}</Mono>
+              <Mono className="text-[13.5px]">{entry}</Mono>
               <IconButton label={t("{address} adresinin engelini kaldır", { address: entry })} onClick={() => onUpdate((current) => ({ ...current, blocked: current.blocked.filter((item) => item !== entry) }))}>
                 <X className="size-3.5" />
               </IconButton>
@@ -565,10 +565,10 @@ function RulesPanel({ draft, onUpdate }: { draft: Settings; onUpdate: UpdateSett
         {t("Açtığınız portlar burada kural olarak görünür. Bir portu belirli bir adrese kapatmak için “Engelle” kuralı ekleyip izin kuralının üstüne taşıyın: kurallar sırayla değerlendirilir, ilk uyan geçerlidir ve hepsi yukarıdaki servislerden önce gelir.")}
       </p>
       <div className="flex flex-col gap-2">
-        {draft.rules.length === 0 && <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13px] text-ink-2">{t("Henüz kural yok.")}</p>}
+        {draft.rules.length === 0 && <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13.5px] text-ink-2">{t("Henüz kural yok.")}</p>}
         {draft.rules.map((rule, index) => (
           <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-line p-2.5">
-            <span aria-hidden className="w-5 text-right text-[12.5px] text-ink-3 tabular-nums">
+            <span aria-hidden className="w-5 text-right text-[13px] text-ink-3 tabular-nums">
               {index + 1}
             </span>
             <input
@@ -644,7 +644,7 @@ function ListenersPanel({ listeners }: { listeners: Listener[] }) {
   return (
     <Panel title={t("Sunucuda çalışan bütün portlar")} flush>
       {sorted.length === 0 ? (
-        <p className="px-4 py-4 text-ink-2">{t("Şu anda dinleyen bir port görünmüyor.")}</p>
+        <p className="px-4 sm:px-6 py-4 text-ink-2">{t("Şu anda dinleyen bir port görünmüyor.")}</p>
       ) : (
         <Table>
           <thead>
@@ -660,7 +660,7 @@ function ListenersPanel({ listeners }: { listeners: Listener[] }) {
               <tr key={`${listener.protocol}-${listener.port}-${listener.address}-${index}`}>
                 <Td>
                   <div className="flex items-center gap-2">
-                    <Mono className="text-[13px]">{listener.port}</Mono>
+                    <Mono className="text-[13.5px]">{listener.port}</Mono>
                     <Badge>{listener.protocol.toUpperCase()}</Badge>
                   </div>
                 </Td>
@@ -676,7 +676,7 @@ function ListenersPanel({ listeners }: { listeners: Listener[] }) {
           </tbody>
         </Table>
       )}
-      <p className="border-t border-line px-4 py-2.5 text-[12.5px] text-ink-3">
+      <p className="border-t border-line px-4 sm:px-6 py-2.5 text-[13px] text-ink-3">
         {t("“Yalnızca sunucu içi” portlara dışarıdan zaten ulaşılamaz. Docker'ın dışarıya açtığı portlar bu kurallardan etkilenmez.")}
       </p>
     </Panel>
@@ -743,7 +743,7 @@ function ConfirmDialog({
           <p className="mt-1 text-ink-2">{t("Bu pencereyi görüyorsanız panele erişiminiz sürüyor. SSH kullanıyorsanız yeni bir bağlantı açıp onu da deneyin.")}</p>
         </div>
       </div>
-      <p role="status" className="mt-4 rounded-md bg-sunken px-3 py-2.5 text-[13px] text-ink-2">
+      <p role="status" className="mt-4 rounded-md bg-sunken px-3 py-2.5 text-[13.5px] text-ink-2">
         {t("{n} saniye içinde onaylamazsanız sunucu kendiliğinden önceki kurallara döner; kilitli kalmazsınız.", { n: left })}
       </p>
     </Modal>
@@ -829,10 +829,10 @@ function FirewallContent({ view, receivedAt, onRefetch }: { view: FirewallView; 
       )}
 
       {dirty && !locked && (
-        <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-accent/50 bg-surface px-4 py-2.5 shadow-pop">
+        <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-accent/50 bg-surface px-4 sm:px-6 py-2.5 shadow-pop">
           <div className="min-w-0">
             <p className="font-medium">{t("Değişiklikleriniz henüz uygulanmadı")}</p>
-            <p className="text-[12.5px] text-ink-3">{t("Uyguladıktan sonra erişiminizi denemeniz için {n} saniyeniz olur; onaylamazsanız her şey eski hâline döner.", { n: view.confirm_seconds })}</p>
+            <p className="text-[13px] text-ink-3">{t("Uyguladıktan sonra erişiminizi denemeniz için {n} saniyeniz olur; onaylamazsanız her şey eski hâline döner.", { n: view.confirm_seconds })}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={discard} disabled={apply.isPending}>
@@ -860,7 +860,7 @@ function FirewallContent({ view, receivedAt, onRefetch }: { view: FirewallView; 
               </div>
               <div className="min-w-0">
                 <p className="font-medium">{draft.enabled ? t("Güvenlik duvarı açık") : t("Güvenlik duvarı kapalı")}</p>
-                <p className="max-w-[70ch] text-[13px] text-ink-2">
+                <p className="max-w-[70ch] text-[13.5px] text-ink-2">
                   {draft.enabled
                     ? t("Yalnızca aşağıda açık görünen kapılardan girilebilir; geri kalan her şey reddedilir.")
                     : t("Sunucuda çalışan her şeye dışarıdan ulaşılabilir. Açtığınızda yalnızca aşağıda açık görünen kapılar kalır.")}
@@ -868,8 +868,8 @@ function FirewallContent({ view, receivedAt, onRefetch }: { view: FirewallView; 
               </div>
             </div>
             {view.your_ip !== "" && (
-              <p className="text-[13px] text-ink-2">
-                {t("Sizin adresiniz")}: <Mono className="text-[13px] text-ink">{view.your_ip}</Mono>
+              <p className="text-[13.5px] text-ink-2">
+                {t("Sizin adresiniz")}: <Mono className="text-[13.5px] text-ink">{view.your_ip}</Mono>
               </p>
             )}
           </div>
@@ -883,7 +883,7 @@ function FirewallContent({ view, receivedAt, onRefetch }: { view: FirewallView; 
             type="button"
             aria-expanded={advanced}
             onClick={() => setAdvanced((current) => !current)}
-            className="flex items-center gap-1.5 rounded-md py-1 text-[13px] font-medium text-ink-2 hover:text-ink"
+            className="flex items-center gap-1.5 rounded-md py-1 text-[13.5px] font-medium text-ink-2 hover:text-ink"
           >
             {advanced ? <ChevronDown aria-hidden className="size-4" /> : <ChevronRight aria-hidden className="size-4" />}
             {advanced ? t("Gelişmiş ayarları gizle") : t("Gelişmiş ayarları göster")}

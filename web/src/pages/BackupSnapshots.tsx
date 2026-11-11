@@ -95,7 +95,7 @@ function RunNowModal({ targets, sources, initialTargetId, onClose, onStarted }: 
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {targets.length > 1 && (
           <div className="max-w-sm">
             <Select label={t("Nereye?")} value={targetId} onChange={(event) => setTargetId(Number(event.target.value))}>
@@ -110,7 +110,7 @@ function RunNowModal({ targets, sources, initialTargetId, onClose, onStarted }: 
         <section className="flex flex-col gap-2">
           <h3 className="font-semibold">{t("Neler yedeklensin?")}</h3>
           <ScopePicker value={scope} onChange={setScope} sources={sources} />
-          {empty && <p className="text-[12.5px] text-ink-3">{t("Yedeklenecek en az bir şey seçin.")}</p>}
+          {empty && <p className="text-[13px] text-ink-3">{t("Yedeklenecek en az bir şey seçin.")}</p>}
         </section>
         {run.isError && <Notice tone="bad">{errorMessage(run.error)}</Notice>}
       </div>
@@ -330,7 +330,7 @@ export function SnapshotsTab({ overview }: { overview: BackupOverview }) {
     body = query.isError ? (
       <div className="flex flex-col gap-2">
         <ErrorBlock message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
-        <p className="px-1 text-[13px] text-ink-3">{t("Yedek yerine ulaşılamıyor olabilir; “Yedek yerleri” sekmesinden bağlantıyı deneyin.")}</p>
+        <p className="px-1 text-[13.5px] text-ink-3">{t("Yedek yerine ulaşılamıyor olabilir; “Yedek yerleri” sekmesinden bağlantıyı deneyin.")}</p>
       </div>
     ) : (
       <Panel flush>
@@ -361,7 +361,7 @@ export function SnapshotsTab({ overview }: { overview: BackupOverview }) {
         <Panel flush>
           <div className="max-h-[62vh] overflow-y-auto">
             {visible.length === 0 ? (
-              <p className="px-4 py-6 text-ink-3">{t("Eşleşen yedek yok.")}</p>
+              <p className="px-4 sm:px-6 py-6 text-ink-3">{t("Eşleşen yedek yok.")}</p>
             ) : (
               <GroupTable
                 groups={visible}

@@ -70,14 +70,14 @@ function RecoveryCodesModal({ title, codes, onClose }: { title: string; codes: s
         </Button>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <p role="alert" className="rounded-md bg-warn-soft px-3 py-2 text-warn">
           {t("Bu kodlar yalnızca şimdi gösterilir ve her biri yalnızca bir kez kullanılabilir. Telefonunuzu kaybederseniz hesabınıza bunlarla girebilirsiniz.")}
         </p>
         <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-md border border-line bg-sunken p-3">
           {codes.map((code) => (
             <li key={code}>
-              <Mono className="text-[13px]">{code}</Mono>
+              <Mono className="text-[13.5px]">{code}</Mono>
             </li>
           ))}
         </ul>
@@ -138,7 +138,7 @@ function PasswordConfirmModal<T>({
         </>
       }
     >
-      <form id="two-factor-confirm" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="two-factor-confirm" onSubmit={submit} className="flex flex-col gap-5">
         <p className="text-ink-2">{description}</p>
         {warning && <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">{warning}</p>}
         <Input
@@ -211,7 +211,7 @@ function EnableWizard({ onClose }: { onClose: () => void }) {
             event.preventDefault();
             enable.mutate();
           }}
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-5"
         >
           <div className="flex justify-center">
             {/* Karanlık temada da QR kodu siyah üzerine beyaz kalmalı. */}
@@ -224,9 +224,9 @@ function EnableWizard({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-[13px] font-medium text-ink-2">{t("Kodu okutamıyorsanız bu anahtarı elle girin")}</p>
+            <p className="text-[13.5px] font-medium text-ink-2">{t("Kodu okutamıyorsanız bu anahtarı elle girin")}</p>
             <div className="flex items-center gap-2 rounded-md border border-line bg-sunken p-2.5">
-              <code className="min-w-0 flex-1 font-mono text-[12.5px] break-all">{setup.secret}</code>
+              <code className="min-w-0 flex-1 font-mono text-[13px] break-all">{setup.secret}</code>
               <IconButton label={t("Kopyala")} onClick={() => void copy(setup.secret, t("Anahtar panoya kopyalandı"))}>
                 <Copy className="size-4" />
               </IconButton>
@@ -272,7 +272,7 @@ function EnableWizard({ onClose }: { onClose: () => void }) {
           event.preventDefault();
           start.mutate();
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
         <Input
           label={t("Mevcut parola")}

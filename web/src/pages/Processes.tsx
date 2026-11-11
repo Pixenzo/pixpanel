@@ -91,7 +91,7 @@ export function ProcessesPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           }
-          actions={<span className="tabular text-[13px] text-ink-3">{t("{count} süreç", { count: rows.length })}</span>}
+          actions={<span className="tabular text-[13.5px] text-ink-3">{t("{count} süreç", { count: rows.length })}</span>}
         >
           <Table scroll>
             <thead>
@@ -108,12 +108,12 @@ export function ProcessesPage() {
             <tbody>
               {rows.map((process) => (
                 <tr key={process.pid} className="hover:bg-sunken/50">
-                  <Td align="right" className="font-mono text-[12.5px] text-ink-2">
+                  <Td align="right" className="font-mono text-[13px] text-ink-2">
                     {process.pid}
                   </Td>
                   <Td className="whitespace-nowrap">{process.user}</Td>
                   <Td className="max-w-0">
-                    <span className="block truncate font-mono text-[12.5px]" title={process.command}>
+                    <span className="block truncate font-mono text-[13px]" title={process.command}>
                       {process.command}
                     </span>
                   </Td>

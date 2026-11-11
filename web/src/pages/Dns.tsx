@@ -218,9 +218,9 @@ function AddZoneModal({
         </>
       }
     >
-      <form id="add-dns-zone" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="add-dns-zone" onSubmit={submit} className="flex flex-col gap-5">
         <fieldset>
-          <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Bölgenin barındırılacağı yer")}</legend>
+          <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Bölgenin barındırılacağı yer")}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {providerChoices.map((choice) => {
               const disabled = unavailable(choice.id);
@@ -245,9 +245,9 @@ function AddZoneModal({
                     />
                     {t(choice.title)}
                   </span>
-                  <span className="text-[12.5px] text-ink-2">{t(choice.description)}</span>
+                  <span className="text-[13px] text-ink-2">{t(choice.description)}</span>
                   {disabled && (
-                    <span className="text-[12.5px] text-warn">
+                    <span className="text-[13px] text-warn">
                       {choice.id === "local"
                         ? t("DNS sunucusu bu makinede kurulu değil.")
                         : t("Önce Cloudflare sekmesinden API anahtarınızı bağlayın.")}
@@ -277,7 +277,7 @@ function AddZoneModal({
                 onChange={(event) => setLocalDomain(event.target.value)}
                 list="dns-available-domains"
                 placeholder="ornek.com"
-                className="font-mono text-[13px]"
+                className="font-mono text-[13.5px]"
                 autoCapitalize="none"
                 spellCheck={false}
                 autoFocus
@@ -295,7 +295,7 @@ function AddZoneModal({
               value={localDomain}
               onChange={(event) => setLocalDomain(event.target.value)}
               hint={t("Hesabınızdaki, henüz bölgesi olmayan alan adları listelenir.")}
-              className="font-mono text-[13px]"
+              className="font-mono text-[13.5px]"
             >
               {overview.available_domains.map((item) => (
                 <option key={item} value={item}>
@@ -320,7 +320,7 @@ function AddZoneModal({
                   value={selectedCloudflare}
                   onChange={(event) => setCloudflareDomain(event.target.value)}
                   hint={t("API anahtarınızın erişebildiği ve henüz panele bağlanmamış bölgeler listelenir.")}
-                  className="font-mono text-[13px]"
+                  className="font-mono text-[13.5px]"
                 >
                   {unlinked.map((zone) => (
                     <option key={zone.id} value={zone.name}>
@@ -342,7 +342,7 @@ function AddZoneModal({
 
 function StatusLine({ overview, isAdmin }: { overview: DnsOverview; isAdmin: boolean }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-lg border border-line bg-surface px-4 py-2.5 text-[13px]">
+    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-lg border border-line bg-surface px-4 sm:px-6 py-2.5 text-[13.5px]">
       <p className="flex flex-wrap items-center gap-2">
         <span className="text-ink-2">{t("DNS sunucusu")}</span>
         {!overview.local_installed ? (
@@ -400,7 +400,7 @@ function ZonesTab({ overview, isAdmin, showOwner, onAdd }: { overview: DnsOvervi
               {overview.zones.map((zone) => (
                 <tr key={zone.id} className="hover:bg-sunken/50">
                   <Td>
-                    <Link to={`/dns/${zone.id}`} className="font-mono text-[13.5px] font-medium hover:text-accent hover:underline">
+                    <Link to={`/dns/${zone.id}`} className="font-mono text-[14px] font-medium hover:text-accent hover:underline">
                       {zone.domain}
                     </Link>
                   </Td>
@@ -455,7 +455,7 @@ function TokenForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () => 
         onChange={(event) => setToken(event.target.value)}
         autoComplete="off"
         spellCheck={false}
-        className="font-mono text-[13px]"
+        className="font-mono text-[13.5px]"
         hint={t("Anahtar Cloudflare ile doğrulanır ve yalnızca bu sunucuda saklanır.")}
         required
       />
@@ -502,9 +502,9 @@ function CloudflareTab({ overview, onLink }: { overview: DnsOverview; onLink: (d
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel title={t("Cloudflare bağlantısı")}>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <div className="max-w-[75ch] text-ink-2">
             <p>
               {t("Bağlandığınızda panel, Cloudflare hesabınızdaki DNS kayıtlarını okur ve değiştirir; bölgelerinizi buradan yönetirsiniz, kayıtlar Cloudflare'de kalır.")}{" "}
@@ -561,7 +561,7 @@ function CloudflareTab({ overview, onLink }: { overview: DnsOverview; onLink: (d
                 {cloudflare.data.zones.map((zone) => (
                   <tr key={zone.id} className="hover:bg-sunken/50">
                     <Td>
-                      <Mono className="text-[13.5px] font-medium">{zone.name}</Mono>
+                      <Mono className="text-[14px] font-medium">{zone.name}</Mono>
                     </Td>
                     <Td>{zone.linked ? <Badge tone="ok">{t("Bağlı")}</Badge> : <span className="text-ink-3">{t("Bağlı değil")}</span>}</Td>
                     <Td align="right">
@@ -631,16 +631,16 @@ function SettingsForm({ settings, localInstalled }: { settings: DnsSettings; loc
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <form onSubmit={submit} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-5">
         <Panel title={t("DNS ayarları")}>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             <Input
               label={t("Sunucu adresi (IPv4)")}
               value={serverIp}
               onChange={(event) => setServerIp(event.target.value)}
               placeholder="203.0.113.10"
               hint={t("Sitelerin A kayıtlarında kullanılır. Sunucu bir NAT arkasındaysa dış adresi yazın.")}
-              className="max-w-xs font-mono text-[13px]"
+              className="max-w-xs font-mono text-[13.5px]"
               spellCheck={false}
               required
             />
@@ -672,7 +672,7 @@ function SettingsForm({ settings, localInstalled }: { settings: DnsSettings; loc
       {localInstalled && (
         <Panel title={t("DNS sunucusu")}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-[60ch] text-[13px] text-ink-2">
+            <p className="max-w-[60ch] text-[13.5px] text-ink-2">
               {t("DNS sunucusu çalışmıyorsa ya da yapılandırması bozulduysa panelin yapılandırmasını yeniden uygulayın.")}
             </p>
             <Button loading={repair.isPending} onClick={() => void confirmRepair()}>

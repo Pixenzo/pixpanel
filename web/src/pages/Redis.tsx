@@ -287,7 +287,7 @@ export function RedisPage() {
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[12.5px] text-ink-2">{label}</dt>
+      <dt className="text-[13px] text-ink-2">{label}</dt>
       <dd className="mt-0.5 font-medium break-words">{children}</dd>
     </div>
   );
@@ -300,7 +300,7 @@ function StatusTab({ info, onBrowse }: { info: RedisOn; onBrowse: (db: number) =
   const keyspace = [...info.keyspace].sort((a, b) => a.db - b.db);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Panel title={t("Genel bakış")}>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label={t("Sürüm")}>
@@ -341,7 +341,7 @@ function StatusTab({ info, onBrowse }: { info: RedisOn; onBrowse: (db: number) =
 
       <Panel title={t("Veritabanları")} flush>
         {keyspace.length === 0 ? (
-          <p className="px-4 py-4 text-ink-2">{t("Hiçbir veritabanında anahtar saklanmıyor.")}</p>
+          <p className="px-4 sm:px-6 py-4 text-ink-2">{t("Hiçbir veritabanında anahtar saklanmıyor.")}</p>
         ) : (
           <Table>
             <thead>
@@ -463,8 +463,8 @@ function SettingsTab({ info }: { info: RedisOn }) {
   const problem = formError ?? (save.isError ? errorMessage(save.error) : null);
 
   return (
-    <div className="flex flex-col gap-4">
-      <form onSubmit={submit} className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
+      <form onSubmit={submit} className="flex flex-col gap-5">
         <Panel title={t("Bellek ve kalıcılık")}>
           <div className="flex max-w-xl flex-col gap-4">
             <Input
@@ -509,7 +509,7 @@ function SettingsTab({ info }: { info: RedisOn }) {
                   value={password}
                   autoComplete="new-password"
                   spellCheck={false}
-                  className="font-mono text-[13px]"
+                  className="font-mono text-[13.5px]"
                   onChange={(event) => setPassword(event.target.value)}
                 />
               </div>

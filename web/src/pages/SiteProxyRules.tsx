@@ -23,7 +23,7 @@ interface ContainerSummary {
   ports: ContainerPort[];
 }
 
-const cell = "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]";
+const cell = "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]";
 
 export function ProxyRulesSection({ site }: { site: Site }) {
   const me = useMe();
@@ -68,7 +68,7 @@ export function ProxyRulesSection({ site }: { site: Site }) {
         )}
       </p>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        {rules.length === 0 && <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13px] text-ink-2">{t("Henüz kural yok. “Kural ekle” ile ilk kuralınızı tanımlayın.")}</p>}
+        {rules.length === 0 && <p className="rounded-md bg-sunken/70 px-3 py-2.5 text-[13.5px] text-ink-2">{t("Henüz kural yok. “Kural ekle” ile ilk kuralınızı tanımlayın.")}</p>}
         {rules.map((rule, index) => (
           <div key={index} className="flex flex-col gap-2 rounded-lg border border-line p-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -98,7 +98,7 @@ export function ProxyRulesSection({ site }: { site: Site }) {
                   aria-label={t("Konteynerden seç")}
                   value=""
                   onChange={(event) => event.target.value && update(index, { target: event.target.value })}
-                  className="h-9 rounded-md border border-line-strong bg-surface px-2 text-[13px]"
+                  className="h-9 rounded-md border border-line-strong bg-surface px-2 text-[13.5px]"
                 >
                   <option value="">{t("Konteynerden seç")}</option>
                   {targets.map((target) => (
@@ -112,7 +112,7 @@ export function ProxyRulesSection({ site }: { site: Site }) {
                 <Trash2 className="size-4" />
               </IconButton>
             </div>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13.5px]">
               <label className="flex items-center gap-2">
                 <input type="checkbox" className="size-4 accent-(--accent)" checked={rule.strip_prefix} onChange={(event) => update(index, { strip_prefix: event.target.checked })} />
                 <span>

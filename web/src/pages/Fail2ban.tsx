@@ -123,10 +123,10 @@ const LEVELS: Level[] = [
   { id: "strict", title: "Sıkı", description: "3 hatalı denemede 1 gün engelle", numbers: { max_retry: 3, find_time: FIND_TIME_SECONDS, ban_time: 86400 } },
 ];
 
-const CELL_CLASS = "h-8 min-w-0 rounded-md border border-line-strong bg-surface px-2 text-[13px] tabular-nums placeholder:text-ink-3 disabled:bg-sunken disabled:text-ink-3";
-const SELECT_CLASS = "h-8 rounded-md border border-line-strong bg-surface px-1.5 text-[13px] disabled:bg-sunken disabled:text-ink-3";
+const CELL_CLASS = "h-8 min-w-0 rounded-md border border-line-strong bg-surface px-2 text-[13.5px] tabular-nums placeholder:text-ink-3 disabled:bg-sunken disabled:text-ink-3";
+const SELECT_CLASS = "h-8 rounded-md border border-line-strong bg-surface px-1.5 text-[13.5px] disabled:bg-sunken disabled:text-ink-3";
 const TEXT_INPUT_CLASS =
-  "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px] text-ink placeholder:font-sans placeholder:text-ink-3 " +
+  "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px] text-ink placeholder:font-sans placeholder:text-ink-3 " +
   "transition-colors focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 disabled:bg-sunken disabled:text-ink-3";
 
 // ---- Yardımcılar ----
@@ -362,11 +362,11 @@ function StatusPanel({ view, saver }: { view: Fail2banView; saver: Saver }) {
 
       {yourIp !== "" &&
         (safe ? (
-          <p className="px-1 text-[13px] text-ink-3">
+          <p className="px-1 text-[13.5px] text-ink-3">
             <SentenceWithIp template={t("Adresiniz ({ip}) güvenli listede; engellenmezsiniz.")} ip={yourIp} />
           </p>
         ) : (
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-accent-soft px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-accent-soft px-4 sm:px-6 py-3">
             <p className="min-w-0 flex-1 text-ink">
               <SentenceWithIp template={t("Kendi adresiniz ({ip}) güvenli listede değil. Parolanızı birkaç kez yanlış girerseniz siz de engellenebilirsiniz.")} ip={yourIp} />
             </p>
@@ -387,7 +387,7 @@ function BannedPanel({ view, onUnban, unbanning }: { view: Fail2banView; onUnban
   return (
     <Panel title={t("Engellenen adresler")} flush>
       {rows.length === 0 ? (
-        <p className="px-4 py-4 text-ink-2">{t("Şu an engelli adres yok.")}</p>
+        <p className="px-4 sm:px-6 py-4 text-ink-2">{t("Şu an engelli adres yok.")}</p>
       ) : (
         <Table>
           <thead>
@@ -440,7 +440,7 @@ function StrictnessPanel({ view, saver }: { view: Fail2banView; saver: Saver }) 
 
   return (
     <Panel title={t("Ne kadar sıkı olsun?")} actions={<SavingSpinner saver={saver} scope="level" />}>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <fieldset disabled={saver.pending} className="min-w-0">
           <legend className="sr-only">{t("Koruma seviyesi")}</legend>
           <div className={classNames("grid gap-2", current === "custom" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3")}>
@@ -458,13 +458,13 @@ function StrictnessPanel({ view, saver }: { view: Fail2banView; saver: Saver }) 
                   {t(level.title)}
                   {level.recommended && <Badge tone="accent">{t("önerilen")}</Badge>}
                 </span>
-                <span className="text-[12.5px] text-ink-2">{t(level.description)}</span>
+                <span className="text-[13px] text-ink-2">{t(level.description)}</span>
               </label>
             ))}
             {current === "custom" && (
               <div aria-current="true" className={classNames(cardBase, "border-accent bg-accent-soft")}>
                 <span className="font-medium">{t("Özel")}</span>
-                <span className="text-[12.5px] text-ink-2">{t("Ayarlar koruma başına ayrı ayrı belirlenmiş")}</span>
+                <span className="text-[13px] text-ink-2">{t("Ayarlar koruma başına ayrı ayrı belirlenmiş")}</span>
               </div>
             )}
           </div>
@@ -524,7 +524,7 @@ function WhitelistPanel({ view, saver }: { view: Fail2banView; saver: Saver }) {
           <ul className="flex flex-col rounded-md border border-line">
             {entries.map((entry) => (
               <li key={entry} className="flex items-center justify-between gap-2 border-b border-line py-0.5 pr-1 pl-3 last:border-b-0">
-                <Mono className="text-[13px]">{entry}</Mono>
+                <Mono className="text-[13.5px]">{entry}</Mono>
                 <IconButton label={t("{entry} adresini listeden çıkar", { entry })} disabled={saver.pending} onClick={() => remove(entry)}>
                   <X className="size-4" />
                 </IconButton>
@@ -554,7 +554,7 @@ function WhitelistPanel({ view, saver }: { view: Fail2banView; saver: Saver }) {
             </Button>
           </div>
           {error && (
-            <p role="alert" className="text-[12.5px] text-bad">
+            <p role="alert" className="text-[13px] text-bad">
               {error}
             </p>
           )}
@@ -578,20 +578,20 @@ function ProtectionsPanel({ view, saver }: { view: Fail2banView; saver: Saver })
     <Panel title={t("Neler korunuyor?")} actions={<SavingSpinner saver={saver} scope="jails" />} flush>
       <ul>
         {available.map((jail) => (
-          <li key={jail.key} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
+          <li key={jail.key} className="flex items-center gap-3 border-b border-line px-4 sm:px-6 py-3 last:border-b-0">
             <Switch checked={jailSettingsOf(view.settings, jail.key).enabled} label={jail.label} disabled={saver.pending} onChange={(next) => toggle(jail.key, next)} />
             <div className="min-w-0 flex-1">
               <div className="font-medium">{jail.label}</div>
-              <div className="text-[13px] text-ink-2">{jail.description}</div>
+              <div className="text-[13.5px] text-ink-2">{jail.description}</div>
             </div>
-            <span className="text-[12.5px] whitespace-nowrap text-ink-3 tabular-nums">{t("{n} engelleme", { n: jail.banned_total })}</span>
+            <span className="text-[13px] whitespace-nowrap text-ink-3 tabular-nums">{t("{n} engelleme", { n: jail.banned_total })}</span>
           </li>
         ))}
         {missing.map((jail) => (
-          <li key={jail.key} className="flex items-center gap-3 border-b border-line px-4 py-3 text-ink-3 last:border-b-0">
+          <li key={jail.key} className="flex items-center gap-3 border-b border-line px-4 sm:px-6 py-3 text-ink-3 last:border-b-0">
             <span aria-hidden className="w-9 shrink-0" />
             <div className="min-w-0 flex-1">{jail.label}</div>
-            <span className="text-[12.5px] whitespace-nowrap">{t("kurulu değil")}</span>
+            <span className="text-[13px] whitespace-nowrap">{t("kurulu değil")}</span>
           </li>
         ))}
       </ul>
@@ -660,11 +660,11 @@ function AdvancedNumbersPanel({ view, saver }: { view: Fail2banView; saver: Save
           })}
         </tbody>
       </Table>
-      <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
-        <p className="text-[12.5px] text-ink-3">{t("Bir adres, sayım süresi içinde belirtilen sayıda hatalı deneme yaparsa engel süresi boyunca engellenir.")}</p>
-        {dirty && !valid && <p className="text-[12.5px] text-bad">{t("Sayılar sıfırdan büyük olmalıdır.")}</p>}
+      <div className="flex flex-col gap-2 border-t border-line px-4 sm:px-6 py-3">
+        <p className="text-[13px] text-ink-3">{t("Bir adres, sayım süresi içinde belirtilen sayıda hatalı deneme yaparsa engel süresi boyunca engellenir.")}</p>
+        {dirty && !valid && <p className="text-[13px] text-bad">{t("Sayılar sıfırdan büyük olmalıdır.")}</p>}
         {error && (
-          <p role="alert" className="text-[12.5px] text-bad">
+          <p role="alert" className="text-[13px] text-bad">
             {error}
           </p>
         )}
@@ -722,9 +722,9 @@ function ManualBanPanel({ jails, onSubmit, busy, error }: { jails: JailStatus[];
             {t("Engelle")}
           </Button>
         </div>
-        {options.length === 0 && <p className="text-[12.5px] text-ink-3">{t("Açık bir koruma olmadığı için elle engellenemez.")}</p>}
+        {options.length === 0 && <p className="text-[13px] text-ink-3">{t("Açık bir koruma olmadığı için elle engellenemez.")}</p>}
         {error && (
-          <p role="alert" className="text-[12.5px] text-bad">
+          <p role="alert" className="text-[13px] text-bad">
             {error}
           </p>
         )}
@@ -750,7 +750,7 @@ function AdvancedSection({
   const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div>
         <button
           type="button"
@@ -822,7 +822,7 @@ function Fail2banContent({ view }: { view: Fail2banView }) {
   return (
     <>
       {!view.running && (
-        <div role="alert" className="mb-4 rounded-lg border border-warn/50 bg-warn-soft px-4 py-3 text-warn">
+        <div role="alert" className="mb-4 rounded-lg border border-warn/50 bg-warn-soft px-4 sm:px-6 py-3 text-warn">
           {t("Saldırı engelleme şu an çalışmıyor; adresler engellenmiyor.")}{" "}
           <Link to="/services" className="font-medium underline">
             {t("Servisler sayfasından başlatın")}
@@ -843,7 +843,7 @@ function Fail2banContent({ view }: { view: Fail2banView }) {
           banning={ban.isPending}
           banError={ban.isError ? errorMessage(ban.error) : null}
         />
-        <p className="text-[12.5px] text-ink-3">{t("Engeller bütün portlar için geçerlidir ve güvenlik duvarından bağımsız çalışır.")}</p>
+        <p className="text-[13px] text-ink-3">{t("Engeller bütün portlar için geçerlidir ve güvenlik duvarından bağımsız çalışır.")}</p>
       </div>
     </>
   );

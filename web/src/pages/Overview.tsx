@@ -98,7 +98,7 @@ function headline(findings: HealthFinding[]): { tone: Tone; icon: LucideIcon; ti
 function FindingRow({ finding, onFix, fixing }: { finding: HealthFinding; onFix: () => void; fixing: boolean }) {
   const view = severityView[finding.severity];
   return (
-    <li className="flex gap-3 px-4 py-3.5">
+    <li className="flex gap-3 px-4 sm:px-6 py-3.5">
       <span className={classNames("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full", toneSoft[view.tone], toneText[view.tone])}>
         <view.icon aria-hidden className="size-4" />
       </span>
@@ -115,16 +115,16 @@ function FindingRow({ finding, onFix, fixing }: { finding: HealthFinding; onFix:
             </Button>
           )}
           {finding.link && (
-            <Link to={finding.link} className="inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
+            <Link to={finding.link} className="inline-flex items-center gap-1 text-[13.5px] font-medium text-accent hover:underline">
               {finding.fix ? t("Ayrıntı") : t("İlgili sayfayı aç")} <ArrowRight aria-hidden className="size-3.5" />
             </Link>
           )}
           {finding.auto && (
-            <span className="inline-flex items-center gap-1 text-[13px] text-ink-3">
+            <span className="inline-flex items-center gap-1 text-[13.5px] text-ink-3">
               <Bot aria-hidden className="size-3.5" /> {t("Panel bunu kendisi düzeltmeyi deniyor")}
             </span>
           )}
-          <span className="text-[13px] text-ink-3">{t("{when} fark edildi", { when: formatRelative(finding.since) })}</span>
+          <span className="text-[13.5px] text-ink-3">{t("{when} fark edildi", { when: formatRelative(finding.since) })}</span>
         </div>
       </div>
     </li>
@@ -134,12 +134,12 @@ function FindingRow({ finding, onFix, fixing }: { finding: HealthFinding; onFix:
 function ActionRow({ action }: { action: HealthAction }) {
   const Icon = action.automatic ? Bot : UserRound;
   return (
-    <li className="flex gap-2.5 px-4 py-2.5">
+    <li className="flex gap-2.5 px-4 sm:px-6 py-2.5">
       <Icon aria-hidden className={classNames("mt-0.5 size-4 shrink-0", action.success ? "text-ok" : "text-bad")} />
       <div className="min-w-0 flex-1">
-        <p className="text-[13.5px] font-medium break-words">{action.summary}</p>
-        <p className="text-[12.5px] break-words text-ink-2">{action.detail}</p>
-        <p className="text-[12.5px] text-ink-3">
+        <p className="text-[14px] font-medium break-words">{action.summary}</p>
+        <p className="text-[13px] break-words text-ink-2">{action.detail}</p>
+        <p className="text-[13px] text-ink-3">
           {action.automatic ? t("Panel kendiliğinden yaptı") : t("Elle başlatıldı")} · {formatRelative(action.created_at)}
           {!action.success && <span className="text-bad"> · {t("başarısız")}</span>}
         </p>
@@ -183,8 +183,8 @@ export function OverviewPage() {
   const age = Math.max(0, now - report.checked_at);
 
   return (
-    <div className="flex flex-col gap-4">
-      <section className="flex flex-wrap items-center gap-x-5 gap-y-4 rounded-xl border border-line bg-surface px-4 py-5 shadow-card sm:px-6">
+    <div className="flex flex-col gap-5">
+      <section className="flex flex-wrap items-center gap-x-5 gap-y-4 rounded-xl border border-line bg-surface px-4 sm:px-6 py-5 shadow-card sm:px-6">
         <span className={classNames("flex size-12 shrink-0 items-center justify-center rounded-full", toneSoft[state.tone], toneText[state.tone])}>
           <state.icon aria-hidden className="size-6" />
         </span>
@@ -192,7 +192,7 @@ export function OverviewPage() {
           <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.015em] sm:text-[26px]">{waiting ? t("İlk denetim yapılıyor") : state.title}</h1>
           <p className="mt-1 text-ink-2">{waiting ? t("Panel yeni başladı; sonuçlar birkaç saniye içinde burada olacak.") : state.subtitle}</p>
           {!waiting && (
-            <p className="tabular mt-2 text-[13px] text-ink-3">
+            <p className="tabular mt-2 text-[13.5px] text-ink-3">
               {t("{count} denetim yapıldı", { count: report.checks })} · {age < 5 ? t("az önce") : t("{seconds} sn önce", { seconds: age })} ·{" "}
               {t("dakikada bir yinelenir")}
             </p>
@@ -206,7 +206,7 @@ export function OverviewPage() {
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Panel flush title={report.findings.length > 0 ? t("Bulgular") : undefined}>
           {report.findings.length === 0 ? (
-            <div className="px-4 py-10 sm:text-center">
+            <div className="px-4 sm:px-6 py-10 sm:text-center">
               <p className="font-semibold">{t("Bekleyen bir şey yok")}</p>
               <p className="mx-auto mt-1 max-w-[52ch] text-ink-2">
                 {t("Panel servisleri, diskleri, sertifikaları, yedekleri ve sitelerinizi izlemeyi sürdürüyor; bir sorun çıkarsa burada görünür.")}
@@ -226,14 +226,14 @@ export function OverviewPage() {
           )}
         </Panel>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <Panel flush title={t("Panelin kendiliğinden yaptıkları")}>
             <ul className="divide-y divide-line">
               {automations.map((item) => (
-                <li key={item.key} className="flex items-start gap-3 px-4 py-3">
+                <li key={item.key} className="flex items-start gap-3 px-4 sm:px-6 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{t(item.label)}</p>
-                    <p className="mt-0.5 text-[13px] text-ink-2">{t(item.hint)}</p>
+                    <p className="mt-0.5 text-[13.5px] text-ink-2">{t(item.hint)}</p>
                   </div>
                   <Switch
                     label={t(item.label)}
@@ -248,7 +248,7 @@ export function OverviewPage() {
 
           <Panel flush title={t("Son yapılanlar")}>
             {actions.length === 0 ? (
-              <p className="px-4 py-6 text-ink-2">{t("Henüz bir düzeltme yapılmadı. Panel bir sorunu giderdiğinde kaydı burada görünür.")}</p>
+              <p className="px-4 sm:px-6 py-6 text-ink-2">{t("Henüz bir düzeltme yapılmadı. Panel bir sorunu giderdiğinde kaydı burada görünür.")}</p>
             ) : (
               <ul className="max-h-96 divide-y divide-line overflow-y-auto">
                 {actions.map((action) => (

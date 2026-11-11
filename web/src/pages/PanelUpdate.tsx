@@ -265,7 +265,7 @@ function UpdateBody({ view }: { view: UpdateView }) {
   const lastStatus = last ? outcomeStatus(last.status) : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-ink-2">{t("Kurulu sürüm")}</span>
@@ -274,7 +274,7 @@ function UpdateBody({ view }: { view: UpdateView }) {
         </div>
         {view.check_error && <p className="mt-1 text-ink-2">{view.check_error}</p>}
         {view.checked_at !== null && (
-          <p className="mt-1 text-[12.5px] text-ink-3">{t("Son denetim: {relative}", { relative: formatRelative(view.checked_at) })}</p>
+          <p className="mt-1 text-[13px] text-ink-3">{t("Son denetim: {relative}", { relative: formatRelative(view.checked_at) })}</p>
         )}
       </div>
 
@@ -290,13 +290,13 @@ function UpdateBody({ view }: { view: UpdateView }) {
       </div>
 
       {last && lastStatus && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-3">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-3">
           <span>{t("Son güncelleme: {from} → {to}, {relative}", { from: last.from, to: last.to, relative: formatRelative(last.at) })}</span>
           <Status tone={lastStatus.tone}>{lastStatus.label}</Status>
         </p>
       )}
 
-      <div className="flex flex-col gap-1 text-[12.5px] text-ink-3">
+      <div className="flex flex-col gap-1 text-[13px] text-ink-3">
         <p>{t("Sürümler imzalıdır; imzası doğrulanamayan bir dosya kurulmaz.")}</p>
         {view.source && (
           <p className="flex min-w-0 items-center gap-1.5">

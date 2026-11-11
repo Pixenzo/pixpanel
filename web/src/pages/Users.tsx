@@ -67,7 +67,7 @@ function creatableRoles(role: Role): Role[] {
 function PermissionPicker({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Erişebileceği alanlar")}</legend>
+      <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Erişebileceği alanlar")}</legend>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         {permissionAreas.map(([key, label]) => (
           <Checkbox
@@ -135,7 +135,7 @@ function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () 
         </>
       }
     >
-      <form id="create-user" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="create-user" onSubmit={submit} className="flex flex-col gap-5">
         {roles.length > 1 && (
           <Select label={t("Hesap türü")} value={role} onChange={(event) => setRole(event.target.value as Role)}>
             {roles.map((item) => (
@@ -220,7 +220,7 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
           event.preventDefault();
           save.mutate();
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
         <Input label={t("E-posta")} type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
         <Input
@@ -380,18 +380,18 @@ export function UsersPage() {
                     <tr key={user.id} className="hover:bg-sunken/50">
                       <Td>
                         <Mono className="font-medium">{user.username}</Mono>
-                        {self && <span className="ml-2 text-[12.5px] text-ink-3">{t("(siz)")}</span>}
+                        {self && <span className="ml-2 text-[13px] text-ink-3">{t("(siz)")}</span>}
                         {user.two_factor && (
                           <span className="ml-2">
                             <Badge tone="ok">{t("2 adımlı")}</Badge>
                           </span>
                         )}
-                        {user.email && <p className="text-[12.5px] text-ink-3">{user.email}</p>}
+                        {user.email && <p className="text-[13px] text-ink-3">{user.email}</p>}
                       </Td>
                       <Td>
                         <Badge tone={user.role === "admin" ? "accent" : "idle"}>{t(roleLabels[user.role])}</Badge>
                         {user.parent_username && me.role === "admin" && (
-                          <span className="ml-2 text-[12.5px] text-ink-3">{t("{name} altında", { name: user.parent_username })}</span>
+                          <span className="ml-2 text-[13px] text-ink-3">{t("{name} altında", { name: user.parent_username })}</span>
                         )}
                       </Td>
                       {canManagePackages && <Td className={user.package_name ? undefined : "text-ink-3"}>{user.package_name ?? (user.role === "admin" || user.role === "member" ? "" : t("Sınırsız"))}</Td>}

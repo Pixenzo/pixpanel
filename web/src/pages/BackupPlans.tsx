@@ -263,7 +263,7 @@ function PlanModal({ plan, targets, sources, onClose }: { plan: Plan | null; tar
               )}
             </div>
           )}
-          <p className="text-[12.5px] text-ink-3">
+          <p className="text-[13px] text-ink-3">
             {scheduled ? t("Saat, sunucunun yerel saatidir.") : t("Bu plan yalnızca siz “Şimdi çalıştır” dediğinizde çalışır.")}
           </p>
         </Section>
@@ -281,9 +281,9 @@ function PlanModal({ plan, targets, sources, onClose }: { plan: Plan | null; tar
                 <span className="flex items-center gap-2 font-medium">
                   <input type="radio" name="retention" className="accent-(--accent)" checked={preset === item.id} onChange={() => setPreset(item.id)} />
                   {t(item.title)}
-                  {item.id === "balanced" && <span className="text-[12px] font-medium text-accent">{t("önerilen")}</span>}
+                  {item.id === "balanced" && <span className="text-[12.5px] font-medium text-accent">{t("önerilen")}</span>}
                 </span>
-                <span className="text-[12.5px] text-ink-2">{t(item.description)}</span>
+                <span className="text-[13px] text-ink-2">{t(item.description)}</span>
               </label>
             ))}
           </div>
@@ -303,14 +303,14 @@ function PlanModal({ plan, targets, sources, onClose }: { plan: Plan | null; tar
               />
             </div>
           )}
-          <p className="text-[12.5px] text-ink-3">{t("Eski kopyalar kendiliğinden silinir; elle alınan yedekler silinmez.")}</p>
+          <p className="text-[13px] text-ink-3">{t("Eski kopyalar kendiliğinden silinir; elle alınan yedekler silinmez.")}</p>
           {keep && keep.keep_daily === 0 && keep.keep_weekly === 0 && keep.keep_monthly === 0 && (
             <Notice tone="warn">{t("Hiçbir yedek silinmez; yedeklerin kapladığı yer sürekli büyür.")}</Notice>
           )}
         </Section>
 
         {save.isError && <Notice tone="bad">{errorMessage(save.error)}</Notice>}
-        {problem && !save.isError && name !== "" && <p className="text-[12.5px] text-ink-3">{problem}</p>}
+        {problem && !save.isError && name !== "" && <p className="text-[13px] text-ink-3">{problem}</p>}
         {/* Enter ile gönderimi etkinleştiren gizli düğme. */}
         <button type="submit" hidden />
       </form>
@@ -329,7 +329,7 @@ function PlanStatus({ plan, onShowLog }: { plan: Plan; onShowLog: () => void }) 
         <span className="inline-flex flex-wrap items-center gap-x-2">
           <Status tone="bad">{t("Başarısız")}</Status>
           {plan.last_job_id !== null && (
-            <button type="button" onClick={onShowLog} className="text-[13px] text-accent underline-offset-2 hover:underline">
+            <button type="button" onClick={onShowLog} className="text-[13.5px] text-accent underline-offset-2 hover:underline">
               {t("günlüğü gör")}
             </button>
           )}
@@ -367,7 +367,7 @@ function PlanRow({
   if (plan.last_run_at) details.push(t("Son: {when}", { when: formatRelative(plan.last_run_at) }));
 
   return (
-    <li className="flex flex-wrap items-start gap-x-4 gap-y-3 border-b border-line px-4 py-3 last:border-b-0">
+    <li className="flex flex-wrap items-start gap-x-4 gap-y-3 border-b border-line px-4 sm:px-6 py-3 last:border-b-0">
       <div className="pt-0.5">
         <Switch checked={plan.enabled} label={t("{name} planı açık", { name: plan.name })} disabled={busy} onChange={onToggle} />
       </div>
@@ -379,7 +379,7 @@ function PlanRow({
         <p className={classNames("mt-0.5", !plan.enabled && "text-ink-3")}>
           {describeFrequency(plan)} · {describeScope(plan.scope)} → {targetName}
         </p>
-        <p className="text-[13px] text-ink-2">{details.join(" · ")}</p>
+        <p className="text-[13.5px] text-ink-2">{details.join(" · ")}</p>
       </div>
       <div className="flex items-center gap-1">
         <Button size="sm" icon={<Play className="size-3.5" />} disabled={busy || plan.last_status === "running"} onClick={onRun}>

@@ -12,7 +12,7 @@ import type { ProtectedArea, Site, SiteRedirect, SiteRules } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { t } from "../lib/i18n";
 
-const cell = "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13px]";
+const cell = "h-9 min-w-0 rounded-md border border-line-strong bg-surface px-3 font-mono text-[13.5px]";
 
 /** Formdaki korumalı klasör: kullanıcıların yeni parolası yalnızca yazıldıysa gönderilir. */
 interface AreaDraft {
@@ -106,7 +106,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
     setAreas((current) => current.map((area, i) => (i === areaIndex ? { ...area, users: area.users.map((user, j) => (j === userIndex ? { ...user, ...changes } : user)) } : area)));
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
+    <form onSubmit={submit} className="flex flex-col gap-5">
       <Panel
         title={t("Yönlendirmeler")}
         actions={
@@ -178,7 +178,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
                     value={area.path}
                     onChange={(event) => updateArea(areaIndex, { path: event.target.value })}
                     placeholder="/yonetim"
-                    className="font-mono text-[13px]"
+                    className="font-mono text-[13.5px]"
                     spellCheck={false}
                     required
                   />
@@ -233,7 +233,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
       </Panel>
 
       <Panel title={t("Bakım kipi")}>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <LabeledSwitch checked={maintenance} onChange={setMaintenance} label={t("Ziyaretçilere bakım sayfası göster")} />
           <p className="max-w-[70ch] text-ink-2">
             {t("Açıkken ziyaretçiler sitenin yerine kısa bir bakım sayfası görür; arama motorlarına geçici olduğu bildirilir. Çalışmanızı sürdürebilmeniz için kendi adresinizi aşağıya yazın.")}
@@ -296,7 +296,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
               <>
                 <div className="flex flex-col gap-2">
                   <LabeledSwitch checked={hotlink} onChange={setHotlink} label={t("Görsellerin başka sitelerde gösterilmesini engelle")} />
-                  <p className="max-w-[70ch] text-[13px] text-ink-2">{t("Başka siteler görsellerinizi kendi sayfalarına gömerek bant genişliğinizi kullanamaz. Görseli doğrudan açanlar ve sitenizin kendi sayfaları etkilenmez.")}</p>
+                  <p className="max-w-[70ch] text-[13.5px] text-ink-2">{t("Başka siteler görsellerinizi kendi sayfalarına gömerek bant genişliğinizi kullanamaz. Görseli doğrudan açanlar ve sitenizin kendi sayfaları etkilenmez.")}</p>
                 </div>
                 <div className="grid gap-4 border-t border-line pt-4 sm:grid-cols-3">
                   <Input
@@ -304,7 +304,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
                     value={errorPages.not_found}
                     onChange={(event) => setErrorPages((current) => ({ ...current, not_found: event.target.value }))}
                     placeholder="/404.html"
-                    className="font-mono text-[13px]"
+                    className="font-mono text-[13.5px]"
                     spellCheck={false}
                   />
                   <Input
@@ -312,7 +312,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
                     value={errorPages.forbidden}
                     onChange={(event) => setErrorPages((current) => ({ ...current, forbidden: event.target.value }))}
                     placeholder="/403.html"
-                    className="font-mono text-[13px]"
+                    className="font-mono text-[13.5px]"
                     spellCheck={false}
                   />
                   <Input
@@ -320,11 +320,11 @@ export function SiteRulesSection({ site }: { site: Site }) {
                     value={errorPages.server_error}
                     onChange={(event) => setErrorPages((current) => ({ ...current, server_error: event.target.value }))}
                     placeholder="/hata.html"
-                    className="font-mono text-[13px]"
+                    className="font-mono text-[13.5px]"
                     spellCheck={false}
                   />
                 </div>
-                <p className="max-w-[70ch] text-[12.5px] text-ink-3">{t("Hata sayfaları sitenizin yayın klasöründeki dosyalardır; boş bıraktığınızda web sunucusunun kendi sayfası gösterilir.")}</p>
+                <p className="max-w-[70ch] text-[13px] text-ink-3">{t("Hata sayfaları sitenizin yayın klasöründeki dosyalardır; boş bıraktığınızda web sunucusunun kendi sayfası gösterilir.")}</p>
               </>
             )}
           </div>
@@ -336,7 +336,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
         <Button type="submit" variant="primary" loading={save.isPending} disabled={!dirty} className="shadow-pop">
           {t("Kuralları kaydet")}
         </Button>
-        {dirty && <span className="rounded-md bg-surface px-2 py-1 text-[13px] text-ink-2 shadow-card">{t("Kaydedilmemiş değişiklikler var")}</span>}
+        {dirty && <span className="rounded-md bg-surface px-2 py-1 text-[13.5px] text-ink-2 shadow-card">{t("Kaydedilmemiş değişiklikler var")}</span>}
       </div>
     </form>
   );

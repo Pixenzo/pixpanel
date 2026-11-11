@@ -56,7 +56,7 @@ function CloneModal({ site, onClose }: { site: Site; onClose: () => void }) {
         }
       >
         <JobLog jobId={started.job_id} onDone={finished} />
-        {result !== null && result !== "success" && <p className="mt-3 text-[13px] text-ink-2">{t("Kopyalama tamamlanamadı; yarım kalan site kaldırıldı. Asıl siteniz etkilenmedi.")}</p>}
+        {result !== null && result !== "success" && <p className="mt-3 text-[13.5px] text-ink-2">{t("Kopyalama tamamlanamadı; yarım kalan site kaldırıldı. Asıl siteniz etkilenmedi.")}</p>}
       </Modal>
     );
   }
@@ -76,20 +76,20 @@ function CloneModal({ site, onClose }: { site: Site; onClose: () => void }) {
         </>
       }
     >
-      <form id="site-clone-form" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="site-clone-form" onSubmit={submit} className="flex flex-col gap-5">
         <Input
           label={t("Kopyanın alan adı")}
           value={domain}
           onChange={(event) => setDomain(event.target.value)}
           placeholder={`deneme.${site.domain.replace(/^www\./, "")}`}
           hint={t("Denemeler için çoğunlukla bir alt alan adı kullanılır.")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           spellCheck={false}
           autoComplete="off"
           autoFocus
           required
         />
-        <ul className="list-disc space-y-1 pl-5 text-[13px] text-ink-2">
+        <ul className="list-disc space-y-1 pl-5 text-[13.5px] text-ink-2">
           {site.kind === "php" && <li>{t("WordPress siteleri veritabanıyla birlikte kopyalanır ve adresleri yeni alan adına çevrilir.")}</li>}
           {site.kind === "php" && <li>{t("Başka PHP uygulamalarında kopya aynı veritabanını kullanmaya devam eder; bağımsız çalışması için yeni bir veritabanı açıp uygulamanın ayarını güncelleyin.")}</li>}
           <li>{t("Takma adlar, SSL sertifikası, Git yayınlama ayarı ve FTP hesapları kopyalanmaz.")}</li>
@@ -107,7 +107,7 @@ export function CloneRow({ site }: { site: Site }) {
     <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0">
       <div className="max-w-[60ch]">
         <p className="font-medium">{t("Siteyi kopyala")}</p>
-        <p className="text-[13px] text-ink-2">{t("Büyük bir değişiklikten önce denemek ya da siteyi yeni bir alan adına çoğaltmak için.")}</p>
+        <p className="text-[13.5px] text-ink-2">{t("Büyük bir değişiklikten önce denemek ya da siteyi yeni bir alan adına çoğaltmak için.")}</p>
       </div>
       <Button onClick={() => setOpen(true)} disabled={site.status !== "active"}>
         {t("Siteyi kopyala")}

@@ -129,7 +129,7 @@ function CreateSiteModal({
       <form id="create-site" onSubmit={submit} className="flex flex-col gap-5">
         {parent ? (
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="subdomain-prefix" className="text-[13px] font-medium text-ink-2">
+            <label htmlFor="subdomain-prefix" className="text-[13.5px] font-medium text-ink-2">
               {t("Alt alan adı")}
             </label>
             <div className="flex items-center rounded-md border border-line-strong bg-surface focus-within:border-accent">
@@ -138,15 +138,15 @@ function CreateSiteModal({
                 value={prefix}
                 onChange={(event) => setPrefix(event.target.value.toLowerCase())}
                 placeholder="blog"
-                className="h-9 min-w-0 flex-1 rounded-l-md bg-transparent px-3 text-right font-mono text-[13px] outline-none"
+                className="h-9 min-w-0 flex-1 rounded-l-md bg-transparent px-3 text-right font-mono text-[13.5px] outline-none"
                 autoCapitalize="none"
                 spellCheck={false}
                 autoFocus
                 required
               />
-              <span className="shrink-0 border-l border-line bg-sunken/70 px-3 py-2 font-mono text-[13px] text-ink-2">.{parent.domain}</span>
+              <span className="shrink-0 border-l border-line bg-sunken/70 px-3 py-2 font-mono text-[13.5px] text-ink-2">.{parent.domain}</span>
             </div>
-            <p className="text-[12.5px] text-ink-3">{t("Alt alan adı kendi klasörü, türü ve ayarları olan ayrı bir sitedir.")}</p>
+            <p className="text-[13px] text-ink-3">{t("Alt alan adı kendi klasörü, türü ve ayarları olan ayrı bir sitedir.")}</p>
           </div>
         ) : (
           <Input
@@ -171,7 +171,7 @@ function CreateSiteModal({
         )}
 
         <fieldset>
-          <legend className="mb-2 text-[13px] font-medium text-ink-2">{t("Site türü")}</legend>
+          <legend className="mb-2 text-[13.5px] font-medium text-ink-2">{t("Site türü")}</legend>
           <div className="grid gap-2 sm:grid-cols-3">
             {kindChoices.map((choice) => (
               <label
@@ -185,7 +185,7 @@ function CreateSiteModal({
                   <input type="radio" name="kind" className="accent-(--accent)" checked={kind === choice.id} onChange={() => setKind(choice.id)} />
                   {t(choice.title)}
                 </span>
-                <span className="text-[12.5px] text-ink-2">{t(choice.description)}</span>
+                <span className="text-[13px] text-ink-2">{t(choice.description)}</span>
               </label>
             ))}
           </div>
@@ -217,7 +217,7 @@ function CreateSiteModal({
                 />
                 <span>
                   <span className="font-medium">{t("WordPress ile başlat")}</span>
-                  <span className="block text-[12.5px] text-ink-2">
+                  <span className="block text-[13px] text-ink-2">
                     {t("Site açılınca kurulum adımına geçersiniz; veritabanını ve ayarları panel hazırlar.")}
                   </span>
                 </span>
@@ -257,7 +257,7 @@ function CreateSiteModal({
               </Link>
             </p>
           ) : (
-            <p className="text-[13px] text-ink-2">
+            <p className="text-[13.5px] text-ink-2">
               {t("Site, Python {version} ve kendi sanal ortamıyla açılır; hemen çalışan örnek bir uygulama bırakılır. Başlatma komutunu ve bağımlılıkları sonra ayarlarsınız.", {
                 version: options.python_versions[0],
               })}
@@ -270,7 +270,7 @@ function CreateSiteModal({
             value={proxyTarget}
             onChange={(event) => setProxyTarget(event.target.value)}
             hint={t("İsteklerin iletileceği uygulamanın adresi")}
-            className="font-mono text-[13px]"
+            className="font-mono text-[13.5px]"
             spellCheck={false}
             required
           />
@@ -314,11 +314,11 @@ export function SiteToolGrid({ site, summary, options }: { site: Site; summary?:
     <ul className="-mr-px -mb-px grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
       {tools.map((tool) => (
         <li key={tool.id} className="border-r border-b border-line">
-          <Link to={tool.to} className="group flex h-full items-start gap-3 px-4 py-3 outline-offset-[-2px] transition-colors hover:bg-accent-soft/50">
+          <Link to={tool.to} className="group flex h-full items-start gap-3 px-4 sm:px-6 py-3 outline-offset-[-2px] transition-colors hover:bg-accent-soft/50">
             <tool.icon aria-hidden className="mt-0.5 size-[18px] shrink-0 text-ink-3 transition-colors group-hover:text-accent" />
             <span className="min-w-0">
               <span className="block font-medium group-hover:text-accent">{tool.label}</span>
-              <span className={classNames("block truncate text-[12.5px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status || " "}</span>
+              <span className={classNames("block truncate text-[13px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status || " "}</span>
             </span>
           </Link>
         </li>
@@ -394,14 +394,14 @@ function SiteCard({
             </a>
             {site.status !== "active" && <Badge tone="warn">{t("Askıda")}</Badge>}
           </div>
-          {site.aliases.length > 0 && <p className="truncate font-mono text-[12px] text-ink-3">{site.aliases.join(", ")}</p>}
+          {site.aliases.length > 0 && <p className="truncate font-mono text-[12.5px] text-ink-3">{site.aliases.join(", ")}</p>}
           {issues.length > 0 && (
-            <p className={classNames("truncate text-[12.5px] font-medium", worst === "critical" ? "text-bad" : worst === "warning" ? "text-warn" : "text-ink-2")}>
+            <p className={classNames("truncate text-[13px] font-medium", worst === "critical" ? "text-bad" : worst === "warning" ? "text-warn" : "text-ink-2")}>
               {issues.map((issue) => t(issue.label)).join(" · ")}
             </p>
           )}
         </div>
-        <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] max-sm:min-w-0 max-sm:flex-1 max-sm:pl-1 sm:gap-x-5">
+        <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13.5px] max-sm:min-w-0 max-sm:flex-1 max-sm:pl-1 sm:gap-x-5">
           <div>
             <dt className="sr-only">{t("Tür")}</dt>
             <dd>
@@ -419,7 +419,7 @@ function SiteCard({
             <div className="max-sm:hidden">
               <dt className="sr-only">{t("Son 24 saatte erişilebilirlik")}</dt>
               <dd
-                className={classNames("tabular font-mono text-[12.5px]", summary.uptime_day >= 99.9 ? "text-ink-3" : summary.uptime_day >= 99 ? "text-warn" : "text-bad")}
+                className={classNames("tabular font-mono text-[13px]", summary.uptime_day >= 99.9 ? "text-ink-3" : summary.uptime_day >= 99 ? "text-warn" : "text-bad")}
                 title={t("Son 24 saatte erişilebilirlik; son yanıt {millis} ms", { millis: summary.response_millis ?? 0 })}
               >
                 %{summary.uptime_day.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}
@@ -439,7 +439,7 @@ function SiteCard({
         </dl>
         <Link
           to={`/sites/${site.id}`}
-          className="inline-flex h-7 items-center rounded-md border border-line-strong px-2.5 text-[13px] font-medium hover:bg-sunken"
+          className="inline-flex h-7 items-center rounded-md border border-line-strong px-2.5 text-[13.5px] font-medium hover:bg-sunken"
         >
           {t("Yönet")}
         </Link>
@@ -468,17 +468,17 @@ function SideRail() {
   const disk = overview.data?.disks.find((item) => item.mount === "/") ?? overview.data?.disks[0];
 
   return (
-    <aside className="flex flex-col gap-4 xl:w-72 xl:shrink-0">
+    <aside className="flex flex-col gap-5 xl:w-72 xl:shrink-0">
       {current && overview.data && (
         <Panel
           title={t("Sunucu")}
           actions={
-            <Link to="/server" className="text-[13px] font-medium text-accent hover:underline">
+            <Link to="/server" className="text-[13.5px] font-medium text-accent hover:underline">
               {t("Ayrıntı")}
             </Link>
           }
         >
-          <dl className="tabular flex flex-col gap-3 text-[13px]">
+          <dl className="tabular flex flex-col gap-3 text-[13.5px]">
             {[
               { label: t("İşlemci"), percent: current.cpu, detail: formatPercent(current.cpu) },
               {
@@ -491,13 +491,13 @@ function SideRail() {
               <div key={row.label}>
                 <div className="mb-1 flex items-baseline justify-between gap-2">
                   <dt className="text-ink-2">{row.label}</dt>
-                  <dd className="font-mono text-[12.5px]">{row.detail}</dd>
+                  <dd className="font-mono text-[13px]">{row.detail}</dd>
                 </div>
                 <Meter value={row.percent} label={row.label} />
               </div>
             ))}
           </dl>
-          <p className="mt-3 border-t border-line pt-3 font-mono text-[12.5px] text-ink-2">
+          <p className="mt-3 border-t border-line pt-3 font-mono text-[13px] text-ink-2">
             {overview.data.host.hostname} · {overview.data.host.os}
           </p>
         </Panel>
@@ -506,26 +506,26 @@ function SideRail() {
         flush
         title={t("Son işlemler")}
         actions={
-          <Link to="/jobs" className="text-[13px] font-medium text-accent hover:underline">
+          <Link to="/jobs" className="text-[13.5px] font-medium text-accent hover:underline">
             {t("Tümü")}
           </Link>
         }
       >
         {recent.length === 0 ? (
-          <p className="px-4 py-4 text-[13px] text-ink-2">{t("Kurulum, yayınlama ve sertifika işlemleri burada listelenir.")}</p>
+          <p className="px-4 sm:px-6 py-4 text-[13.5px] text-ink-2">{t("Kurulum, yayınlama ve sertifika işlemleri burada listelenir.")}</p>
         ) : (
           <ul>
             {recent.map((job) => (
               <li key={job.id} className="border-b border-line last:border-b-0">
-                <Link to="/jobs" className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-sunken/60">
+                <Link to="/jobs" className="flex items-start gap-2.5 px-4 sm:px-6 py-2.5 hover:bg-sunken/60">
                   {job.status === "running" ? (
                     <Spinner className="mt-0.5 size-3.5 shrink-0 text-accent" />
                   ) : (
                     <span aria-hidden className={classNames("mt-1.5 size-2 shrink-0 rounded-full", job.status === "success" ? "bg-ok" : "bg-bad")} />
                   )}
                   <span className="min-w-0">
-                    <span className="block truncate text-[13px]">{job.title}</span>
-                    <span className="block text-[12px] text-ink-3">
+                    <span className="block truncate text-[13.5px]">{job.title}</span>
+                    <span className="block text-[12.5px] text-ink-3">
                       {job.status === "running" ? t("Sürüyor") : job.status === "success" ? t(formatRelative(job.finished_at)) : t("Başarısız · {when}", { when: t(formatRelative(job.finished_at)) })}
                     </span>
                   </span>
@@ -600,7 +600,7 @@ export function SitesPage() {
         {sites.isError && <ErrorBlock message={errorMessage(sites.error)} onRetry={() => void sites.refetch()} />}
         {(sites.isPending || options.isPending) && <LoadingBlock />}
         {options.data && !options.data.nginx_installed && (
-          <div className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-warn">
+          <div className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-4 sm:px-6 py-3 text-warn">
             {t("Site yayınlamak için nginx gerekli.")}{" "}
             {me.role === "admin" ? (
               <Link to="/components" className="font-medium underline">
@@ -624,11 +624,11 @@ export function SitesPage() {
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <SearchInput placeholder={t("Alan adı ya da hesap ara")} aria-label={t("Alan adı ya da hesap ara")} value={filter} onChange={(event) => setFilter(event.target.value)} />
-              <p className="text-[13px] text-ink-2">{t("{count} site", { count: visible.length })}</p>
+              <p className="text-[13.5px] text-ink-2">{t("{count} site", { count: visible.length })}</p>
               <button
                 type="button"
                 onClick={() => persist(allOpen ? openIds.filter((id) => !visible.some((site) => site.id === id)) : [...new Set([...openIds, ...visible.map((site) => site.id)])])}
-                className="ml-auto text-[13px] font-medium text-accent hover:underline"
+                className="ml-auto text-[13.5px] font-medium text-accent hover:underline"
               >
                 {allOpen ? t("Araçları gizle") : t("Bütün araçları göster")}
               </button>

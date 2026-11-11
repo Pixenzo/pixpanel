@@ -42,7 +42,7 @@ function expiryView(notAfter: number): { tone: Tone; label: string } {
 }
 
 const fileInput =
-  "text-[13px] text-ink-2 file:mr-3 file:h-7 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-2.5 file:text-[13px] file:font-medium file:text-ink";
+  "text-[13.5px] text-ink-2 file:mr-3 file:h-7 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-2.5 file:text-[13.5px] file:font-medium file:text-ink";
 
 function CertificateForm({ data }: { data: PanelCertificateState }) {
   const feedback = useFeedback();
@@ -158,9 +158,9 @@ function CertificateForm({ data }: { data: PanelCertificateState }) {
                 <Status tone={expiry.tone}>{expiry.label}</Status>
               </dd>
             </dl>
-            {isLetsEncrypt && <p className="mt-3 text-[13px] text-ink-3">{t("Bitimine 30 gün kala kendiliğinden yenilenir.")}</p>}
+            {isLetsEncrypt && <p className="mt-3 text-[13.5px] text-ink-3">{t("Bitimine 30 gün kala kendiliğinden yenilenir.")}</p>}
             {data.mode === "selfsigned" && (
-              <p className="mt-3 text-[13px] text-ink-3">
+              <p className="mt-3 text-[13.5px] text-ink-3">
                 {t("Tarayıcılar kendinden imzalı sertifikaya güvenmez ve uyarı gösterir.")}
               </p>
             )}
@@ -178,7 +178,7 @@ function CertificateForm({ data }: { data: PanelCertificateState }) {
           placeholder="panel.ornek.com"
           spellCheck={false}
           autoComplete="off"
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           hint={
             t("Bu ad DNS'te bu sunucuyu göstermelidir.") +
             " " +
@@ -205,7 +205,7 @@ function CertificateForm({ data }: { data: PanelCertificateState }) {
               />
               <span>
                 <span className="font-medium">{option.title}</span>
-                <span className={option.warn ? "block text-[12.5px] text-warn" : "block text-[12.5px] text-ink-3"}>{option.hint}</span>
+                <span className={option.warn ? "block text-[13px] text-warn" : "block text-[13px] text-ink-3"}>{option.hint}</span>
               </span>
             </label>
           ))}

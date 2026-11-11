@@ -51,7 +51,7 @@ function PasswordField({ value, onChange, label }: { value: string; onChange: (n
           value={value}
           onChange={(event) => onChange(event.target.value)}
           hint={t("En az 10 karakter. Uygulamanızın ayar dosyasına yazacağınız parola.")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           autoComplete="off"
           spellCheck={false}
           minLength={10}
@@ -85,7 +85,7 @@ function HostField({ value, onChange }: { value: string; onChange: (next: string
           onChange={(event) => onChange(event.target.value)}
           placeholder="203.0.113.10"
           hint={t("Dışarıdan bağlantı için güvenlik duvarında veritabanı portunun da açık olması gerekir.")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           required
         />
       )}
@@ -155,7 +155,7 @@ function CreateDatabaseModal({
         </>
       }
     >
-      <form id="create-database" onSubmit={submit} className="flex flex-col gap-4">
+      <form id="create-database" onSubmit={submit} className="flex flex-col gap-5">
         {engines.length > 1 ? (
           <Select label={t("Veritabanı türü")} value={engine} onChange={(event) => setEngine(event.target.value as DbEngine)}>
             {engines.map((item) => (
@@ -165,7 +165,7 @@ function CreateDatabaseModal({
             ))}
           </Select>
         ) : (
-          <p className="text-[13px] text-ink-2">
+          <p className="text-[13.5px] text-ink-2">
             {t("Tür")}: <span className="font-medium text-ink">{engines[0]?.label}</span>
           </p>
         )}
@@ -174,7 +174,7 @@ function CreateDatabaseModal({
           value={name}
           onChange={(event) => setName(event.target.value.toLowerCase())}
           hint={prefix ? t("“{prefix}” ile başlamalı; küçük harf, rakam ve _ kullanın.", { prefix }) : t("Küçük harf, rakam ve _ kullanın.")}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           autoComplete="off"
           spellCheck={false}
           autoFocus
@@ -195,14 +195,14 @@ function CreateDatabaseModal({
                 setUserTouched(true);
                 setUserName(event.target.value.toLowerCase());
               }}
-              className="font-mono text-[13px]"
+              className="font-mono text-[13.5px]"
               autoComplete="off"
               spellCheck={false}
               required
             />
             <PasswordField label={t("Parola")} value={password} onChange={setPassword} />
             {engine === "mariadb" && <HostField value={host} onChange={setHost} />}
-            <p className="rounded-md bg-accent-soft px-3 py-2 text-[13px] text-accent">
+            <p className="rounded-md bg-accent-soft px-3 py-2 text-[13.5px] text-accent">
               {t("Parolayı şimdi kopyalayın; oluşturduktan sonra yeniden gösterilmez, yalnızca değiştirilebilir.")}
             </p>
           </>
@@ -249,14 +249,14 @@ function CreateUserModal({ engine, prefix, onClose }: { engine: DbEngine; prefix
           event.preventDefault();
           create.mutate();
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
         <Input
           label={t("Kullanıcı adı")}
           value={name}
           onChange={(event) => setName(event.target.value.toLowerCase())}
           hint={prefix ? t("“{prefix}” ile başlamalı.", { prefix }) : undefined}
-          className="font-mono text-[13px]"
+          className="font-mono text-[13.5px]"
           autoComplete="off"
           spellCheck={false}
           autoFocus
@@ -264,7 +264,7 @@ function CreateUserModal({ engine, prefix, onClose }: { engine: DbEngine; prefix
         />
         <PasswordField label={t("Parola")} value={password} onChange={setPassword} />
         {engine === "mariadb" && <HostField value={host} onChange={setHost} />}
-        <p className="text-[13px] text-ink-3">{t("Kullanıcıyı oluşturduktan sonra erişebileceği veritabanlarını “Erişim” düğmesinden seçin.")}</p>
+        <p className="text-[13.5px] text-ink-3">{t("Kullanıcıyı oluşturduktan sonra erişebileceği veritabanlarını “Erişim” düğmesinden seçin.")}</p>
         {create.isError && <ErrorBlock message={errorMessage(create.error)} />}
       </form>
     </Modal>
@@ -301,10 +301,10 @@ function PasswordModal({ user, onClose }: { user: DbUserInfo; onClose: () => voi
           event.preventDefault();
           change.mutate();
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
         <PasswordField label={t("Yeni parola")} value={password} onChange={setPassword} />
-        <p className="text-[13px] text-ink-3">{t("Bu kullanıcıyla bağlanan uygulamaların ayar dosyasını da güncellemeyi unutmayın.")}</p>
+        <p className="text-[13.5px] text-ink-3">{t("Bu kullanıcıyla bağlanan uygulamaların ayar dosyasını da güncellemeyi unutmayın.")}</p>
         {change.isError && <ErrorBlock message={errorMessage(change.error)} />}
       </form>
     </Modal>
@@ -343,8 +343,8 @@ function AccessModal({ database, users, onClose }: { database: DatabaseInfo; use
               <li key={user.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                 <div>
                   <Mono className="font-medium">{user.name}</Mono>
-                  {user.host && user.host !== "localhost" && <span className="ml-2 text-[12.5px] text-ink-3">@{user.host}</span>}
-                  <p className="text-[12.5px] text-ink-3">{current === "none" ? t("Bu veritabanına erişemez") : t(accessHints[current])}</p>
+                  {user.host && user.host !== "localhost" && <span className="ml-2 text-[13px] text-ink-3">@{user.host}</span>}
+                  <p className="text-[13px] text-ink-3">{current === "none" ? t("Bu veritabanına erişemez") : t(accessHints[current])}</p>
                 </div>
                 <select
                   aria-label={t("{user} için erişim düzeyi", { user: user.name })}
@@ -399,7 +399,7 @@ function ImportModal({ database, onClose }: { database: DatabaseInfo; onClose: (
       }
     >
       {jobId === null ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <p className="text-ink-2">
             {t("Bir SQL döküm dosyası seçin (.sql ya da .sql.gz). Dosyadaki tablolar veritabanına eklenir; aynı adlı tablolar varsa dosyanın içeriğine göre üzerine yazılabilir.")}
           </p>
@@ -411,7 +411,7 @@ function ImportModal({ database, onClose }: { database: DatabaseInfo; onClose: (
             className="text-ink-2 file:mr-3 file:h-9 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-3.5 file:font-medium file:text-ink"
           />
           {file && (
-            <p className="text-[13px] text-ink-3">
+            <p className="text-[13.5px] text-ink-3">
               {file.name}, {formatBytes(file.size)}
             </p>
           )}
@@ -548,12 +548,12 @@ export function DatabasesPage() {
         />
       )}
       {!engine.running && (
-        <div role="alert" className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-warn">
+        <div role="alert" className="mb-4 rounded-lg border border-warn/40 bg-warn-soft px-4 sm:px-6 py-3 text-warn">
           {t("{name} servisi çalışmıyor. Servisler sayfasından başlatın.", { name: engine.label })}
         </div>
       )}
       {engine.running && !toolInstalled && me.role === "admin" && (
-        <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-2.5 text-[13px] text-ink-2">
+        <p className="mb-4 rounded-lg border border-line bg-surface px-4 sm:px-6 py-2.5 text-[13.5px] text-ink-2">
           {t("Veritabanlarını tarayıcıdan yönetmek için {tool} kurabilirsiniz; kurulduğunda her veritabanının satırında açma düğmesi görünür.", { tool: toolName })}{" "}
           <Link to="/components" className="font-medium text-accent hover:underline">
             {t("Bileşenler sayfasına git")}
@@ -561,7 +561,7 @@ export function DatabasesPage() {
         </p>
       )}
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <Panel flush title={t("Veritabanları")}>
           {databases.length === 0 ? (
             <EmptyState

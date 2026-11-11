@@ -40,14 +40,14 @@ export class ErrorBoundary extends Component<Props, State> {
     // Panel güncellendikten sonra açık kalan sekmeler eski dosya adlarını ister.
     const staleBundle = /dynamically imported module|Importing a module script failed/i.test(error.message);
     return (
-      <div role="alert" className="flex max-w-[60ch] flex-col items-start gap-3 rounded-lg border border-bad/40 bg-bad-soft px-4 py-4">
+      <div role="alert" className="flex max-w-[60ch] flex-col items-start gap-3 rounded-lg border border-bad/40 bg-bad-soft px-4 sm:px-6 py-4">
         <p className="font-semibold text-bad">{staleBundle ? t("Panel güncellenmiş görünüyor") : t("Bu sayfa görüntülenemedi")}</p>
         <p className="text-ink-2">
           {staleBundle
             ? t("Sayfanın bir parçası yüklenemedi. Sayfayı yenilediğinizde güncel sürüm açılır.")
             : t("Beklenmeyen bir hata oluştu. Sayfayı yenilemeyi deneyin; sorun sürerse hata ayrıntısını yöneticinize iletin.")}
         </p>
-        {!staleBundle && <code className="font-mono text-[12.5px] break-all text-ink-2">{error.message}</code>}
+        {!staleBundle && <code className="font-mono text-[13px] break-all text-ink-2">{error.message}</code>}
         <Button onClick={() => window.location.reload()}>{t("Sayfayı yenile")}</Button>
       </div>
     );
