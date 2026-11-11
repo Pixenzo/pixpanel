@@ -143,7 +143,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 5. Uzun dönem sunucu grafikleri: gün, hafta, ay, yıl
 6. FTP'ye yedek: düz FTP/FTPS yedek hedefi
 7. Site şablonları: uygulamaya göre hazır nginx ayarı
-8. Komut satırı: panelin işlemlerini betikten yapabilmek
+8. Komut satırı: panelin işlemlerini betikten yapabilmek — **tamamlandı**
 9. Birden çok IP: sunucuya IP ekleme, siteye özel IP
 10. DNS kümesi: ikincil ad sunucusuna eşitleme (18. madde)
 11. Çoklu dil: İngilizce çeviri (alt ajana verildi)

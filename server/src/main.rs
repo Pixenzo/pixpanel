@@ -3,6 +3,7 @@
 mod api;
 mod auth;
 mod backup;
+mod cli;
 mod components;
 mod config;
 mod db;
@@ -76,6 +77,8 @@ enum Command {
     /// Dosya yöneticisinin yardımcı süreci; panel tarafından başlatılır
     #[command(hide = true)]
     FsHelper,
+    #[command(flatten)]
+    Api(cli::ApiCommand),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -115,6 +118,7 @@ fn main() -> anyhow::Result<()> {
             println!("{username} için iki adımlı doğrulama kapatıldı.");
             Ok(())
         }
+        Command::Api(command) => cli::run(&cfg, &db, command),
         Command::FsHelper | Command::UpdateWatchdog => unreachable!("yardımcı süreçler yukarıda ele alındı"),
     }
 }
