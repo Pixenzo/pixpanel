@@ -193,7 +193,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 - **Örnek al:** `deploy.rs` (kullanıcı adına komut, canlı günlük).
 - **Kabul:** kurulan site açılır ve giriş yapılır; klon bağımsız çalışır; komutlar sitenin kullanıcısıyla yürür.
 
-### 13. Site ayarları paketi — O, arka uç + arayüz (devre uygun, parçalanabilir)
+### 13. Site ayarları paketi — İLK SÜRÜM TAMAMLANDI (11.11.2026: yönlendirme, parola korumalı klasör, adres kısıtlaması, bakım kipi, WWW tercihi, hotlink, hata sayfaları; kalan: önbellek başlıkları, FastCGI/vekil önbelleği, HTTP/3, yalnızca Cloudflare kipi)
 
 Hepsi nginx şablonuna eklenir; her biri küçük ve bağımsızdır:
 yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve izin listesi, hotlink koruması, özel hata sayfaları, bakım kipi, sıkıştırma ve önbellek başlıkları, FastCGI/vekil önbelleği, HTTP/3, "yalnızca Cloudflare" kipi, WWW'li/WWW'siz tercih.

@@ -25,6 +25,26 @@ function toDrafts(areas: ProtectedArea[]): AreaDraft[] {
   return areas.map((area) => ({ path: area.path, label: area.label, users: area.users.map((user) => ({ name: user.name, password: "", saved: true })) }));
 }
 
+/** Anahtar sırasından bağımsız karşılaştırma için: sunucu alanları farklı sırada gönderir. */
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Anahtarın yanında görünen metniyle birlikte aç/kapa düğmesi. */
+function LabeledSwitch({ checked, onChange, label }: { checked: boolean; onChange: (next: boolean) => void; label: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <Switch checked={checked} onChange={onChange} label={label} />
+      <span className="font-medium">{label}</span>
+    </div>
+  );
+}
+
 const lines = (text: string) =>
   text
     .split(/[\s,]+/)
@@ -64,7 +84,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
     hotlink_protection: hotlink,
     error_pages: errorPages,
   };
-  const dirty = JSON.stringify(body) !== JSON.stringify(initial);
+  const dirty = stable(body) !== stable(initial);
 
   const save = useMutation({
     mutationFn: () => api.patch<Site>(`/sites/${site.id}`, { rules: body }),
@@ -214,7 +234,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
 
       <Panel title={t("Bakım kipi")}>
         <div className="flex flex-col gap-4">
-          <Switch checked={maintenance} onChange={setMaintenance} label={t("Ziyaretçilere bakım sayfası göster")} />
+          <LabeledSwitch checked={maintenance} onChange={setMaintenance} label={t("Ziyaretçilere bakım sayfası göster")} />
           <p className="max-w-[70ch] text-ink-2">
             {t("Açıkken ziyaretçiler sitenin yerine kısa bir bakım sayfası görür; arama motorlarına geçici olduğu bildirilir. Çalışmanızı sürdürebilmeniz için kendi adresinizi aşağıya yazın.")}
           </p>
@@ -275,7 +295,7 @@ export function SiteRulesSection({ site }: { site: Site }) {
             {servesFiles && (
               <>
                 <div className="flex flex-col gap-2">
-                  <Switch checked={hotlink} onChange={setHotlink} label={t("Görsellerin başka sitelerde gösterilmesini engelle")} />
+                  <LabeledSwitch checked={hotlink} onChange={setHotlink} label={t("Görsellerin başka sitelerde gösterilmesini engelle")} />
                   <p className="max-w-[70ch] text-[13px] text-ink-2">{t("Başka siteler görsellerinizi kendi sayfalarına gömerek bant genişliğinizi kullanamaz. Görseli doğrudan açanlar ve sitenizin kendi sayfaları etkilenmez.")}</p>
                 </div>
                 <div className="grid gap-4 border-t border-line pt-4 sm:grid-cols-3">

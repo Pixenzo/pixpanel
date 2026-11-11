@@ -164,6 +164,9 @@ suite backup-ftp restic ftp
 suite templates php-8.3
 suite cli
 suite ips dns
+suite redis-account redis
+suite impersonate
+suite rules php-8.3
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"
