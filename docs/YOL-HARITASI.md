@@ -152,7 +152,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 ## P1 — Müşteriye açmak için gerekli
 
-### 8. Paketler ve kotalar — B, arka uç + arayüz (devre uygun)
+### 8. Paketler ve kotalar — TAMAMLANDI (11.11.2026; kalan: trafik sınırı, izinli PHP sürümleri/özellikler, bayinin toplam kullanımı, veritabanı boyutlarının diske sayılması)
 
 - **Kapsam:** hizmet paketi (site, alt alan adı, veritabanı, posta kutusu, FTP hesabı, DNS bölgesi sayısı; disk ve aylık trafik sınırı; izinli PHP/Node.js sürümleri; izinli özellikler); hesaba paket atama; sınır aşımında oluşturmayı reddetme; kullanım görünümü (hesap ve bayi için).
 - **Disk kotası kararı:** dosya sistemi kotası LXC'de güvenilir değil; panel `du` ile düzenli ölçer, sınır aşılınca uyarır ve yüklemeyi/yeni kaynak açmayı engeller ("yumuşak kota"). Gerçek kota ayrı bir iş.

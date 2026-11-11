@@ -19,6 +19,7 @@ import {
   Select,
   Status,
   Table,
+  Tabs,
   Td,
   Th,
 } from "../components/ui";
@@ -27,6 +28,7 @@ import { api, errorMessage } from "../lib/api";
 import { formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { PackageSelect, PackagesPanel, UsagePanel } from "./Packages";
 
 /** Liste uçunun döndürdüğü, iki adımlı doğrulama durumunu da içeren hesap kaydı. */
 type ManagedUser = UserInfo & { two_factor: boolean };
@@ -80,6 +82,8 @@ function PermissionPicker({ value, onChange }: { value: string[]; onChange: (nex
 }
 
 function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: Role[] }) {
+  const me = useMe();
+  const canManagePackages = me.role === "admin" || me.role === "reseller";
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [username, setUsername] = useState("");
@@ -87,10 +91,20 @@ function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () 
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>(roles[0]);
   const [permissions, setPermissions] = useState<string[]>(["sites", "files"]);
+  const [packageId, setPackageId] = useState(0);
+  // Paket yalnızca müşteri ve bayi hesaplarına atanır; alt hesap üst hesabının paketine tabidir.
+  const packaged = role === "user" || role === "reseller";
 
   const create = useMutation({
     mutationFn: () =>
-      api.post("/users", { username, email, password, role, permissions: role === "member" ? permissions : [] }),
+      api.post("/users", {
+        username,
+        email,
+        password,
+        role,
+        permissions: role === "member" ? permissions : [],
+        package_id: packaged && packageId ? packageId : undefined,
+      }),
     onSuccess: () => {
       feedback.success(t("{name} hesabı oluşturuldu", { name: username }));
       void queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -151,6 +165,7 @@ function CreateUserModal({ open, onClose, roles }: { open: boolean; onClose: () 
           required
         />
         {role === "member" && <PermissionPicker value={permissions} onChange={setPermissions} />}
+        {packaged && canManagePackages && <PackageSelect value={packageId} onChange={setPackageId} />}
         {create.isError && <ErrorBlock message={errorMessage(create.error)} />}
       </form>
     </Modal>
@@ -163,6 +178,10 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
   const [email, setEmail] = useState(user.email);
   const [password, setPassword] = useState("");
   const [permissions, setPermissions] = useState(user.permissions);
+  const [packageId, setPackageId] = useState(user.package_id ?? 0);
+  const me = useMe();
+  // Hesap kendi paketini değiştiremez; paketi onu yöneten yönetici ya da bayi atar.
+  const packaged = (user.role === "user" || user.role === "reseller") && (me.role === "admin" || me.role === "reseller") && user.id !== me.id;
 
   const save = useMutation({
     mutationFn: () =>
@@ -170,6 +189,7 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
         email,
         password: password || undefined,
         permissions: user.role === "member" ? permissions : undefined,
+        package_id: packaged && packageId !== (user.package_id ?? 0) ? packageId : undefined,
       }),
     onSuccess: () => {
       feedback.success(t("{name} güncellendi", { name: user.username }));
@@ -182,6 +202,7 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
     <Modal
       open
       onClose={onClose}
+      wide
       title={t("{name} hesabını düzenle", { name: user.username })}
       footer={
         <>
@@ -211,8 +232,14 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
           minLength={10}
         />
         {user.role === "member" && <PermissionPicker value={permissions} onChange={setPermissions} />}
+        {packaged && <PackageSelect value={packageId} onChange={setPackageId} />}
         {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
       </form>
+      {packaged && (
+        <div className="mt-5">
+          <UsagePanel path={`/users/${user.id}/usage`} title={t("Kullanım")} />
+        </div>
+      )}
     </Modal>
   );
 }
@@ -276,6 +303,8 @@ export function UsersPage() {
   }
 
   const isMemberView = me.role === "user";
+  const canManagePackages = me.role === "admin" || me.role === "reseller";
+  const [tab, setTab] = useState<"accounts" | "packages">("accounts");
   const createLabel = isMemberView ? t("Alt hesap oluştur") : t("Hesap oluştur");
 
   return (
@@ -293,9 +322,21 @@ export function UsersPage() {
           </Button>
         }
       />
-      {users.isError && <ErrorBlock message={errorMessage(users.error)} onRetry={() => void users.refetch()} />}
-      {users.isPending && <LoadingBlock />}
-      {users.data && (
+      {canManagePackages && (
+        <Tabs
+          label={t("Kullanıcılar")}
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "accounts", label: t("Hesaplar") },
+            { id: "packages", label: t("Paketler") },
+          ]}
+        />
+      )}
+      {tab === "packages" && <PackagesPanel />}
+      {tab === "accounts" && users.isError && <ErrorBlock message={errorMessage(users.error)} onRetry={() => void users.refetch()} />}
+      {tab === "accounts" && users.isPending && <LoadingBlock />}
+      {tab === "accounts" && users.data && (
         <Panel flush>
           {users.data.length === 0 ? (
             <EmptyState
@@ -313,6 +354,7 @@ export function UsersPage() {
                 <tr>
                   <Th>{t("Kullanıcı")}</Th>
                   <Th>{t("Tür")}</Th>
+                  {canManagePackages && <Th>{t("Paket")}</Th>}
                   <Th>{t("Durum")}</Th>
                   <Th>{t("Son giriş")}</Th>
                   <Th align="right">{t("İşlemler")}</Th>
@@ -339,6 +381,7 @@ export function UsersPage() {
                           <span className="ml-2 text-[12.5px] text-ink-3">{t("{name} altında", { name: user.parent_username })}</span>
                         )}
                       </Td>
+                      {canManagePackages && <Td className={user.package_name ? undefined : "text-ink-3"}>{user.package_name ?? (user.role === "admin" || user.role === "member" ? "" : t("Sınırsız"))}</Td>}
                       <Td>
                         {user.status === "active" ? <Status tone="ok">{t("Etkin")}</Status> : <Status tone="warn">{t("Askıda")}</Status>}
                       </Td>

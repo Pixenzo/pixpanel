@@ -152,6 +152,42 @@ export interface UserInfo {
   language: string;
   created_at: number;
   last_login_at: number | null;
+  package_id: number | null;
+  package_name: string | null;
+}
+
+/** Paketin sınırları; `null` sınırsız demektir. */
+export interface PackageLimits {
+  sites: number | null;
+  databases: number | null;
+  mail_domains: number | null;
+  mailboxes: number | null;
+  ftp_accounts: number | null;
+  dns_zones: number | null;
+  disk_mb: number | null;
+}
+
+export interface PackageInfo {
+  id: number;
+  owner_id: number;
+  name: string;
+  limits: PackageLimits;
+  /** Bu paketi kullanan hesap sayısı. */
+  accounts: number;
+  created_at: number;
+}
+
+export interface AccountUsage {
+  package: string | null;
+  limits: PackageLimits;
+  sites: number;
+  databases: number;
+  mail_domains: number;
+  mailboxes: number;
+  ftp_accounts: number;
+  dns_zones: number;
+  disk_bytes: number | null;
+  disk_measured_at: number | null;
 }
 
 export interface AuditEntry {

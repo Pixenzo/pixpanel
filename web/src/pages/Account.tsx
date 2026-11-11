@@ -26,6 +26,8 @@ import type { SessionInfo, TokenInfo } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { formatDateTime, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
+import { UsagePanel } from "./Packages";
+import { useMe } from "../lib/session";
 
 function PasswordPanel() {
   const feedback = useFeedback();
@@ -322,10 +324,13 @@ function TokensPanel() {
 }
 
 export function AccountPage() {
+  const role = useMe().role;
   return (
     <>
       <PageHeader title={t("Hesabım")} description={t("Parolanız, iki adımlı doğrulamanız, bildirim tercihleriniz, açık oturumlarınız ve API anahtarlarınız.")} />
       <div className="flex flex-col gap-4">
+        {/* Yöneticinin sınırı yoktur; öteki hesaplar paketlerini ve ne kadarını kullandıklarını görür. */}
+        {role !== "admin" && <UsagePanel path="/packages/usage" />}
         <PasswordPanel />
         <TwoFactorPanel />
         <NotificationSettings />
