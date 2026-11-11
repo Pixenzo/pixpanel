@@ -216,6 +216,8 @@ pub struct Usage {
     pub mailboxes: i64,
     pub ftp_accounts: i64,
     pub dns_zones: i64,
+    /// İçinde bulunulan ayda sitelerin aktardığı veri (bayt).
+    pub traffic_bytes: i64,
     /// Son ölçülen disk kullanımı (bayt); henüz ölçülmediyse `None`.
     pub disk_bytes: Option<i64>,
     pub disk_measured_at: Option<i64>,
@@ -236,6 +238,7 @@ pub fn usage(db: &Db, account_id: i64) -> AppResult<Usage> {
         mailboxes: count(db, account_id, Resource::Mailbox)?,
         ftp_accounts: count(db, account_id, Resource::FtpAccount)?,
         dns_zones: count(db, account_id, Resource::DnsZone)?,
+        traffic_bytes: crate::stats::account_month_bytes(db, account_id)?,
         disk_bytes: disk.map(|(bytes, _)| bytes),
         disk_measured_at: disk.map(|(_, at)| at),
     })

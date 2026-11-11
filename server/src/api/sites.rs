@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
         .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
         .route("/{id}/uptime", get(uptime))
+        .route("/{id}/stats", get(stats))
         .route("/{id}/node", get(node_status))
         .route("/{id}/node/run", axum::routing::post(node_run))
         .route("/{id}/node/{action}", axum::routing::post(node_action))
@@ -35,6 +36,23 @@ pub fn router() -> Router<AppState> {
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<Site>>> {
     user.require(AREA)?;
     Ok(Json(sites::list(&state.db, &user)?))
+}
+
+#[derive(serde::Deserialize)]
+struct StatsQuery {
+    /// Kaç günlük dönem (varsayılan 30, en çok 365).
+    days: Option<i64>,
+}
+
+/// Sitenin ziyaret ve trafik istatistikleri.
+async fn stats(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, axum::extract::Query(query): axum::extract::Query<StatsQuery>) -> AppResult<Json<crate::stats::SiteStats>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    // Sayfa açıldığında son dakikaların istekleri de görünsün diye günlüğün yeni satırları hemen işlenir.
+    let db = state.db.clone();
+    let fresh = site.clone();
+    let _ = tokio::task::spawn_blocking(move || crate::stats::collect_site(&db, &fresh)).await;
+    Ok(Json(crate::stats::site_stats(&state.db, site.id, query.days.unwrap_or(30).clamp(1, 365))?))
 }
 
 /// Sitenin son 24 saatlik erişilebilirlik geçmişi.

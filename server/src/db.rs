@@ -372,6 +372,41 @@ const MIGRATIONS: &[&str] = &[
         UNIQUE (user_id, fingerprint)
     );
     "#,
+    // 17: site istatistikleri (erişim günlüklerinden çıkarılan günlük özetler).
+    r#"
+    CREATE TABLE site_log_state (
+        site_id INTEGER PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+        inode   INTEGER NOT NULL,
+        offset  INTEGER NOT NULL
+    );
+    CREATE TABLE site_stats_daily (
+        site_id  INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        day      INTEGER NOT NULL,
+        requests INTEGER NOT NULL DEFAULT 0,
+        pages    INTEGER NOT NULL DEFAULT 0,
+        bytes    INTEGER NOT NULL DEFAULT 0,
+        visitors INTEGER NOT NULL DEFAULT 0,
+        bots     INTEGER NOT NULL DEFAULT 0,
+        s2xx     INTEGER NOT NULL DEFAULT 0,
+        s3xx     INTEGER NOT NULL DEFAULT 0,
+        s4xx     INTEGER NOT NULL DEFAULT 0,
+        s5xx     INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (site_id, day)
+    ) WITHOUT ROWID;
+    CREATE TABLE site_stats_visitors (
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        day     INTEGER NOT NULL,
+        hash    INTEGER NOT NULL,
+        PRIMARY KEY (site_id, day, hash)
+    ) WITHOUT ROWID;
+    CREATE TABLE site_stats_paths (
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        day     INTEGER NOT NULL,
+        path    TEXT NOT NULL,
+        hits    INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (site_id, day, path)
+    ) WITHOUT ROWID;
+    "#,
 ];
 
 #[derive(Clone)]

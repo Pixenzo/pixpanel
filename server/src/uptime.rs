@@ -34,7 +34,8 @@ impl Check {
 /// İstek yerel adrese gittiğinden sertifikanın adı ve geçerliliği burada doğrulanmaz
 /// (sertifika ayrı bir denetimin konusudur).
 pub async fn probe(domain: &str, https: bool, timeout: std::time::Duration) -> Result<u16, reqwest::Error> {
-    let builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(timeout);
+    // Yoklamalar kendini tanıtır; istatistik toplayıcı bu istekleri ziyaret saymaz.
+    let builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(timeout).user_agent(crate::stats::PROBE_USER_AGENT);
     if https {
         let address = std::net::SocketAddr::from(([127, 0, 0, 1], 443));
         let client = builder.resolve(domain, address).danger_accept_invalid_certs(true).build()?;

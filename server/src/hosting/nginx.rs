@@ -350,7 +350,7 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
                 None => out.push_str("    location / {\n        try_files $uri $uri/ =404;\n    }\n"),
             }
             out.push_str(
-                "    location ~* \\.(?:css|js|mjs|jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$ {\n        expires 30d;\n        access_log off;\n    }\n",
+                "    location ~* \\.(?:css|js|mjs|jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$ {\n        expires 30d;\n    }\n",
             );
         }
     }

@@ -98,6 +98,23 @@ pub fn spawn_disk_measurement(state: AppState) {
     });
 }
 
+/// Site erişim günlüklerindeki yeni satırları beş dakikada bir istatistiklere işler.
+pub fn spawn_stats_collector(state: AppState) {
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        loop {
+            let collector = state.clone();
+            // Günlük okumak ve veritabanına yazmak eşzamanlı işlerdir; istekleri bekletmesin.
+            match tokio::task::spawn_blocking(move || crate::stats::collect(&collector)).await {
+                Ok(Err(err)) => tracing::warn!(error = %err, "site istatistikleri toplanamadı"),
+                Err(err) => tracing::warn!(error = %err, "istatistik görevi sonlandı"),
+                Ok(Ok(())) => {}
+            }
+            tokio::time::sleep(Duration::from_secs(300)).await;
+        }
+    });
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {
