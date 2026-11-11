@@ -77,6 +77,11 @@ pub struct AuthUser {
     pub via_token: bool,
     #[serde(skip)]
     pub session_id: Option<i64>,
+    /// Oturum başka bir hesap (yönetici ya da bayi) tarafından bu hesap adına açıldıysa onun adı.
+    #[serde(rename = "impersonated_by")]
+    pub impersonator: Option<String>,
+    #[serde(skip)]
+    pub impersonator_id: Option<i64>,
 }
 
 impl AuthUser {
@@ -145,6 +150,22 @@ pub fn random_password(len: usize) -> String {
 /// Anahtarlar veritabanında yalnızca özet olarak saklanır.
 pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+/// Başka hesap adına oturum açar: `impersonator_id`, oturumu asıl açan hesaptır.
+/// Hedef hesabın "son giriş" bilgisi değişmez; giriş yapan o değildir.
+pub fn create_impersonation_session(db: &Db, user_id: i64, impersonator_id: i64, ip: &str, user_agent: &str, ttl: i64) -> AppResult<String> {
+    let token = random_token(32);
+    let token_hash = hash_token(&token);
+    let created = now();
+    db.call(|conn| {
+        conn.execute(
+            "INSERT INTO sessions (user_id, token_hash, ip, user_agent, created_at, expires_at, impersonator_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![user_id, token_hash, ip, user_agent, created, created + ttl, impersonator_id],
+        )
+    })?;
+    Ok(token)
 }
 
 /// Yeni oturum açar ve çereze yazılacak ham anahtarı döner.
@@ -275,6 +296,7 @@ impl FromRequestParts<AppState> for AuthUser {
         let current = now();
         let safe_method = matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS);
 
+        let mut impersonation: Option<(i64, String)> = None;
         let (row, via_token, session_id) = if let Some(token) = bearer_token(parts) {
             let token_hash = hash_token(token);
             let found = state.db.call(|conn| {
@@ -323,16 +345,33 @@ impl FromRequestParts<AppState> for AuthUser {
             let found = state.db.call(|conn| {
                 conn.query_row(
                     &format!(
-                        "SELECT {USER_COLUMNS}, s.id, s.expires_at
+                        "SELECT {USER_COLUMNS}, s.id, s.expires_at, s.impersonator_id, i.username, i.status
                          FROM sessions s JOIN users u ON u.id = s.user_id
+                         LEFT JOIN users i ON i.id = s.impersonator_id
                          WHERE s.token_hash = ?1"
                     ),
                     params![token_hash],
-                    |row| Ok((read_user(row)?, row.get::<_, i64>(8)?, row.get::<_, i64>(9)?)),
+                    |row| {
+                        Ok((
+                            read_user(row)?,
+                            row.get::<_, i64>(8)?,
+                            row.get::<_, i64>(9)?,
+                            row.get::<_, Option<i64>>(10)?,
+                            row.get::<_, Option<String>>(11)?,
+                            row.get::<_, Option<String>>(12)?,
+                        ))
+                    },
                 )
                 .optional()
             })?;
-            let (user, session_id, expires_at) = found.ok_or(AppError::Unauthorized)?;
+            let (user, session_id, expires_at, impersonator_id, impersonator_name, impersonator_status) = found.ok_or(AppError::Unauthorized)?;
+            if let Some(id) = impersonator_id {
+                // Oturumu açan hesap askıya alındıysa onun adına açtığı oturumlar da geçersizdir.
+                if impersonator_status.as_deref() != Some("active") {
+                    return Err(AppError::Unauthorized);
+                }
+                impersonation = Some((id, impersonator_name.unwrap_or_default()));
+            }
             if expires_at < current {
                 return Err(AppError::Unauthorized);
             }
@@ -364,6 +403,8 @@ impl FromRequestParts<AppState> for AuthUser {
             ip,
             via_token,
             session_id,
+            impersonator: impersonation.as_ref().map(|(_, name)| name.clone()),
+            impersonator_id: impersonation.map(|(id, _)| id),
         })
     }
 }
@@ -391,11 +432,16 @@ pub fn session_is_valid(parts: &Parts, state: &AppState) -> bool {
 
 /// Denetim günlüğüne kayıt düşer. Günlük yazılamaması asıl işlemi bozmamalıdır.
 pub fn audit(db: &Db, user: &AuthUser, action: &str, target: &str, detail: &str) {
+    // Başka hesap adına yapılan işlemde kimin yaptığı da kayda geçer.
+    let username = match &user.impersonator {
+        Some(by) => format!("{by} → {}", user.username),
+        None => user.username.clone(),
+    };
     let result = db.call(|conn| {
         conn.execute(
             "INSERT INTO audit_log (user_id, username, action, target, detail, ip, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![user.id, user.username, action, target, detail, user.ip, now()],
+            params![user.id, username, action, target, detail, user.ip, now()],
         )
     });
     if let Err(err) = result {

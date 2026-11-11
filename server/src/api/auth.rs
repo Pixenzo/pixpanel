@@ -20,6 +20,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/login", post(login))
         .route("/logout", post(logout))
+        .route("/impersonate/stop", post(stop_impersonation))
         .route("/me", get(me))
         .route("/password", post(change_password))
         .route("/2fa", get(two_factor_status))
@@ -149,6 +150,20 @@ async fn logout(State(state): State<AppState>, user: AuthUser) -> AppResult<Resp
         state.db.call(|conn| conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id]))?;
     }
     let cookie = auth::session_cookie("", 0, state.cfg.tls);
+    Ok(([(SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response())
+}
+
+/// Başka hesap adına açılmış oturumu kapatır ve oturumu açan hesaba geri döner.
+async fn stop_impersonation(State(state): State<AppState>, user: AuthUser, headers: HeaderMap) -> AppResult<Response> {
+    let (Some(session_id), Some(impersonator_id)) = (user.session_id, user.impersonator_id) else {
+        return Err(AppError::bad("Bu oturum başka hesap adına açılmamış"));
+    };
+    let user_agent = headers.get(USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
+    let ttl = state.cfg.session_ttl_secs;
+    state.db.call(|conn| conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id]))?;
+    let token = auth::create_session(&state.db, impersonator_id, &user.ip, user_agent, ttl)?;
+    auth::audit(&state.db, &user, "user.impersonate.stop", &user.username, "");
+    let cookie = auth::session_cookie(&token, ttl, state.cfg.tls);
     Ok(([(SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response())
 }
 
@@ -384,6 +399,10 @@ async fn create_token(
     // Anahtarlar yalnızca panel oturumundan üretilebilir; sızan bir anahtar yenisini üretememelidir.
     if user.via_token {
         return Err(AppError::Forbidden);
+    }
+    // Başka hesap adına oturumdayken o hesaba kalıcı erişim (anahtar) üretilemez.
+    if user.impersonator.is_some() {
+        return Err(AppError::bad("Başka hesap adına oturumdayken API anahtarı üretilemez"));
     }
     let name = body.name.trim();
     if name.is_empty() || name.chars().count() > 64 {

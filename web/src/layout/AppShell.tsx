@@ -9,7 +9,7 @@ import { NavLink, useLocation, useNavigate } from "react-router";
 import { BrandMark } from "../components/Brand";
 import { CommandPalette } from "../components/CommandPalette";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { IconButton, Spinner } from "../components/ui";
+import { Button, IconButton, Spinner } from "../components/ui";
 import type { Overview } from "../lib/api";
 import { api } from "../lib/api";
 import { classNames, formatBytes, formatPercent } from "../lib/format";
@@ -226,6 +226,35 @@ function UserMenu() {
 
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
+/** Başka hesap adına oturumdayken her sayfanın üstünde durur: kimin gözünden bakıldığını
+ *  unutturmaz ve tek tıkla kendi hesabına döndürür. */
+function ImpersonationBar({ by, username }: { by: string; username: string }) {
+  const [leaving, setLeaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  async function leave() {
+    setLeaving(true);
+    setFailed(false);
+    try {
+      await api.post("/auth/impersonate/stop");
+      window.location.assign("/users");
+    } catch {
+      setLeaving(false);
+      setFailed(true);
+    }
+  }
+  return (
+    <div role="status" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 border-b border-warn/40 bg-warn-soft px-3 py-2 text-[13px] text-warn">
+      <span>
+        {t("{by} olarak {username} hesabının panelindesiniz. Yaptığınız her işlem bu hesaba uygulanır.", { by, username })}
+        {failed && ` ${t("Geri dönülemedi; yeniden deneyin.")}`}
+      </span>
+      <Button size="sm" onClick={() => void leave()} loading={leaving}>
+        {t("Kendi hesabıma dön")}
+      </Button>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const [theme, toggleTheme] = useTheme();
@@ -294,6 +323,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <UserMenu />
         </div>
       </header>
+
+      {me.impersonated_by !== null && <ImpersonationBar by={me.impersonated_by} username={me.username} />}
 
       <main id="content" className="mx-auto w-full max-w-[1400px] px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
         <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>

@@ -497,6 +497,11 @@ const MIGRATIONS: &[&str] = &[
     UPDATE jobs SET user_id = NULL WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users);
     UPDATE audit_log SET user_id = NULL WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM users);
     "#,
+    // 24: başka hesap adına açılan oturumlar (yönetici ya da bayi, müşterisinin panelini görür).
+    //     Oturumu asıl açan hesap silinirse oturum da kapanır.
+    r#"
+    ALTER TABLE sessions ADD COLUMN impersonator_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

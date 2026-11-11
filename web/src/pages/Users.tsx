@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Pause, Play, Plus, ShieldOff, Trash2 } from "lucide-react";
+import { KeyRound, LogIn, Pause, Play, Plus, ShieldOff, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { AccessPanel } from "../components/AccessPanel";
@@ -297,6 +297,13 @@ export function UsersPage() {
     onSettled: invalidate,
   });
 
+  const impersonate = useMutation({
+    mutationFn: (user: UserInfo) => api.post(`/users/${user.id}/impersonate`),
+    // Oturum değişti: sayfa baştan yüklenir ki bütün veriler yeni hesabın gözünden gelsin.
+    onSuccess: () => window.location.assign("/"),
+    onError: (error) => feedback.error(error),
+  });
+
   async function confirmRemove(user: UserInfo) {
     const confirmed = await feedback.confirm({
       title: t("{name} silinsin mi?", { name: user.username }),
@@ -394,6 +401,11 @@ export function UsersPage() {
                       <Td className="whitespace-nowrap text-ink-2">{formatRelative(user.last_login_at)}</Td>
                       <Td align="right" className="py-0.5">
                         <div className="flex justify-end gap-0.5">
+                          {!self && user.role !== "admin" && user.status === "active" && me.impersonated_by === null && (
+                            <IconButton label={t("{name} hesabına gir", { name: user.username })} onClick={() => impersonate.mutate(user)} disabled={impersonate.isPending}>
+                              <LogIn className="size-4" />
+                            </IconButton>
+                          )}
                           <IconButton label={t("Düzenle ve parola değiştir")} onClick={() => setEditing(user)}>
                             <KeyRound className="size-4" />
                           </IconButton>

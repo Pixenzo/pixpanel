@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", patch(update).delete(remove))
         .route("/{id}/usage", get(usage))
         .route("/{id}/2fa/reset", axum::routing::post(reset_two_factor))
+        .route("/{id}/impersonate", axum::routing::post(impersonate))
 }
 
 #[derive(Serialize)]
@@ -192,6 +193,41 @@ fn load_manageable(state: &AppState, user: &AuthUser, id: i64) -> AppResult<Targ
         // Başkasının hesabının varlığı da sızdırılmaz.
         Err(AppError::NotFound)
     }
+}
+
+/// Yönettiği bir hesabın panelini onun gözünden görmek için o hesap adına oturum açar.
+/// İstek yapanın kendi oturumu kapanır; geri dönüş `POST /auth/impersonate/stop` iledir.
+async fn impersonate(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    headers: axum::http::HeaderMap,
+) -> AppResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    // Yalnızca gerçek bir panel oturumundan: anahtarla ya da zaten başka hesap adınayken yapılamaz.
+    let Some(session_id) = user.session_id.filter(|_| !user.via_token) else { return Err(AppError::Forbidden) };
+    if user.impersonator.is_some() {
+        return Err(AppError::bad("Önce kendi hesabınıza dönün"));
+    }
+    if id == user.id {
+        return Err(AppError::bad("Zaten kendi hesabınızdasınız"));
+    }
+    let target = load_manageable(&state, &user, id)?;
+    // Yönetici başka bir yöneticinin yerine geçemez: yetki devri değil, destek aracıdır.
+    if target.role == "admin" {
+        return Err(AppError::bad("Yönetici hesabı adına oturum açılamaz"));
+    }
+    let active: bool = state.db.call(|conn| conn.query_row("SELECT status = 'active' FROM users WHERE id = ?1", params![id], |row| row.get(0)))?;
+    if !active {
+        return Err(AppError::bad("Askıya alınmış hesap adına oturum açılamaz"));
+    }
+    let user_agent = headers.get(axum::http::header::USER_AGENT).and_then(|value| value.to_str().ok()).unwrap_or("");
+    let ttl = state.cfg.session_ttl_secs.min(2 * 3600);
+    let token = auth::create_impersonation_session(&state.db, id, user.id, &user.ip, user_agent, ttl)?;
+    state.db.call(|conn| conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id]))?;
+    auth::audit(&state.db, &user, "user.impersonate", &target.username, "");
+    let cookie = auth::session_cookie(&token, ttl, state.cfg.tls);
+    Ok(([(axum::http::header::SET_COOKIE, cookie)], Json(json!({ "ok": true }))).into_response())
 }
 
 /// Telefonunu kaybeden bir hesabın iki adımlı doğrulamasını kapatır ve oturumlarını sonlandırır.

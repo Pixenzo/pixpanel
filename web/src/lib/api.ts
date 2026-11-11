@@ -77,6 +77,8 @@ export interface Me {
   parent_id: number | null;
   permissions: string[];
   language: string;
+  /** Oturumu bu hesap adına başka biri (yönetici ya da bayi) açtıysa onun adı. */
+  impersonated_by: string | null;
 }
 
 export interface Sample {

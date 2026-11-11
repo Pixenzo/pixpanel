@@ -2366,4 +2366,8 @@ export const en: Record<string, string> = {
   "{name} hesabının bellek sınırını değiştir": "Change memory limit for {name}",
   "{name} hesabının Redis'ini kapat": "Turn off Redis for {name}",
   "Bu ortak Redis'te hesaplar arası yalıtım yoktur; buradaki veriler sunucudaki bütün uygulamalara aittir. Müşteri hesapları kendi sayfalarından yalıtılmış ayrı bir Redis açabilir.": "This shared Redis has no isolation between accounts; the data here belongs to every application on the server. Customer accounts can turn on a separate, isolated Redis from their own page.",
+  "{name} hesabına gir": "Sign in as {name}",
+  "{by} olarak {username} hesabının panelindesiniz. Yaptığınız her işlem bu hesaba uygulanır.": "You are in {username}'s panel as {by}. Everything you do applies to this account.",
+  "Geri dönülemedi; yeniden deneyin.": "Could not return; try again.",
+  "Kendi hesabıma dön": "Return to my account",
 };

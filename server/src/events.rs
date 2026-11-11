@@ -89,6 +89,8 @@ mod tests {
             ip: String::new(),
             via_token: false,
             session_id: None,
+            impersonator: None,
+            impersonator_id: None,
         }
     }
 
