@@ -63,7 +63,21 @@ pub struct Limits {
     pub dns_zones: Option<i64>,
     /// Disk sınırı (MB): site dosyaları, posta kutuları ve veritabanları.
     pub disk_mb: Option<i64>,
+    /// İşlemci sınırı: bir çekirdeğin yüzdesi (100 = bir tam çekirdek). Aralık 10–3200.
+    pub cpu_percent: Option<i64>,
+    /// Hesabın bütün süreçlerinin toplam bellek sınırı (MB). Aralık 64–262144.
+    pub memory_mb: Option<i64>,
+    /// Site başına en çok PHP işçisi (PHP-FPM `pm.max_children`). Aralık 1–200.
+    pub php_workers: Option<i64>,
+    /// Hesabın en çok kaç süreç/iş parçacığı çalıştırabileceği (systemd `TasksMax`). Aralık 20–10000.
+    pub processes: Option<i64>,
 }
+
+/// Kaynak sınırı alanlarının izin verilen aralıkları (dahil).
+pub const CPU_PERCENT_RANGE: std::ops::RangeInclusive<i64> = 10..=3200;
+pub const MEMORY_MB_RANGE: std::ops::RangeInclusive<i64> = 64..=262_144;
+pub const PHP_WORKERS_RANGE: std::ops::RangeInclusive<i64> = 1..=200;
+pub const PROCESSES_RANGE: std::ops::RangeInclusive<i64> = 20..=10_000;
 
 impl Limits {
     fn of(&self, resource: Resource) -> Option<i64> {
@@ -77,7 +91,7 @@ impl Limits {
         }
     }
 
-    fn fields(&self) -> [(&'static str, Option<i64>); 7] {
+    fn fields(&self) -> [(&'static str, Option<i64>); 11] {
         [
             ("site", self.sites),
             ("veritabanı", self.databases),
@@ -86,13 +100,29 @@ impl Limits {
             ("FTP hesabı", self.ftp_accounts),
             ("DNS bölgesi", self.dns_zones),
             ("disk", self.disk_mb),
+            ("işlemci", self.cpu_percent),
+            ("bellek", self.memory_mb),
+            ("PHP işçisi", self.php_workers),
+            ("süreç", self.processes),
         ]
     }
 
     pub fn validate(&self) -> AppResult<()> {
-        for (label, value) in self.fields() {
+        // Sayı sınırları (ilk yedi alan): 0 "pakette yok" demektir.
+        for (label, value) in self.fields().into_iter().take(7) {
             if value.is_some_and(|value| !(0..=1_000_000_000).contains(&value)) {
                 return Err(AppError::bad(format!("Geçersiz {label} sınırı")));
+            }
+        }
+        // Kaynak sınırları: sınırsız (boş) ya da kendi aralığında bir değer.
+        for (label, value, range) in [
+            ("işlemci", self.cpu_percent, CPU_PERCENT_RANGE),
+            ("bellek", self.memory_mb, MEMORY_MB_RANGE),
+            ("PHP işçisi", self.php_workers, PHP_WORKERS_RANGE),
+            ("süreç", self.processes, PROCESSES_RANGE),
+        ] {
+            if let Some(value) = value.filter(|value| !range.contains(value)) {
+                return Err(AppError::bad(format!("Geçersiz {label} sınırı: {value} ({}–{} arasında olmalı ya da boş bırakılmalı)", range.start(), range.end())));
             }
         }
         Ok(())
@@ -241,6 +271,9 @@ pub struct Usage {
     /// `disk_bytes` içindeki veritabanları payı (bayt); henüz ölçülmediyse `None`.
     pub database_bytes: Option<i64>,
     pub disk_measured_at: Option<i64>,
+    /// Hesabın işlemci/bellek/süreç sınırlarının sunucuda uygulanıp uygulanmadığı ve anlık kullanımı.
+    /// Hesabın hiç kaynak sınırı yoksa `None`; uç işleyicileri doldurur (`resource_limits::runtime`).
+    pub runtime: Option<crate::hosting::resource_limits::Runtime>,
 }
 
 /// Son ölçülen veritabanı toplam boyutu (bayt).
@@ -267,6 +300,7 @@ pub fn usage(db: &Db, account_id: i64) -> AppResult<Usage> {
         disk_bytes: disk.map(|(bytes, _)| bytes),
         database_bytes: database_usage(db, account_id)?,
         disk_measured_at: disk.map(|(_, at)| at),
+        runtime: None,
     })
 }
 
@@ -458,6 +492,32 @@ mod tests {
         assert!(limits(Some(0), Some(0)).validate().is_ok());
         assert!(limits(Some(-1), None).validate().is_err());
         assert!(limits(None, Some(-5)).validate().is_err());
+    }
+
+    #[test]
+    fn resource_limits_have_their_own_ranges() {
+        let with = |cpu, memory, workers, processes| Limits { cpu_percent: cpu, memory_mb: memory, php_workers: workers, processes, ..Limits::default() };
+        assert!(with(None, None, None, None).validate().is_ok());
+        assert!(with(Some(10), Some(64), Some(1), Some(20)).validate().is_ok());
+        assert!(with(Some(3200), Some(262_144), Some(200), Some(10_000)).validate().is_ok());
+        assert!(with(Some(9), None, None, None).validate().is_err());
+        assert!(with(Some(3201), None, None, None).validate().is_err());
+        assert!(with(None, Some(63), None, None).validate().is_err());
+        assert!(with(None, Some(262_145), None, None).validate().is_err());
+        assert!(with(None, None, Some(0), None).validate().is_err());
+        assert!(with(None, None, Some(201), None).validate().is_err());
+        assert!(with(None, None, None, Some(19)).validate().is_err());
+        assert!(with(None, None, None, Some(10_001)).validate().is_err());
+    }
+
+    #[test]
+    fn reseller_cannot_exceed_resource_limits() {
+        let ceiling = Limits { cpu_percent: Some(200), memory_mb: Some(1024), ..Limits::default() };
+        let mine = |cpu, memory| Limits { cpu_percent: cpu, memory_mb: memory, ..Limits::default() };
+        assert!(mine(Some(100), Some(512)).within(&ceiling).is_ok());
+        assert_eq!(mine(Some(300), Some(512)).within(&ceiling), Err("işlemci"));
+        assert_eq!(mine(Some(100), None).within(&ceiling), Err("bellek"), "sınırsız, sınırlı tavanı aşar");
+        assert!(mine(Some(3200), Some(262_144)).within(&Limits::default()).is_ok());
     }
 
     #[test]

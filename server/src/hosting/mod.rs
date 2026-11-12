@@ -9,6 +9,7 @@ pub mod php;
 pub mod portguard;
 pub mod pyenv;
 pub mod redis_account;
+pub mod resource_limits;
 pub mod rules;
 pub mod sites;
 pub mod sshaccess;

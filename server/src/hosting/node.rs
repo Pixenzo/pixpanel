@@ -250,7 +250,7 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
          PrivateTmp=yes\n\
          ProtectSystem=full\n\
          SyslogIdentifier=pixpanel-node-{site_id}\n\
-         {port_rules}",
+         {port_rules}{slice_line}",
         name = user.name,
         root = root.display(),
         port = port(site_id),
@@ -259,7 +259,9 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
         runtime = runtime_name(kind),
         // Uygulama yalnızca kendi portunu açabilir; başka sitelerin portlarını bağlayamaz.
         port_rules = crate::hosting::portguard::unit_lines(port(site_id)),
-        env = config_file(site_id, "env").display(),
+        // Hesabın işlemci/bellek sınırı varsa uygulama da hesabın diliminde çalışır (koşulları `resource_limits` açıklar).
+        slice_line = crate::hosting::resource_limits::app_slice_line(user.uid),
+        env =config_file(site_id, "env").display(),
         script = config_file(site_id, "sh").display(),
     );
     if settings.memory_mb > 0 {
@@ -356,6 +358,23 @@ pub async fn apply(site_id: i64, domain: &str, user: &SysUser, root: &Path, sett
     let _ = exec::run("systemctl", &["reset-failed", "--", &unit]).await;
     exec::run_ok("systemctl", &["restart", "--", &unit]).await?;
     Ok(())
+}
+
+/// Var olan servisin birim dosyasını güncel ayarlarla yeniden yazar; servisi yeniden başlatmaz ve
+/// `daemon-reload` çağırmaz (çağıran toplu yapar). Birim yoksa ya da içerik aynıysa `false` döner.
+/// Kaynak sınırı değişince dilim satırını eklemek/kaldırmak için kullanılır; değişiklik servisin
+/// bir sonraki başlatılışında geçerli olur.
+pub fn rewrite_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings: &NodeSettings, kind: &str) -> AppResult<bool> {
+    let path = unit_path(site_id);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let wanted = render_unit(site_id, domain, user, root, settings, kind);
+    if std::fs::read_to_string(&path).is_ok_and(|current| current == wanted) {
+        return Ok(false);
+    }
+    atomic_write(&path, wanted.as_bytes(), 0o644)?;
+    Ok(true)
 }
 
 /// Sitenin servisini durdurur ve dosyalarını kaldırır (site silindiğinde ya da türü değiştiğinde).

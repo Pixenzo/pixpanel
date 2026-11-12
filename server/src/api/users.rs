@@ -143,7 +143,9 @@ fn assignable_package(state: &AppState, user: &AuthUser, package_id: i64, target
 /// Yönetilen bir hesabın paketi ve kullanımı.
 async fn usage(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<crate::quota::Usage>> {
     load_manageable(&state, &user, id)?;
-    Ok(Json(crate::quota::usage(&state.db, id)?))
+    let mut usage = crate::quota::usage(&state.db, id)?;
+    usage.runtime = crate::hosting::resource_limits::runtime(&state.db, id).await;
+    Ok(Json(usage))
 }
 
 async fn create(
@@ -186,6 +188,10 @@ async fn create(
         tx.commit()?;
         Ok(id)
     })?;
+    // Paketin işlemci/bellek sınırı kaydedilir; Linux kullanıcısı ilk site açılınca oluşturulur ve sınır o zaman uygulanır.
+    if package_id.is_some() {
+        crate::hosting::resource_limits::sync(&state, Some(&[id])).await;
+    }
     auth::audit(&state.db, &user, "user.create", &username, role.as_str());
     Ok(Json(json!({ "id": id })))
 }
@@ -364,6 +370,10 @@ async fn update(
             tracing::warn!(account = %target.username, error = %err, "zamanlı görevler güncellenemedi");
         }
     }
+    // Paket atandı ya da kaldırıldı: hesabın işlemci/bellek sınırları sisteme uygulanır.
+    if package_change.is_some() {
+        crate::hosting::resource_limits::sync(&state, Some(&[id])).await;
+    }
     auth::audit(&state.db, &user, "user.update", &target.username, "");
     Ok(Json(json!({ "ok": true })))
 }
@@ -400,6 +410,8 @@ async fn remove(
     if let Err(err) = crate::api::cron::remove_account(&state, &target.username) {
         tracing::warn!(account = %target.username, error = %err, "hesabın zamanlı görevleri kaldırılamadı");
     }
+    // Kaynak sınırı kayıtları ve dilimin drop-in dosyası, Linux kullanıcısı (ve uid'i) silinmeden önce kaldırılır.
+    crate::hosting::resource_limits::forget(&target.username).await;
     match crate::hosting::sysuser::remove(&target.username).await {
         Ok(true) => {}
         Ok(false) => tracing::info!(account = %target.username, "Linux hesabı silinmedi (saklanmış site dosyaları var); kilitlendi"),

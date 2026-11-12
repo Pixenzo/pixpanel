@@ -168,6 +168,26 @@ export interface PackageLimits {
   ftp_accounts: number | null;
   dns_zones: number | null;
   disk_mb: number | null;
+  /** İşlemci sınırı: bir çekirdeğin yüzdesi (100 = bir tam çekirdek). */
+  cpu_percent: number | null;
+  /** Hesabın bütün süreçlerinin toplam bellek sınırı (MB). */
+  memory_mb: number | null;
+  /** Site başına en çok PHP işçisi (`pm.max_children`). */
+  php_workers: number | null;
+  /** En çok süreç/iş parçacığı sayısı. */
+  processes: number | null;
+}
+
+/** Kaynak sınırlarının sunucudaki durumu ve anlık kullanım (yalnız hesabın kaynak sınırı varsa). */
+export interface ResourceRuntime {
+  enforced: boolean;
+  /** Sınırlar uygulanamıyorsa nedeni. */
+  warning: string | null;
+  memory_bytes: number | null;
+  cpu_seconds: number | null;
+  /** Önceki ölçümden bu yana işlemci kullanımı (bir çekirdeğin yüzdesi). */
+  cpu_percent: number | null;
+  tasks: number | null;
 }
 
 export interface PackageInfo {
@@ -195,6 +215,7 @@ export interface AccountUsage {
   /** `disk_bytes` içindeki veritabanları payı (bayt). */
   database_bytes: number | null;
   disk_measured_at: number | null;
+  runtime: ResourceRuntime | null;
 }
 
 export interface AuditEntry {
