@@ -113,15 +113,44 @@ function DeploymentLog({ siteId, deploymentId, onClose }: { siteId: number; depl
   );
 }
 
-function SettingsForm({ site, config, onSaved }: { site: Site; config: GitConfig | null; onSaved: (view: GitView) => void }) {
+/** Sunucunun `GitView` yanıtına eklediği imza alanı (gizli anahtarın kendisi hiç gönderilmez). */
+type GitViewWithSignature = GitView & { signature_secret_set?: boolean };
+
+function randomSecret(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function SettingsForm({
+  site,
+  config,
+  signatureSet,
+  onSaved,
+}: {
+  site: Site;
+  config: GitConfig | null;
+  signatureSet: boolean;
+  onSaved: (view: GitView) => void;
+}) {
   const feedback = useFeedback();
   const [repoUrl, setRepoUrl] = useState(config?.repo_url ?? "");
   const [branch, setBranch] = useState(config?.branch ?? "main");
   const [autoDeploy, setAutoDeploy] = useState(config?.auto_deploy ?? true);
   const [script, setScript] = useState(config?.script ?? "");
+  const [signatureSecret, setSignatureSecret] = useState("");
+  const [clearSignature, setClearSignature] = useState(false);
 
   const save = useMutation({
-    mutationFn: () => api.put<GitView>(`/sites/${site.id}/git`, { repo_url: repoUrl, branch, auto_deploy: autoDeploy, script }),
+    mutationFn: () =>
+      api.put<GitView>(`/sites/${site.id}/git`, {
+        repo_url: repoUrl,
+        branch,
+        auto_deploy: autoDeploy,
+        script,
+        // Alan boşsa kayıtlı anahtar korunur; "boş metin" anahtarı kaldırır.
+        ...(clearSignature ? { signature_secret: "" } : signatureSecret.trim() !== "" ? { signature_secret: signatureSecret.trim() } : {}),
+      }),
     onSuccess: (view) => {
       feedback.success(config ? t("Yayın ayarları kaydedildi") : t("Depo bağlandı"));
       onSaved(view);
@@ -163,6 +192,48 @@ function SettingsForm({ site, config, onSaved }: { site: Site; config: GitConfig
         onChange={(event) => setAutoDeploy(event.target.checked)}
       />
       <div className="flex flex-col gap-2">
+        <Input
+          label={t("İmza gizli anahtarı (isteğe bağlı)")}
+          value={signatureSecret}
+          onChange={(event) => {
+            setSignatureSecret(event.target.value);
+            setClearSignature(false);
+          }}
+          placeholder={signatureSet && !clearSignature ? t("Kayıtlı anahtar korunuyor") : undefined}
+          hint={t(
+            "Tanımlıysa GitHub’ın X-Hub-Signature-256 imzası ya da GitLab’ın X-Gitlab-Token başlığı doğrulanmadan yayın başlamaz. GitHub kancasındaki “Secret” ya da GitLab’daki “Secret token” alanına aynı değeri yazın. Boşsa yalnızca adresteki anahtar geçerlidir.",
+          )}
+          className="font-mono text-[13.5px]"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          disabled={clearSignature}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => {
+              setSignatureSecret(randomSecret());
+              setClearSignature(false);
+            }}
+          >
+            {t("Anahtar üret")}
+          </Button>
+          {signatureSet && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setClearSignature((current) => !current);
+                setSignatureSecret("");
+              }}
+            >
+              {clearSignature ? t("Kaldırmaktan vazgeç") : t("İmza anahtarını kaldır")}
+            </Button>
+          )}
+          {clearSignature && <span className="text-[13px] text-warn">{t("Kaydedince imza doğrulaması kapanır.")}</span>}
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
         <Textarea
           label={t("Yayın betiği")}
           value={script}
@@ -200,7 +271,7 @@ export function GitSection({ site }: { site: Site }) {
   const queryKey = ["site-git", site.id];
   const git = useQuery({
     queryKey,
-    queryFn: () => api.get<GitView>(`/sites/${site.id}/git`),
+    queryFn: () => api.get<GitViewWithSignature>(`/sites/${site.id}/git`),
     refetchInterval: (query) => (query.state.data?.running ? 2000 : 15000),
   });
 
@@ -242,6 +313,7 @@ export function GitSection({ site }: { site: Site }) {
   if (git.isError) return <ErrorBlock message={errorMessage(git.error)} onRetry={() => void git.refetch()} />;
 
   const { config, deployments, running, webhook_path: webhookPath } = git.data;
+  const signatureSet = git.data.signature_secret_set ?? false;
 
   if (!config) {
     return (
@@ -251,7 +323,7 @@ export function GitSection({ site }: { site: Site }) {
             "Depoyu bağladığınızda site klasörü deponun çalışma kopyası olur. Depoya her gönderimde panel değişiklikleri çeker ve yayın betiğinizi çalıştırır; sorun çıkarsa e-posta ya da Telegram ile haber verir.",
           )}
         </p>
-        <SettingsForm site={site} config={null} onSaved={apply} />
+        <SettingsForm site={site} config={null} signatureSet={false} onSaved={apply} />
       </Panel>
     );
   }
@@ -406,7 +478,7 @@ export function GitSection({ site }: { site: Site }) {
       </Panel>
 
       <Panel title={t("Yayın ayarları")}>
-        <SettingsForm key={JSON.stringify(config)} site={site} config={config} onSaved={apply} />
+        <SettingsForm key={JSON.stringify(config) + String(signatureSet)} site={site} config={config} signatureSet={signatureSet} onSaved={apply} />
       </Panel>
 
       <Panel title={t("Bildirimler ve bağlantı")}>

@@ -209,6 +209,8 @@ pub async fn send_telegram(api_base: &str, token: &str, chat_id: &str, text: &st
 /// Olayı, hesabın açık kanallarına gönderir. Gönderim hataları yalnızca günlüğe
 /// yazılır; bildirim gidememesi asıl işi başarısız saymaz.
 pub async fn send_event(state: &AppState, user_id: i64, event: &str, subject: &str, body: &str) {
+    // Web kancaları kendi süzgeciyle çalışır; e-posta/Telegram tercihlerinden bağımsızdır.
+    crate::webhooks::emit(event, Some(user_id), subject, json!({ "subject": subject, "body": body }));
     let channels = match load_channels(&state.db, user_id) {
         Ok(channels) => channels,
         Err(err) => {

@@ -450,4 +450,6 @@ pub fn audit(db: &Db, user: &AuthUser, action: &str, target: &str, detail: &str)
     }
     // Denetlenen her işlem bir şeyi değiştirmiştir; açık arayüzler anında haberdar edilir.
     crate::events::changed(action, user.owner_id());
+    // Hesabın tanımladığı web kancalarına da iletilir.
+    crate::webhooks::emit_audit(action, user.owner_id(), &username, target, detail);
 }

@@ -527,6 +527,34 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sites ADD COLUMN staging_of INTEGER REFERENCES sites(id) ON DELETE SET NULL;
     "#,
+    // 29: olay kancaları (hesabın tanımladığı adreslere HTTP POST) ve son gönderimlerin sonucu;
+    //     Git web kancası için isteğe bağlı imza gizli anahtarı (boşsa yalnızca adresteki anahtar geçerli).
+    r#"
+    CREATE TABLE webhooks (
+        id         INTEGER PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        url        TEXT NOT NULL,
+        events     TEXT NOT NULL DEFAULT '["*"]',
+        secret     TEXT NOT NULL,
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX webhooks_user ON webhooks(user_id);
+
+    CREATE TABLE webhook_deliveries (
+        id          INTEGER PRIMARY KEY,
+        webhook_id  INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+        event       TEXT NOT NULL,
+        attempt     INTEGER NOT NULL,
+        status      INTEGER,
+        duration_ms INTEGER NOT NULL,
+        error       TEXT NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX webhook_deliveries_hook ON webhook_deliveries(webhook_id, id);
+
+    ALTER TABLE site_git ADD COLUMN signature_secret TEXT NOT NULL DEFAULT '';
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";
