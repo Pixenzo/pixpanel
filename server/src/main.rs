@@ -189,7 +189,14 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_dns_cluster_sync(state.clone());
     webhooks::spawn(state.clone());
     // Uygulama portlarının korunması arka planda kurulur; panelin açılışını bekletmez.
-    tokio::spawn(hosting::portguard::apply());
+    // Sıra önemli: uygulama servislerinin hesap dilimine alınması port korumasının sonucuna bağlıdır.
+    tokio::spawn({
+        let state = state.clone();
+        async move {
+            hosting::portguard::apply().await;
+            hosting::resource_limits::sync(&state, None).await;
+        }
+    });
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.
     if let Err(err) = firewall::reapply(&state).await {
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");

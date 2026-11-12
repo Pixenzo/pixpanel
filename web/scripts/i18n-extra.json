@@ -570,7 +570,17 @@
     "Posta kutusu",
     "FTP hesabı",
     "DNS bölgesi",
-    "Disk"
+    "Disk",
+    "İşlemci",
+    "Bir çekirdeğin yüzdesi: 100 = bir tam çekirdek, 250 = iki buçuk çekirdek.",
+    "Hesabın bütün süreçlerinin (SSH, zamanlı görevler, Redis) toplam sınırı. PHP sitelerinde her sürecin memory_limit değeri bu sınıra kırpılır.",
+    "Bir sitenin aynı anda çalıştırabileceği en çok PHP süreci (pm.max_children).",
+    "Hesabın en çok kaç süreç ve iş parçacığı çalıştırabileceği.",
+    "Bu sunucuda işlemci ve bellek sınırları uygulanamıyor.",
+    "Bu sunucuda cgroup v2 yok; sınırlar kaydedildi ama uygulanamıyor.",
+    "Bu sunucuda işlemci denetleyicisi kullanıcı dilimlerine devredilmemiş (yetkisiz konteynerde olabilir); sınırlar kaydedildi ama uygulanamıyor.",
+    "Bu sunucuda bellek denetleyicisi kullanıcı dilimlerine devredilmemiş (yetkisiz konteynerde olabilir); sınırlar kaydedildi ama uygulanamıyor.",
+    "Bu sunucuda işlemci ve bellek denetleyicileri kullanıcı dilimlerine devredilmemiş (yetkisiz konteynerde olabilir); sınırlar kaydedildi ama uygulanamıyor."
   ],
   "web/src/pages/MyBackups.tsx": [
     "Site",

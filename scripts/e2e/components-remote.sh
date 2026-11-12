@@ -161,6 +161,7 @@ suite sys-updates
 suite health ftp
 suite wordpress php-8.3 mariadb restic
 suite packages mail ftp dns mariadb
+suite limits php-8.3 python redis
 suite backup-mine restic mariadb
 suite access
 suite stats

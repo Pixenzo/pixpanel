@@ -113,7 +113,7 @@ has "TasksMax" "$D" "TasksMax=200"
 check "PHP işçisi dilime yazılmaz" "$(grep -c php_workers "$(dropin $UID_C)")" 0
 check "dilim dosyası root'a ait, yalnız root yazar" "$(stat -c '%U %a' "$(dropin $UID_C)")" "root 644"
 check "müşteri kayıt dosyasını okuyamaz" "$(runuser -u $CUSTOMER -- cat /etc/pixpanel/limits/$CUSTOMER.json >/dev/null 2>&1; echo $?)" 1
-check "CPUQuotaPerSecUSec" "$(slice_prop $UID_C CPUQuotaPerSecUSec)" 1.5s
+check "CPUQuotaPerSecUSec" "$(slice_prop $UID_C CPUQuotaPerSecUSec)" 1.500000s
 check "MemoryMax" "$(slice_prop $UID_C MemoryMax)" 134217728
 check "MemoryHigh" "$(slice_prop $UID_C MemoryHigh)" 120586240
 check "TasksMax" "$(slice_prop $UID_C TasksMax)" 200
@@ -123,7 +123,7 @@ check "paketini kaldıramaz" "$(status $JC PATCH /users/$CID -d '{"package_id":0
 check "paket tanımlayamaz" "$(status $JC POST /packages -d '{"name":"e2e-lim-kacak","limits":{}}')" 403
 check "paketi değiştiremez" "$(status $JC PATCH /packages/$LIM -d '{"name":"e2e-lim","limits":{}}')" 403
 check "destek ucunu göremez" "$(status $JC GET /packages/limits-support)" 403
-check "dilim dosyasına yazamaz" "$(timeout 10 runuser -u $CUSTOMER -- sh -c "echo '[Slice]' > $(dropin $UID_C)" >/dev/null 2>&1; echo $?)" 1
+check "dilim dosyasına yazamaz" "$(timeout 10 runuser -u $CUSTOMER -- sh -c "echo '[Slice]' > $(dropin $UID_C)" >/dev/null 2>&1 && echo yazdi || echo engellendi)" engellendi
 check "systemctl ile dilimi gevşetemez" "$(timeout 15 runuser -u $CUSTOMER -- systemctl set-property --runtime user-$UID_C.slice MemoryMax=infinity >/dev/null 2>&1; [ $? -ne 0 ] && echo reddedildi || echo uygulandi)" reddedildi
 check "dilim değeri değişmedi" "$(slice_prop $UID_C MemoryMax)" 134217728
 
