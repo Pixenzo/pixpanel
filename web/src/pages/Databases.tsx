@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, ExternalLink, KeyRound, Plus, Trash2, Upload, UserCog, Wand2, Wrench } from "lucide-react";
+import { Copy, Download, ExternalLink, Globe, KeyRound, Plus, Trash2, Upload, UserCog, Wand2, Wrench } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -28,6 +28,7 @@ import { api, errorMessage } from "../lib/api";
 import { formatBytes, generatePassword } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { RemoteAccessStrip } from "./DatabaseRemote";
 import { JobLog } from "./Jobs";
 import { SlowQueries } from "./SlowQueries";
 
@@ -66,7 +67,7 @@ function PasswordField({ value, onChange, label }: { value: string; onChange: (n
   );
 }
 
-function HostField({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+function HostField({ value, onChange, remoteEnabled }: { value: string; onChange: (next: string) => void; remoteEnabled: boolean }) {
   const preset = value === "localhost" || value === "%" ? value : "custom";
   return (
     <div className="flex flex-col gap-3">
@@ -77,20 +78,47 @@ function HostField({ value, onChange }: { value: string; onChange: (next: string
       >
         <option value="localhost">{t("Yalnızca bu sunucudan")}</option>
         <option value="%">{t("Her yerden")}</option>
-        <option value="custom">{t("Belirli bir IP adresinden")}</option>
+        <option value="custom">{t("Belirli bir IP adresinden ya da aralığından")}</option>
       </Select>
       {preset === "custom" && (
         <Input
-          label={t("IP adresi")}
+          label={t("IP adresi ya da aralığı")}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="203.0.113.10"
-          hint={t("Dışarıdan bağlantı için güvenlik duvarında veritabanı portunun da açık olması gerekir.")}
+          onChange={(event) => onChange(event.target.value.trim())}
+          placeholder="203.0.113.10 / 203.0.113.0/24"
+          hint={t("Tek bir IP adresi ya da CIDR aralığı (203.0.113.0/24). Dışarıdan bağlantı için güvenlik duvarında veritabanı portunun da açık olması gerekir.")}
           className="font-mono text-[13.5px]"
+          autoComplete="off"
+          spellCheck={false}
           required
         />
       )}
+      {value === "%" && (
+        <p className="flex flex-wrap items-center gap-2 rounded-md bg-warn-soft px-3 py-2 text-[13.5px] text-warn">
+          <Badge tone="warn">{t("Her yer")}</Badge>
+          {t("İnternetteki herkes bu kullanıcıyla bağlanmayı deneyebilir; tek koruma parolanızdır. Mümkünse belirli bir IP adresi girin.")}
+        </p>
+      )}
+      {value !== "localhost" && !remoteEnabled && (
+        <p className="rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
+          {t("Sunucuda uzaktan bağlantı kapalı; yöneticinin açması gerekir. Adres kaydedilir, ayar açılınca geçerli olur.")}
+        </p>
+      )}
     </div>
+  );
+}
+
+function HostCell({ host, remoteEnabled }: { host: string; remoteEnabled: boolean }) {
+  if (host === "localhost" || host === "") return <>{t("Bu sunucu")}</>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {host === "%" ? <Badge tone="warn">{t("Her yer")}</Badge> : <Mono>{host}</Mono>}
+      {!remoteEnabled && (
+        <span title={t("Sunucuda uzaktan bağlantı kapalı; yöneticinin açması gerekir.")}>
+          <Badge tone="idle">{t("Sunucuda kapalı")}</Badge>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -104,7 +132,7 @@ function CreateDatabaseModal({
   /** Pencere açıldığında seçili gelen tür (o an bakılan sekme). */
   initialEngine: DbEngine;
   /** Kurulu ve çalışan veritabanı türleri. */
-  engines: { id: DbEngine; label: string }[];
+  engines: { id: DbEngine; label: string; remote_enabled: boolean }[];
   prefix: string;
   onClose: () => void;
   onCreated: (engine: DbEngine) => void;
@@ -127,7 +155,7 @@ function CreateDatabaseModal({
       api.post("/databases", {
         engine,
         name,
-        user: withUser ? { name: effectiveUser, password, host: engine === "mariadb" ? host : undefined } : undefined,
+        user: withUser ? { name: effectiveUser, password, host } : undefined,
       }),
     onSuccess: () => {
       feedback.success(t("{name} veritabanı oluşturuldu", { name }));
@@ -202,7 +230,7 @@ function CreateDatabaseModal({
               required
             />
             <PasswordField label={t("Parola")} value={password} onChange={setPassword} />
-            {engine === "mariadb" && <HostField value={host} onChange={setHost} />}
+            <HostField value={host} onChange={setHost} remoteEnabled={engines.find((item) => item.id === engine)?.remote_enabled ?? false} />
             <p className="rounded-md bg-accent-soft px-3 py-2 text-[13.5px] text-accent">
               {t("Parolayı şimdi kopyalayın; oluşturduktan sonra yeniden gösterilmez, yalnızca değiştirilebilir.")}
             </p>
@@ -214,7 +242,7 @@ function CreateDatabaseModal({
   );
 }
 
-function CreateUserModal({ engine, prefix, onClose }: { engine: DbEngine; prefix: string; onClose: () => void }) {
+function CreateUserModal({ engine, prefix, remoteEnabled, onClose }: { engine: DbEngine; prefix: string; remoteEnabled: boolean; onClose: () => void }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [name, setName] = useState(prefix);
@@ -222,7 +250,7 @@ function CreateUserModal({ engine, prefix, onClose }: { engine: DbEngine; prefix
   const [host, setHost] = useState("localhost");
 
   const create = useMutation({
-    mutationFn: () => api.post("/databases/users", { engine, name, password, host: engine === "mariadb" ? host : undefined }),
+    mutationFn: () => api.post("/databases/users", { engine, name, password, host }),
     onSuccess: () => {
       feedback.success(t("{name} kullanıcısı oluşturuldu", { name }));
       void queryClient.invalidateQueries({ queryKey: ["databases"] });
@@ -264,9 +292,52 @@ function CreateUserModal({ engine, prefix, onClose }: { engine: DbEngine; prefix
           required
         />
         <PasswordField label={t("Parola")} value={password} onChange={setPassword} />
-        {engine === "mariadb" && <HostField value={host} onChange={setHost} />}
+        <HostField value={host} onChange={setHost} remoteEnabled={remoteEnabled} />
         <p className="text-[13.5px] text-ink-3">{t("Kullanıcıyı oluşturduktan sonra erişebileceği veritabanlarını “Erişim” düğmesinden seçin.")}</p>
         {create.isError && <ErrorBlock message={errorMessage(create.error)} />}
+      </form>
+    </Modal>
+  );
+}
+
+function HostModal({ user, remoteEnabled, onClose }: { user: DbUserInfo; remoteEnabled: boolean; onClose: () => void }) {
+  const feedback = useFeedback();
+  const queryClient = useQueryClient();
+  const [host, setHost] = useState(user.host || "localhost");
+  const change = useMutation({
+    mutationFn: () => api.put(`/databases/users/${user.id}/host`, { host }),
+    onSuccess: () => {
+      feedback.success(t("{name} bağlantı adresi güncellendi", { name: user.name }));
+      void queryClient.invalidateQueries({ queryKey: ["databases"] });
+      void queryClient.invalidateQueries({ queryKey: ["databases-remote"] });
+      onClose();
+    },
+  });
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t("{name} bağlantı adresi", { name: user.name })}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("Vazgeç")}</Button>
+          <Button variant="primary" type="submit" form="db-user-host" loading={change.isPending}>
+            {t("Adresi kaydet")}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id="db-user-host"
+        onSubmit={(event) => {
+          event.preventDefault();
+          change.mutate();
+        }}
+        className="flex flex-col gap-5"
+      >
+        <HostField value={host} onChange={setHost} remoteEnabled={remoteEnabled} />
+        <p className="text-[13.5px] text-ink-3">{t("Eski adresten yapılacak yeni bağlantılar reddedilir; zaten açık olan bağlantılar kapanana kadar sürer.")}</p>
+        {change.isError && <ErrorBlock message={errorMessage(change.error)} />}
       </form>
     </Modal>
   );
@@ -544,6 +615,7 @@ type Dialog =
   | { kind: "create-database" }
   | { kind: "create-user" }
   | { kind: "password"; user: DbUserInfo }
+  | { kind: "host"; user: DbUserInfo }
   | { kind: "access"; database: DatabaseInfo }
   | { kind: "import"; database: DatabaseInfo }
   | { kind: "copy"; database: DatabaseInfo }
@@ -689,6 +761,7 @@ export function DatabasesPage() {
               {t("{name} servisi çalışmıyor. Servisler sayfasından başlatın.", { name: engine.label })}
             </div>
           )}
+          {me.role === "admin" && <RemoteAccessStrip engine={engine.id} label={engine.label} />}
           {engine.running && !toolInstalled && me.role === "admin" && (
             <p className="mb-4 rounded-lg border border-line bg-surface px-4 sm:px-6 py-2.5 text-[13.5px] text-ink-2">
               {t("Veritabanlarını tarayıcıdan yönetmek için {tool} kurabilirsiniz; kurulduğunda her veritabanının satırında açma düğmesi görünür.", { tool: toolName })}{" "}
@@ -804,7 +877,7 @@ export function DatabasesPage() {
                   <thead>
                     <tr>
                       <Th>{t("Kullanıcı adı")}</Th>
-                      {engine.id === "mariadb" && <Th>{t("Bağlanabildiği yer")}</Th>}
+                      <Th>{t("Bağlanabildiği yer")}</Th>
                       <Th className="w-full">{t("Veritabanları")}</Th>
                       {showOwner && <Th>{t("Sahibi")}</Th>}
                       <Th align="right">{t("İşlemler")}</Th>
@@ -818,11 +891,9 @@ export function DatabasesPage() {
                           <Td>
                             <Mono className="font-medium">{user.name}</Mono>
                           </Td>
-                          {engine.id === "mariadb" && (
-                            <Td className="whitespace-nowrap">
-                              {user.host === "localhost" ? t("Bu sunucu") : user.host === "%" ? <Badge tone="warn">{t("Her yer")}</Badge> : <Mono>{user.host}</Mono>}
-                            </Td>
-                          )}
+                          <Td className="whitespace-nowrap">
+                            <HostCell host={user.host} remoteEnabled={engine.remote_enabled} />
+                          </Td>
                           <Td>
                             {granted.length === 0 ? (
                               <span className="text-ink-3">{t("Yok")}</span>
@@ -837,6 +908,9 @@ export function DatabasesPage() {
                           )}
                           <Td align="right" className="py-0.5">
                             <div className="flex justify-end gap-0.5">
+                              <IconButton label={t("Bağlantı adresini değiştir")} onClick={() => setDialog({ kind: "host", user })}>
+                                <Globe className="size-4" />
+                              </IconButton>
                               <IconButton label={t("Parolayı değiştir")} onClick={() => setDialog({ kind: "password", user })}>
                                 <KeyRound className="size-4" />
                               </IconButton>
@@ -865,7 +939,10 @@ export function DatabasesPage() {
           onCreated={setEngineChoice}
         />
       )}
-      {dialog?.kind === "create-user" && <CreateUserModal engine={engine.id} prefix={data.name_prefix} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "create-user" && (
+        <CreateUserModal engine={engine.id} prefix={data.name_prefix} remoteEnabled={engine.remote_enabled} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === "host" && <HostModal user={dialog.user} remoteEnabled={engine.remote_enabled} onClose={() => setDialog(null)} />}
       {dialog?.kind === "password" && <PasswordModal user={dialog.user} onClose={() => setDialog(null)} />}
       {dialog?.kind === "access" && (
         <AccessModal

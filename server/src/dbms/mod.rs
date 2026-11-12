@@ -8,6 +8,7 @@ pub mod busy;
 pub mod import;
 pub mod mariadb;
 pub mod postgres;
+pub mod remote;
 pub mod slowlog;
 pub mod stats;
 
@@ -141,17 +142,6 @@ pub fn validate_password(password: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// MariaDB kullanıcısının bağlanabileceği adres: `localhost`, `%` (her yer)
-/// ya da bir IP adresi / `192.168.1.%` gibi bir kalıp.
-pub fn validate_host(host: &str) -> AppResult<()> {
-    let valid = host == "localhost"
-        || host == "%"
-        || (!host.is_empty()
-            && host.len() <= 60
-            && host.bytes().all(|b| b.is_ascii_hexdigit() || matches!(b, b'.' | b':' | b'%')));
-    if valid { Ok(()) } else { Err(AppError::bad("Geçersiz bağlantı adresi (örnek: localhost, % ya da 203.0.113.10)")) }
-}
-
 /// SQL betiğini istemcinin standart girdisine yazar ve çıktısını döner.
 async fn run_client(mut command: Command, script: &str, label: &str) -> AppResult<String> {
     let mut child = command
@@ -194,35 +184,47 @@ pub async fn drop_database(engine: Engine, name: &str) -> AppResult<()> {
 
 pub async fn create_user(engine: Engine, name: &str, host: &str, password: &str) -> AppResult<()> {
     match engine {
-        Engine::Mariadb => mariadb::create_user(name, host, password).await,
+        Engine::Mariadb => mariadb::create_user(name, &remote::mariadb_account_host(host), password).await,
         Engine::Postgresql => postgres::create_user(name, password).await,
     }
 }
 
 pub async fn set_password(engine: Engine, name: &str, host: &str, password: &str) -> AppResult<()> {
     match engine {
-        Engine::Mariadb => mariadb::set_password(name, host, password).await,
+        Engine::Mariadb => mariadb::set_password(name, &remote::mariadb_account_host(host), password).await,
         Engine::Postgresql => postgres::set_password(name, password).await,
+    }
+}
+
+/// Kullanıcının bağlanabileceği adresi değiştirir. MariaDB'de hesap yeniden adlandırılır (yetkiler
+/// onunla birlikte taşınır); PostgreSQL'de sunucuda yapılacak bir şey yoktur, adres `pg_hba.conf`
+/// bloğundan (bkz. `remote::sync_postgres_hba`) uygulanır.
+pub async fn change_host(engine: Engine, name: &str, old_host: &str, new_host: &str) -> AppResult<()> {
+    match engine {
+        Engine::Mariadb => {
+            mariadb::rename_user(name, &remote::mariadb_account_host(old_host), &remote::mariadb_account_host(new_host)).await
+        }
+        Engine::Postgresql => Ok(()),
     }
 }
 
 pub async fn drop_user(engine: Engine, name: &str, host: &str) -> AppResult<()> {
     match engine {
-        Engine::Mariadb => mariadb::drop_user(name, host).await,
+        Engine::Mariadb => mariadb::drop_user(name, &remote::mariadb_account_host(host)).await,
         Engine::Postgresql => postgres::drop_user(name).await,
     }
 }
 
 pub async fn grant(engine: Engine, database: &str, user: &str, host: &str, access: Access) -> AppResult<()> {
     match engine {
-        Engine::Mariadb => mariadb::grant(database, user, host, access).await,
+        Engine::Mariadb => mariadb::grant(database, user, &remote::mariadb_account_host(host), access).await,
         Engine::Postgresql => postgres::grant(database, user, access).await,
     }
 }
 
 pub async fn revoke(engine: Engine, database: &str, user: &str, host: &str) -> AppResult<()> {
     match engine {
-        Engine::Mariadb => mariadb::revoke(database, user, host).await,
+        Engine::Mariadb => mariadb::revoke(database, user, &remote::mariadb_account_host(host)).await,
         Engine::Postgresql => postgres::revoke(database, user).await,
     }
 }

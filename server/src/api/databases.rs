@@ -36,9 +36,12 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/copy", post(copy_database))
         .route("/{id}/maintenance", post(maintenance))
         .route("/slow-log", get(slow_log).put(set_slow_log))
+        .route("/remote", get(remote_status))
+        .route("/remote/{engine}", put(set_remote))
         .route("/{id}/grants/{db_user_id}", put(set_grant).delete(remove_grant))
         .route("/users", post(create_user))
         .route("/users/{id}", patch(update_user).delete(drop_user))
+        .route("/users/{id}/host", put(set_user_host))
 }
 
 #[derive(Serialize)]
@@ -47,6 +50,8 @@ struct EngineInfo {
     label: &'static str,
     installed: bool,
     running: bool,
+    /// Sunucu ayarı: veritabanı sunucusu yerel olmayan arayüzlerde de dinliyor mu (yönetici açtı mı).
+    remote_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -122,7 +127,8 @@ async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
             // Boyutlar kısa süreli önbellekten gelir; sayfa her açıldığında sunucuya sorgu atılmaz.
             sizes.insert(engine, dbms::stats::get(engine).await);
         }
-        engines.push(EngineInfo { id: engine.as_str(), label: engine.label(), installed, running });
+        let remote_enabled = installed && dbms::remote::is_enabled(engine);
+        engines.push(EngineInfo { id: engine.as_str(), label: engine.label(), installed, running, remote_enabled });
     }
 
     let (all, owner) = (user.is_admin(), user.owner_id());
@@ -162,11 +168,13 @@ async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
         )?;
         let users: Vec<DbUserInfo> = stmt
             .query_map(params![all, owner], |row| {
+                let host: String = row.get(3)?;
                 Ok(DbUserInfo {
                     id: row.get(0)?,
                     engine: row.get(1)?,
                     name: row.get(2)?,
-                    host: row.get(3)?,
+                    // PostgreSQL kullanıcılarının adresi eskiden boş tutulurdu; boş, yalnızca bu sunucu demektir.
+                    host: if host.is_empty() { "localhost".to_string() } else { host },
                     owner: row.get(4)?,
                     created_at: row.get(5)?,
                 })
@@ -261,13 +269,15 @@ struct CreateDatabaseBody {
 }
 
 fn normalize_host(engine: Engine, host: Option<&str>) -> AppResult<String> {
-    match engine {
-        // PostgreSQL'de bağlantı adresi kullanıcıya değil sunucu ayarına bağlıdır.
-        Engine::Postgresql => Ok(String::new()),
-        Engine::Mariadb => {
-            let host = host.map(str::trim).filter(|h| !h.is_empty()).unwrap_or("localhost");
-            dbms::validate_host(host)?;
-            Ok(host.to_string())
+    dbms::remote::normalize_host(engine, host)
+}
+
+/// PostgreSQL'in `pg_hba.conf` bloğunu panel kayıtlarıyla eşitler. Veritabanı tarafındaki işlem
+/// (yetki, silme) zaten yapılmış olduğundan hata, işlemi başarısız saymaz; günlüğe yazılır.
+async fn sync_hba(state: &AppState, engine: Engine) {
+    if engine == Engine::Postgresql {
+        if let Err(err) = dbms::remote::sync_postgres_hba(&state.db).await {
+            tracing::warn!("pg_hba.conf eşitlenemedi: {err}");
         }
     }
 }
@@ -281,9 +291,10 @@ async fn provision_user(
     host: &str,
     password: &str,
 ) -> AppResult<i64> {
+    // PostgreSQL'de rol adı sunucuda tektir (adres kullanıcıya değil kayda bağlıdır); MariaDB'de hesap ad + adrestir.
     let taken: bool = state.db.call(|conn| {
         conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM database_users WHERE engine = ?1 AND name = ?2 AND host = ?3)",
+            "SELECT EXISTS(SELECT 1 FROM database_users WHERE engine = ?1 AND name = ?2 AND (host = ?3 OR ?1 = 'postgresql'))",
             params![engine.as_str(), name, host],
             |row| row.get(0),
         )
@@ -368,6 +379,7 @@ async fn create_database(
                 params![database_id, db_user_id],
             )
         })?;
+        sync_hba(&state, engine).await;
     }
     auth::audit(&state.db, &user, "database.create", &name, engine.as_str());
     Ok(Json(json!({ "id": database_id })))
@@ -398,6 +410,7 @@ async fn drop_database(
     }
     dbms::drop_database(database.engine, &database.name).await?;
     state.db.call(|conn| conn.execute("DELETE FROM databases WHERE id = ?1", params![database.id]))?;
+    sync_hba(&state, database.engine).await;
     auth::audit(&state.db, &user, "database.delete", &database.name, database.engine.as_str());
     Ok(Json(json!({ "ok": true })))
 }
@@ -469,6 +482,7 @@ async fn drop_user(
     }
     dbms::drop_user(db_user.engine, &db_user.name, &db_user.host).await?;
     state.db.call(|conn| conn.execute("DELETE FROM database_users WHERE id = ?1", params![db_user.id]))?;
+    sync_hba(&state, db_user.engine).await;
     auth::audit(&state.db, &user, "database.user_delete", &db_user.name, db_user.engine.as_str());
     Ok(Json(json!({ "ok": true })))
 }
@@ -509,6 +523,7 @@ async fn set_grant(
             params![database.id, db_user.id, access.as_str()],
         )
     })?;
+    sync_hba(&state, database.engine).await;
     auth::audit(&state.db, &user, "database.grant", &database.name, &format!("{} → {}", db_user.name, access.as_str()));
     Ok(Json(json!({ "ok": true })))
 }
@@ -528,6 +543,7 @@ async fn remove_grant(
             params![database.id, db_user.id],
         )
     })?;
+    sync_hba(&state, database.engine).await;
     auth::audit(&state.db, &user, "database.revoke", &database.name, &db_user.name);
     Ok(Json(json!({ "ok": true })))
 }
@@ -825,6 +841,147 @@ async fn maintenance(
     })?;
     auth::audit(&state.db, &user, "database.maintenance", &database.name, action.as_str());
     Ok(Json(json!({ "job_id": job_id })))
+}
+
+#[derive(Deserialize)]
+struct HostBody {
+    host: String,
+}
+
+/// Var olan kullanıcının bağlanabileceği adresi değiştirir. Müşteri yalnızca kendi kullanıcısının
+/// adresini değiştirebilir (`load_db_user` sahipliği denetler); "her yer" seçeneği de müşteriye açıktır.
+/// Sunucu ayarı kapalıyken de kaydedilir; adres, ayar açılınca etkin olur.
+async fn set_user_host(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(body): Json<HostBody>,
+) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let _guard = state.sys_lock.lock().await;
+    let db_user = load_db_user(&state, &user, id)?;
+    db_user.engine.require_installed()?;
+    let new_host = dbms::remote::normalize_host(db_user.engine, Some(&body.host))?;
+    if new_host == db_user.host {
+        return Ok(Json(json!({ "ok": true, "host": new_host })));
+    }
+    let taken: bool = state.db.call(|conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM database_users WHERE engine = ?1 AND name = ?2 AND host = ?3 AND id <> ?4)",
+            params![db_user.engine.as_str(), db_user.name, new_host, db_user.id],
+            |row| row.get(0),
+        )
+    })?;
+    if taken {
+        return Err(AppError::conflict(format!("“{}” kullanıcısı bu adres için zaten tanımlı", db_user.name)));
+    }
+
+    dbms::change_host(db_user.engine, &db_user.name, &db_user.host, &new_host).await?;
+    let saved = state.db.call(|conn| conn.execute("UPDATE database_users SET host = ?1 WHERE id = ?2", params![new_host, db_user.id]));
+    if let Err(err) = saved {
+        let _ = dbms::change_host(db_user.engine, &db_user.name, &new_host, &db_user.host).await;
+        return Err(err);
+    }
+    if db_user.engine == Engine::Postgresql {
+        // Adres kısıtlamak güvenlik değişikliğidir; `pg_hba.conf` güncellenemediyse işlem geri alınır.
+        if let Err(err) = dbms::remote::sync_postgres_hba(&state.db).await {
+            let _ = state.db.call(|conn| conn.execute("UPDATE database_users SET host = ?1 WHERE id = ?2", params![db_user.host, db_user.id]));
+            let _ = dbms::remote::sync_postgres_hba(&state.db).await;
+            return Err(err);
+        }
+    }
+    let old_host = if db_user.host.is_empty() { "localhost" } else { db_user.host.as_str() };
+    auth::audit(&state.db, &user, "database.user.host", &db_user.name, &format!("{old_host} → {new_host}"));
+    Ok(Json(json!({ "ok": true, "host": new_host, "remote_enabled": dbms::remote::is_enabled(db_user.engine) })))
+}
+
+/// Bir motorun uzaktan erişim durumu (yönetici görünümü).
+#[derive(Serialize)]
+struct RemoteStatus {
+    id: &'static str,
+    label: &'static str,
+    installed: bool,
+    running: bool,
+    /// Panelin yazdığı sunucu ayarı var mı.
+    remote_enabled: bool,
+    /// Sunucunun o an dinlediği adres (`127.0.0.1`, `*`, `::` ...); sunucu çalışmıyorsa yok.
+    listen: Option<String>,
+    port: u16,
+    /// Yalnızca yerel arayüzlerde mi dinliyor.
+    local_only: Option<bool>,
+    /// PostgreSQL: sunucuda TLS açık mı (açıksa uzaktan satırlar `hostssl`, yani TLS zorunlu).
+    tls: Option<bool>,
+    /// Uzaktan erişim adresi tanımlı (yalnızca bu sunucu olmayan) kullanıcı sayısı.
+    remote_users: i64,
+    /// Güvenlik duvarı etkin mi (nftables kurulu ve kurallar açık).
+    firewall_enabled: bool,
+    /// Güvenlik duvarı bu portu dışarıdan gelen bağlantıya açıyor mu (bilgi; panel portu açmaz).
+    firewall_port_open: bool,
+}
+
+async fn remote_status(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    let settings = crate::firewall::load(&state.db, &state.cfg);
+    let presets = crate::firewall::presets(&state.cfg);
+    let firewall_enabled = crate::firewall::is_available() && settings.enabled;
+    // Belgelendirme amaçlı ayrılmış bir adres: "internetteki herhangi biri" yerine geçer.
+    let probe = std::net::IpAddr::V4(std::net::Ipv4Addr::new(203, 0, 113, 1));
+
+    let mut engines = Vec::new();
+    for engine in Engine::ALL {
+        let installed = engine.is_installed();
+        let running = installed && services::is_active(engine.service()).await;
+        let runtime = if running { dbms::remote::runtime(engine).await.ok() } else { None };
+        let default_port = if engine == Engine::Mariadb { 3306 } else { 5432 };
+        let port = runtime.as_ref().map_or(default_port, |runtime| runtime.port);
+        let remote_users: i64 = state.db.call(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM database_users WHERE engine = ?1 AND host NOT IN ('', 'localhost')",
+                params![engine.as_str()],
+                |row| row.get(0),
+            )
+        })?;
+        engines.push(RemoteStatus {
+            id: engine.as_str(),
+            label: engine.label(),
+            installed,
+            running,
+            remote_enabled: installed && dbms::remote::is_enabled(engine),
+            listen: runtime.as_ref().map(|runtime| runtime.listen.clone()),
+            port,
+            local_only: runtime.as_ref().map(dbms::remote::Runtime::local_only),
+            tls: runtime.as_ref().and_then(|runtime| runtime.tls),
+            remote_users,
+            firewall_enabled,
+            firewall_port_open: !firewall_enabled || crate::firewall::allows(&settings, &presets, probe, port),
+        });
+    }
+    Ok(Json(json!({ "engines": engines })))
+}
+
+#[derive(Deserialize)]
+struct RemoteBody {
+    enabled: bool,
+}
+
+/// Sunucu ayarı: veritabanı sunucusunun uzaktan bağlantı kabul etmesi. Yalnızca yönetici. Servis yeniden
+/// başlatılır (açık bağlantılar kopar); başarısız olursa eski yapılandırma geri konur.
+async fn set_remote(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(engine): Path<String>,
+    Json(body): Json<RemoteBody>,
+) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    let engine = Engine::parse(&engine)?;
+    engine.require_installed()?;
+    let _guard = state.sys_lock.lock().await;
+    let outcome = dbms::remote::set_enabled(&state.db, engine, body.enabled).await?;
+    if outcome.changed {
+        let action = if body.enabled { "database.remote.enable" } else { "database.remote.disable" };
+        auth::audit(&state.db, &user, action, engine.as_str(), "");
+    }
+    Ok(Json(json!({ "ok": true, "changed": outcome.changed, "tls": outcome.tls })))
 }
 
 #[derive(Deserialize)]

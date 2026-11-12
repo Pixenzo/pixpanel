@@ -1,7 +1,7 @@
 //! MariaDB yönetimi. Panel root olarak çalıştığından yerel soketten
 //! parolasız (unix_socket) bağlanır.
 //!
-//! Adlar (`validate_name`, `validate_host`) çağıran tarafından doğrulanmış
+//! Adlar (`validate_name`, `remote::normalize_host`) çağıran tarafından doğrulanmış
 //! olmalıdır; burada ek olarak SQL'e gömülürken tırnaklanır.
 
 use tokio::process::Command;
@@ -105,6 +105,13 @@ pub async fn create_user(name: &str, host: &str, password: &str) -> AppResult<()
 
 pub async fn set_password(name: &str, host: &str, password: &str) -> AppResult<()> {
     run(&format!("ALTER USER {} IDENTIFIED BY {};\n", account(name, host), quote(password))).await?;
+    Ok(())
+}
+
+/// Hesabın bağlanma adresini değiştirir; yetkiler yeni hesaba taşınır.
+pub async fn rename_user(name: &str, old_host: &str, new_host: &str) -> AppResult<()> {
+    run(&format!("RENAME USER {} TO {};
+", account(name, old_host), account(name, new_host))).await?;
     Ok(())
 }
 
