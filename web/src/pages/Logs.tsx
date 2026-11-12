@@ -89,7 +89,7 @@ export function LogsPage() {
     <div className="flex h-[calc(100dvh-6.5rem)] flex-col">
       <PageHeader title={t("Günlükler")} description={t("Sitelerin erişim ve hata kayıtları ile sunucu servislerinin günlükleri.")} />
       <Panel flush className="flex min-h-0 flex-1 flex-col">
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-3 py-2">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 sm:px-6">
           <select
             aria-label={t("Günlük kaynağı")}
             value={source}
@@ -97,7 +97,7 @@ export function LogsPage() {
               setChoice(event.target.value);
               pinned.current = true;
             }}
-            className="h-8 max-w-64 rounded-md border border-line-strong bg-surface px-2"
+            className="h-9.5 max-w-64 rounded-lg border border-line-strong bg-surface px-3 max-sm:h-11"
           >
             {groups.map(
               ([label, items]) =>
@@ -113,7 +113,7 @@ export function LogsPage() {
             )}
           </select>
           <SearchInput placeholder={t("Satırlarda ara")} aria-label={t("Satırlarda ara")} value={filter} onChange={(event) => setFilter(event.target.value)} />
-          <select aria-label={t("Satır sayısı")} value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-8 rounded-md border border-line-strong bg-surface px-2">
+          <select aria-label={t("Satır sayısı")} value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-9.5 rounded-lg border border-line-strong bg-surface px-3 max-sm:h-11">
             {[100, 300, 1000, 2000].map((value) => (
               <option key={value} value={value}>
                 {t("Son {n} satır", { n: value })}
@@ -132,7 +132,7 @@ export function LogsPage() {
             const element = event.currentTarget;
             pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
           }}
-          className="min-h-0 flex-1 overflow-auto bg-sunken/50 px-3 py-2 font-mono text-[13px] leading-relaxed"
+          className="min-h-0 flex-1 overflow-auto bg-sunken/50 px-4 py-3 font-mono text-[13px] sm:px-6 leading-relaxed"
         >
           {log.isError && <ErrorBlock message={errorMessage(log.error)} />}
           {log.data && !log.data.exists && <p className="font-sans text-ink-2">{t("Bu günlük henüz oluşmadı; ilk kayıt düştüğünde burada görünür.")}</p>}

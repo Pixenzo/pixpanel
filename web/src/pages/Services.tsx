@@ -81,7 +81,7 @@ export function ServicesPage() {
         <Panel
           flush
           title={
-            <div className="flex flex-wrap items-center gap-4 font-normal">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3 font-normal">
               <SearchInput
                 placeholder={t("Servis ara")}
                 aria-label={t("Servis ara")}

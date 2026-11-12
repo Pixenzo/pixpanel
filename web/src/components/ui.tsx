@@ -159,7 +159,7 @@ export function Checkbox({
 
 /** Tablo üstündeki arama kutusu gibi etiketsiz, küçük girdiler için. */
 export function SearchInput({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input type="search" className={classNames(controlClass, "h-8 sm:max-w-64", className)} {...rest} />;
+  return <input type="search" className={classNames(controlClass, "h-9.5 sm:w-64", className)} {...rest} />;
 }
 
 /** Aç/kapa düğmesi; `label` ekran okuyucular içindir, görünen metni çağıran yazar. */
@@ -278,7 +278,7 @@ export function PageHeader({
     <header className="mb-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-4 sm:mb-8">
       <div className="min-w-0">
         <h1 className="text-[23px] leading-[1.15] font-semibold tracking-[-0.02em] sm:text-[27px]">{title}</h1>
-        {description && <p className="mt-2 max-w-[68ch] text-[15.5px] text-ink-2">{description}</p>}
+        {description && <p className="mt-2 max-w-[42rem] text-[15.5px] text-ink-2">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 max-sm:w-full max-sm:[&>*]:flex-1">{actions}</div>}
     </header>
