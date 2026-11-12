@@ -21,7 +21,7 @@ import {
 } from "../components/ui";
 import type { PhpGlobal, PhpSettings, Site, SiteOptions, SiteSummary } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { classNames, formatDateTime } from "../lib/format";
+import { classNames, formatBytes, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { FtpSection } from "./SiteFtp";
@@ -468,6 +468,10 @@ function OverviewSection({ site, options }: { site: Site; options: SiteOptions }
           <dd>
             <Mono>{site.owner}</Mono>
           </dd>
+          <dt className="text-ink-2">{t("Disk")}</dt>
+          <dd className="tabular font-mono text-[13.5px]">{summary?.disk_bytes != null ? formatBytes(summary.disk_bytes) : "—"}</dd>
+          <dt className="text-ink-2">{t("Bu ayki trafik")}</dt>
+          <dd className="tabular font-mono text-[13.5px]">{summary ? formatBytes(summary.month_bytes) : "—"}</dd>
           {site.kind === "proxy" ? (
             <>
               <dt className="text-ink-2">{t("Hedef")}</dt>

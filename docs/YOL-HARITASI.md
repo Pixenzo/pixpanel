@@ -179,9 +179,9 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 - 11a. Müşteri olarak giriş (yönetici ve bayi için; denetim günlüğüne yazılır, kolayca geri dönülür). — **tamamlandı (11.11.2026)**
 - 11b. Bildirim olayları: disk doluyor, servis durdu, sertifika bitiyor, yedek başarısız, hesap kotayı aştı, yeni adresten giriş. — **tamamlandı (11.11.2026; sunucu olayları yöneticiye `health_alert` ile, site ve kota olayları hesabın kendisine)**
-- 11c. Sistem güncellemeleri: bekleyen paketler, güvenlik güncellemelerinin kendiliğinden kurulması, yeniden başlatma gerekli uyarısı.
+- 11c. Sistem güncellemeleri: bekleyen paketler, güvenlik güncellemelerinin kendiliğinden kurulması, yeniden başlatma gerekli uyarısı. — **tamamlandı (12.11.2026)**
 - 11d. Servis izleme: duran servisi yeniden başlatma, geçmişe dönük ölçümler (bugün yalnızca son dakikalar).
-- 11e. Marka: logo, ad, giriş sayfası metni (bayi bazında). — **sunucu genelinde tamamlandı (11.11.2026); bayi bazında ayrım kaldı**
+- 11e. Marka: logo, ad, giriş sayfası metni (bayi bazında). — **tamamlandı (sunucu geneli 11.11.2026, bayi bazında 12.11.2026)**
 
 ---
 
@@ -207,20 +207,20 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 ### 15. Taşıma aracı — B, sistem katmanı
 
 - SSH ile başka sunucudan çekme (rsync + döküm); Plesk, cPanel ve HestiaCP yedeklerinden içe aktarma; posta kutularını IMAP ile taşıma (`imapsync`).
-- **Durum (12.11.2026):** SSH ile çekme yapıldı (dosyalar + WordPress veritabanı; ayrıntı DURUM.md). WordPress dışı veritabanları da eklendi (bilgiler elle verilir). Kalanlar: yedek dosyalarından içe aktarma, posta kutuları.
+- **Durum (12.11.2026):** SSH ile çekme yapıldı (dosyalar + WordPress veritabanı; ayrıntı DURUM.md). WordPress dışı veritabanları da eklendi (bilgiler elle verilir). Posta kutuları IMAP ile aktarılıyor (12.11.2026). Kalan: Plesk/cPanel/HestiaCP yedek dosyalarından içe aktarma.
 - **Not:** kaynak biçimlerinin her biri ayrı bir araştırma işidir.
 
-### 16. Python uygulamaları — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: `uv` ile çoklu sürüm)
+### 16. Python uygulamaları — TAMAMLANDI (11.11.2026; `uv` ile çoklu sürüm 12.11.2026)
 
 - Node.js modülünün eşleniği: sürüm (pyenv yerine `uv` ile yönetilen sürümler), sanal ortam, gunicorn/uvicorn, systemd servisi.
 - **Örnek al:** `hosting/node.rs`, `api/sites.rs` içindeki Node.js uçları, `web/src/pages/SiteNode.tsx`.
 
 ### 17. Posta derinliği — B (parçalar devredilebilir)
 
-- 17a. Kutu sahibinin kendi işleri: web postasından parola değiştirme, otomatik yanıt ve filtreler (panel kurallarıyla çakışmadan).
+- 17a. Kutu sahibinin kendi işleri: web postasından parola değiştirme, otomatik yanıt ve filtreler (panel kurallarıyla çakışmadan). — **tamamlandı (12.11.2026)**
 - 17b. İstemci otomatik ayarı (autoconfig, autodiscover). — **tamamlandı (12.11.2026)**
 - 17c. Giden posta sınırı (kutu ve alan adı başına saatlik sınır; ele geçirilmiş hesaba karşı). — **tamamlandı (12.11.2026)**
-- 17d. Karantina: şüpheli iletileri tutma, panelden bırakma ya da silme.
+- 17d. Karantina: şüpheli iletileri tutma, panelden bırakma ya da silme. — **tamamlandı (12.11.2026)**
 - 17e. Antivirüs (ClamAV; yaklaşık 1 GB bellek ister, isteğe bağlı bileşen).
 - 17f. Posta listeleri (düşük öncelik).
 - 17g. Alan adı başına sertifika (SNI) ve `webmail.<alan>` adresi.
@@ -252,7 +252,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 
 ## Teknik borç (araya sıkıştırılacak)
 
-- Bileşen kaldırma (bugün yalnızca kurma var) ve sürüm güncelleme (Node.js dahil).
+- ~~Bileşen kaldırma~~ (12.11.2026: güvenli olanlar kaldırılabiliyor); sürüm güncelleme (Node.js dahil) kaldı.
 - ~~Git web kancasında imza doğrulaması (`X-Hub-Signature-256`).~~ Tamamlandı (12.11.2026).
 - Arşiv açmada boyut sınırı (zip bombası).
 - Redis için hesap başına yalıtım (ACL) ya da kullanımı yöneticiye bırakma kararı.
