@@ -27,6 +27,7 @@ mod jobs;
 mod logs;
 mod mail;
 mod node_versions;
+mod mail_extras;
 mod notify;
 mod packages;
 mod panelcert;

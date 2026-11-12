@@ -23,6 +23,8 @@ use crate::mail::{self, DnsRecord, MailAlias, MailDomain, Mailbox, SpamSettings}
 use crate::state::AppState;
 use crate::sys::{exec, services};
 
+use super::mail_extras as extras;
+
 const AREA: &str = "mail";
 
 pub fn router() -> Router<AppState> {
@@ -33,6 +35,14 @@ pub fn router() -> Router<AppState> {
         .route("/domains/{id}/dns", get(check_dns))
         .route("/domains/{id}/dns/apply", post(apply_dns))
         .route("/domains/{id}/client-settings", get(client_settings))
+        // Alan adı başına sertifika: `mail.<alan>` (SNI) ve `webmail.<alan>` adresi.
+        .route("/domains/{id}/own-name", get(extras::own_name_status).put(extras::own_name_save))
+        .route("/domains/{id}/own-name/renew", post(extras::own_name_renew))
+        // Posta listeleri.
+        .route("/domains/{id}/lists", get(extras::list_lists).post(extras::create_list))
+        .route("/domains/{id}/lists/{list_id}", get(extras::list_detail).patch(extras::update_list).delete(extras::remove_list))
+        .route("/domains/{id}/lists/{list_id}/members", post(extras::add_members).patch(extras::set_members_role))
+        .route("/domains/{id}/lists/{list_id}/members/remove", post(extras::remove_members))
         .route("/domains/{id}/mailboxes", post(create_mailbox))
         .route("/domains/{id}/aliases", post(create_alias))
         .route("/mailboxes/{id}", patch(update_mailbox).delete(remove_mailbox))
@@ -44,6 +54,9 @@ pub fn router() -> Router<AppState> {
         .route("/settings", get(settings).put(save_settings))
         .route("/limits", get(limit_settings).put(save_limit_settings))
         .route("/limit-hits", get(limit_hits))
+        // Virüs taraması (ClamAV bileşeni).
+        .route("/antivirus", get(extras::antivirus_status))
+        .route("/antivirus/apply", post(extras::antivirus_apply))
         .route("/setup", post(run_setup))
         .route("/activity", get(activity))
         // Karantina (Postfix bekletme kuyruğu): yönetici hepsini, diğerleri yalnızca kendi alan adlarının iletilerini görür.
@@ -198,6 +211,10 @@ struct DomainDetail {
     dns_managed: bool,
     /// Web postası (Roundcube) kurulu mu? Kuruluysa kutuların yanında açma bağlantısı gösterilir.
     webmail: bool,
+    /// Posta istemcilerinin bağlanacağı ad: "kendi adıyla bağlan" açıksa `mail.<alan>`, değilse sunucu adı.
+    client_host: String,
+    /// `webmail.<alan>` adresi sunuluyorsa adı (HTTPS sertifikası yerindeyse).
+    webmail_host: Option<String>,
 }
 
 async fn domain_detail(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<DomainDetail>> {
@@ -216,6 +233,8 @@ async fn domain_detail(State(state): State<AppState>, user: AuthUser, Path(id): 
         dns: mail::dns_records(&domain, &hostname),
         aliases: mail::list_aliases(&state.db, Some(id))?,
         mailboxes,
+        client_host: mail::tls::client_host(&state.db, &domain.domain),
+        webmail_host: mail::tls::webmail_domains(&state.db).contains(&domain.domain).then(|| mail::tls::webmail_host(&domain.domain)).filter(|host| mail::tls::certificate_for(&domain.domain, host).is_some()),
         domain,
         hostname,
         webmail: crate::dbtools::installed().roundcube,
@@ -311,8 +330,13 @@ async fn remove_domain(
     user.require(AREA)?;
     let domain = mail::get_domain(&state.db, &user, id)?;
     let _guard = state.sys_lock.lock().await;
+    let had_own_name = mail::tls::get(&state.db, id)?.is_some();
     state.db.call(|conn| conn.execute("DELETE FROM mail_domains WHERE id = ?1", params![id]))?;
     mail::sync(&state.db).await?;
+    if had_own_name {
+        // Alan adının sertifikası, SNI haritası ve Dovecot bloğu kaldırılır.
+        mail::tls::cleanup_domain(&state, &domain.domain).await;
+    }
     mail::remove_dkim(&domain.domain);
     if query.delete_mail {
         mail::remove_mail_data(&domain.domain, None).await?;
@@ -335,12 +359,13 @@ fn default_quota() -> i64 {
     1024
 }
 
-/// Adresin bu alan adında kutu ya da takma ad olarak kullanılmadığını denetler.
-fn ensure_address_free(state: &AppState, domain_id: i64, local: &str) -> AppResult<()> {
+/// Adresin bu alan adında kutu, takma ad ya da liste olarak kullanılmadığını denetler.
+pub(super) fn ensure_address_free(state: &AppState, domain_id: i64, local: &str) -> AppResult<()> {
     let taken: bool = state.db.call(|conn| {
         conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM mailboxes WHERE domain_id = ?1 AND local = ?2)
-                 OR EXISTS(SELECT 1 FROM mail_aliases WHERE domain_id = ?1 AND local = ?2)",
+                 OR EXISTS(SELECT 1 FROM mail_aliases WHERE domain_id = ?1 AND local = ?2)
+                 OR EXISTS(SELECT 1 FROM mail_lists WHERE domain_id = ?1 AND local = ?2)",
             params![domain_id, local],
             |row| row.get(0),
         )
@@ -740,7 +765,7 @@ async fn client_settings(State(state): State<AppState>, user: AuthUser, Path(id)
     let nginx_ready = crate::hosting::nginx::is_installed();
     let scheme = |index: usize| if names.get(index).is_some_and(|name| name.https) { "https" } else { "http" };
     Ok(Json(json!({
-        "hostname": mail::hostname(&state.db),
+        "hostname": mail::tls::client_host(&state.db, &domain.domain),
         "imap_port": 993,
         "submission_port": 587,
         "smtps_port": 465,
@@ -785,7 +810,7 @@ async fn public_autoconfig(State(state): State<AppState>, headers: HeaderMap, Qu
             .ok_or_else(|| AppError::bad("E-posta adresi gerekli"))?,
     };
     require_mail_domain(&state, &domain)?;
-    Ok(xml_response("application/xml; charset=utf-8", mail::autoconfig::render_autoconfig(&domain, &mail::hostname(&state.db))))
+    Ok(xml_response("application/xml; charset=utf-8", mail::autoconfig::render_autoconfig(&domain, &mail::tls::client_host(&state.db, &domain))))
 }
 
 #[derive(Deserialize)]
@@ -800,7 +825,7 @@ async fn public_mobileconfig(State(state): State<AppState>, Query(query): Query<
     require_mail_domain(&state, &domain)?;
     let mut response = xml_response(
         "application/x-apple-aspen-config; charset=utf-8",
-        mail::autoconfig::render_mobileconfig(&format!("{local}@{domain}"), &mail::hostname(&state.db)),
+        mail::autoconfig::render_mobileconfig(&format!("{local}@{domain}"), &mail::tls::client_host(&state.db, &domain)),
     );
     response.headers_mut().insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=\"mail.mobileconfig\""));
     Ok(response)
@@ -810,7 +835,7 @@ async fn public_autodiscover(State(state): State<AppState>, body: Bytes) -> AppR
     let raw = mail::autoconfig::extract_autodiscover_email(&body)?;
     let (local, domain) = mail::autoconfig::parse_email(&raw)?;
     require_mail_domain(&state, &domain)?;
-    Ok(xml_response("text/xml; charset=utf-8", mail::autoconfig::render_autodiscover(&format!("{local}@{domain}"), &mail::hostname(&state.db))))
+    Ok(xml_response("text/xml; charset=utf-8", mail::autoconfig::render_autodiscover(&format!("{local}@{domain}"), &mail::tls::client_host(&state.db, &domain))))
 }
 
 // ---- Kutu sahibi: parola değiştirme (oturumsuz) ----

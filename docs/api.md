@@ -262,6 +262,17 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | GET | `/mail/domains/{id}/dns` | Gerekli DNS kayıtlarını (MX, SPF, DKIM, DMARC) denetler. | `mail` |
 | POST | `/mail/domains/{id}/dns/apply` | Eksik DNS kayıtlarını panelin DNS'ine yazar. | `mail` |
 | GET | `/mail/domains/{id}/client-settings` | Posta istemcisi ayarları. | `mail` |
+| GET | `/mail/domains/{id}/own-name` | Alan adının "kendi adıyla bağlan" durumu: `mail.`/`webmail.`/`autoconfig.`/`autodiscover.` adları, DNS çözümü, sertifika. | `mail` |
+| PUT | `/mail/domains/{id}/own-name` | Açar/kapatır: `{enabled, webmail?, dns?, add_dns?}`; sertifika görevi `{job_id}` döner. | `mail` |
+| POST | `/mail/domains/{id}/own-name/renew` | Alan adının posta sertifikasını hemen yeniden alır (görev). | `mail` |
+| GET | `/mail/domains/{id}/lists` | Alan adının posta listeleri. | `mail` |
+| POST | `/mail/domains/{id}/lists` | Liste oluşturur: `{local, mode?}` (`anyone`, `members`, `admins`). | `mail` |
+| GET | `/mail/domains/{id}/lists/{list_id}` | Liste ve üyeleri. | `mail` |
+| PATCH | `/mail/domains/{id}/lists/{list_id}` | Gönderim kipini değiştirir: `{mode}`. | `mail` |
+| DELETE | `/mail/domains/{id}/lists/{list_id}` | Listeyi siler. | `mail` |
+| POST | `/mail/domains/{id}/lists/{list_id}/members` | Üye ekler: `{text, admin?}` (satır/virgül/boşlukla ayrılmış adresler). | `mail` |
+| PATCH | `/mail/domains/{id}/lists/{list_id}/members` | Üyelerin yönetici işaretini değiştirir: `{text, admin}`. | `mail` |
+| POST | `/mail/domains/{id}/lists/{list_id}/members/remove` | Üyeleri çıkarır: `{text}`. | `mail` |
 | POST | `/mail/domains/{id}/mailboxes` | Posta kutusu açar: `{local, password, quota_mb?}`. | `mail` |
 | POST | `/mail/domains/{id}/aliases` | Takma ad ekler. | `mail` |
 | PATCH | `/mail/mailboxes/{id}` | Kutuyu günceller (parola, kota, yönlendirme, otomatik yanıt, süzgeçler). | `mail` |
@@ -281,6 +292,8 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | DELETE | `/mail/queue/{id}` | Kuyruktaki iletiyi siler. | Yönetici |
 | GET | `/mail/settings` | Sunucu geneli posta ve spam ayarları. | Yönetici |
 | PUT | `/mail/settings` | Posta ve spam ayarlarını kaydeder. | Yönetici |
+| GET | `/mail/antivirus` | Virüs taraması durumu (ClamAV; imza tarihi, son 7 gün). | Yönetici |
+| POST | `/mail/antivirus/apply` | Rspamd virüs taraması yapılandırmasını yeniden yazar. | Yönetici |
 | GET | `/mail/limits` | Gönderim sınırı ayarları. | Yönetici |
 | PUT | `/mail/limits` | Gönderim sınırı ayarlarını kaydeder. | Yönetici |
 | POST | `/mail/setup` | Posta sunucusunu kurar/yeniden yapılandırır. | Yönetici |
@@ -492,7 +505,7 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | POST | `/health/fix` | Bir bulguyu otomatik düzeltir. | Yönetici |
 | PUT | `/health/settings` | Sağlık denetimi ayarlarını kaydeder. | Yönetici |
 | GET | `/components` | Kurulabilir bileşenler ve durumları. | Yönetici |
-| POST | `/components/{id}/install` | Bileşeni kurar (görev). | Yönetici |
+| POST | `/components/{id}/install` | Bileşeni kurar (görev). `?force=true`: bellek gibi kurulum uyarısı onaylandı (ClamAV için 2 GB altı bellek). | Yönetici |
 | POST | `/components/{id}/remove` | Bileşeni kaldırır (ayarlar kalır; görev). | Yönetici |
 | DELETE | `/components/{id}` | Bileşeni ve verisini tamamen siler. | Yönetici |
 | GET | `/php` | Kurulu PHP sürümleri. | Yönetici |

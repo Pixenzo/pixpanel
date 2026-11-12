@@ -297,6 +297,10 @@ fn name_covers(pattern: &str, name: &str) -> bool {
 /// Adı kapsayan, süresi dolmamış ve kendinden imzalı olmayan bir sertifika arar: önce adın
 /// kendi sertifikası, sonra posta alan adının sitesinin sertifikası (joker ya da çok adlı olabilir).
 fn certificate_for(name: &str, domain: &str) -> Option<(PathBuf, PathBuf)> {
+    // Alan adı "kendi adıyla bağlan"ı açtıysa onun sertifikası (SAN olarak bu adları da kapsar).
+    if let Some(found) = super::tls::certificate_for(domain, name) {
+        return Some(found);
+    }
     for owner in [name, domain] {
         let (cert, key) = nginx::certificate_paths(owner);
         if !cert.exists() || !key.exists() {
@@ -353,7 +357,48 @@ fn locations() -> String {
     out
 }
 
-fn server_blocks(domains: &[String], taken: &BTreeSet<String>) -> String {
+/// `webmail.<alan>` sunucu blokları: HTTPS'te web postasını (Roundcube araç sunucusu, yalnızca
+/// `/webmail/` yolu) sunar; ziyaretçinin gerçek adresi `X-Real-IP` ile iletilir. Düz HTTP'de yalnızca
+/// sertifika doğrulaması yanıtlanır, gerisi HTTPS'e yönlendirilir (parola açık gitmez).
+fn webmail_blocks(domain: &str, taken: &BTreeSet<String>) -> String {
+    let name = super::tls::webmail_host(domain);
+    if taken.contains(&name) {
+        return String::new();
+    }
+    let certificate = super::tls::certificate_for(domain, &name);
+    let mut out = String::new();
+    let _ = writeln!(out, "server {{");
+    nginx::listen_lines(&mut out, 80, "", None);
+    let _ = writeln!(out, "    server_name {name};");
+    out.push_str(nginx::ACME_LOCATION);
+    let fallback = if certificate.is_some() { "return 301 https://$host$request_uri;" } else { "return 404;" };
+    let _ = writeln!(out, "    location / {{\n        {fallback}\n    }}\n}}");
+    if let Some((cert, key)) = certificate {
+        let _ = writeln!(out, "server {{");
+        nginx::listen_lines(&mut out, 443, " ssl", None);
+        let _ = writeln!(out, "    server_name {name};");
+        let _ = writeln!(out, "    ssl_certificate {};", cert.display());
+        let _ = writeln!(out, "    ssl_certificate_key {};", key.display());
+        let _ = writeln!(out, "    location = / {{\n        return 302 /webmail/;\n    }}");
+        let proxy = [
+            "    location /webmail/ {".to_string(),
+            format!("        proxy_pass http://127.0.0.1:{};", crate::dbtools::PORT),
+            "        proxy_http_version 1.1;".to_string(),
+            "        proxy_set_header Host $host;".to_string(),
+            "        proxy_set_header X-Forwarded-Host $host;".to_string(),
+            "        proxy_set_header X-Real-IP $remote_addr;".to_string(),
+            "        proxy_set_header Connection \"\";".to_string(),
+            "        proxy_read_timeout 600s;".to_string(),
+            "        proxy_send_timeout 600s;".to_string(),
+            "    }".to_string(),
+        ];
+        let _ = writeln!(out, "{}", proxy.join("\n"));
+        let _ = writeln!(out, "    location / {{\n        return 404;\n    }}\n}}");
+    }
+    out
+}
+
+fn server_blocks(domains: &[String], taken: &BTreeSet<String>, webmail: &BTreeSet<String>) -> String {
     let mut out = String::from("# PixPanel tarafından üretildi: posta istemcisi otomatik ayarı. Elle yapılan değişiklikler kaybolur.\n");
     let locations = locations();
     for domain in domains {
@@ -376,6 +421,9 @@ fn server_blocks(domains: &[String], taken: &BTreeSet<String>) -> String {
                 out.push_str(&locations);
                 out.push_str("    location / {\n        return 404;\n    }\n}\n");
             }
+        }
+        if webmail.contains(domain) {
+            out.push_str(&webmail_blocks(domain, taken));
         }
     }
     out
@@ -422,11 +470,13 @@ pub async fn sync_nginx(db: &Db) -> AppResult<()> {
     })?;
     let taken = site_names_taken(db);
     let sites = serving_sites(db, &domains);
+    // `webmail.<alan>` yalnızca web postası (Roundcube) kuruluysa sunulur.
+    let webmail = if crate::dbtools::installed().roundcube { super::tls::webmail_domains(db) } else { BTreeSet::new() };
 
     // Hedef durum: yol → içerik (`None`: dosya olmamalı).
     let mut wanted: BTreeMap<PathBuf, Option<String>> = BTreeMap::new();
     let server_path = Path::new(nginx::SITES_DIR).join(SERVER_CONF);
-    wanted.insert(server_path, (!domains.is_empty()).then(|| server_blocks(&domains, &taken)));
+    wanted.insert(server_path, (!domains.is_empty()).then(|| server_blocks(&domains, &taken, &webmail)));
     let snippet = format!("# PixPanel tarafından üretildi: posta istemcisi otomatik ayarı.\n{}", locations());
     for site in &sites {
         wanted.insert(wellknown_path(site), Some(snippet.clone()));
@@ -512,6 +562,20 @@ mod tests {
         let body = br#"<?xml version="1.0"?><Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/outlook/requestschema/2006"><Request><EMailAddress>ali@ornek.com</EMailAddress><AcceptableResponseSchema>x</AcceptableResponseSchema></Request></Autodiscover>"#;
         assert_eq!(extract_autodiscover_email(body).unwrap(), "ali@ornek.com");
         assert!(extract_autodiscover_email(b"<a/>").is_err());
+    }
+
+    #[test]
+    fn webmail_block_serves_only_acme_until_certificate_exists() {
+        let mut taken = BTreeSet::new();
+        let block = webmail_blocks("ornek.test", &taken);
+        assert!(block.contains("server_name webmail.ornek.test;"));
+        assert!(block.contains("acme-challenge"));
+        assert!(block.contains("return 404;"));
+        // Sertifika yokken HTTPS bloğu ve web postası vekili yazılmaz.
+        assert!(!block.contains("listen 443") && !block.contains("/webmail/"));
+        // Aynı adla bir site varsa blok yazılmaz.
+        taken.insert("webmail.ornek.test".to_string());
+        assert!(webmail_blocks("ornek.test", &taken).is_empty());
     }
 
     #[test]

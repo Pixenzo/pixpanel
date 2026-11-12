@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, MailPlus, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Smartphone, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, MailPlus, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Smartphone, Trash2, Users } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -36,6 +36,7 @@ import { t } from "../lib/i18n";
 import { MailImportModal } from "./MailImport";
 import { useMe } from "../lib/session";
 import { MailClientSettings } from "./MailClientSettings";
+import { MailLists } from "./MailLists";
 import type { AutoReply, DnsRecord, FilterAction, FilterCondition, MailAlias, MailDomain, MailFilter, Mailbox } from "./Mail";
 
 interface DomainDetail {
@@ -48,6 +49,10 @@ interface DomainDetail {
   dns_managed: boolean;
   /** Web postası kurulu mu? */
   webmail: boolean;
+  /** Posta istemcilerinin bağlanacağı ad (`mail.<alan>` ya da sunucu adı). */
+  client_host: string;
+  /** `webmail.<alan>` adresi sunuluyorsa adı. */
+  webmail_host: string | null;
 }
 
 /** Web postasının adresi; kutu verilirse giriş sayfasında adres yazılı gelir. */
@@ -1472,7 +1477,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
 
 // ---- Sayfa ----
 
-type SectionId = "kutular" | "takma-adlar" | "dns" | "istemci" | "ayarlar";
+type SectionId = "kutular" | "takma-adlar" | "listeler" | "dns" | "istemci" | "ayarlar";
 
 interface Section {
   id: SectionId;
@@ -1494,6 +1499,7 @@ export function MailDomainPage() {
   const sections: Section[] = [
     { id: "kutular", label: t("Kutular"), icon: Inbox, count: data.domain.mailbox_count },
     { id: "takma-adlar", label: t("Takma adlar"), icon: AtSign, count: data.domain.alias_count },
+    { id: "listeler", label: t("Listeler"), icon: Users },
     { id: "dns", label: t("DNS kayıtları"), icon: Globe },
     { id: "istemci", label: t("İstemci ayarları"), icon: Smartphone },
     { id: "ayarlar", label: t("Ayarlar"), icon: SlidersHorizontal },
@@ -1514,7 +1520,7 @@ export function MailDomainPage() {
         <span className="text-[13.5px] text-ink-3">{t("Oluşturulma")}: {formatDateTime(data.domain.created_at)}</span>
         {data.webmail ? (
           <a
-            href={webmailUrl()}
+            href={data.webmail_host ? `https://${data.webmail_host}/webmail/` : webmailUrl()}
             target="_blank"
             rel="noreferrer"
             className="ml-auto inline-flex h-9.5 items-center gap-2 rounded-lg border border-line-strong bg-surface px-4 font-medium shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors hover:bg-sunken max-sm:w-full max-sm:justify-center"
@@ -1553,6 +1559,7 @@ export function MailDomainPage() {
         <div className="min-w-0 flex-1">
           {active === "kutular" && <MailboxesSection detail={data} />}
           {active === "takma-adlar" && <AliasesSection detail={data} />}
+          {active === "listeler" && <MailLists domain={data.domain} />}
           {active === "dns" && <DnsSection detail={data} />}
           {active === "istemci" && <MailClientSettings domain={data.domain} />}
           {active === "ayarlar" && <SettingsSection key={data.domain.catch_all} detail={data} />}

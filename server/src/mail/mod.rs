@@ -5,12 +5,15 @@
 //! Dovecot'un okuduğu düz eşleme dosyaları (`/etc/pixpanel/mail/`) baştan
 //! üretilir; servisler panelin veritabanına doğrudan erişmez.
 
+pub mod antivirus;
 pub mod autoconfig;
 pub mod import;
+pub mod lists;
 pub mod owner;
 pub mod policy;
 pub mod quarantine;
 pub mod sieve;
+pub mod tls;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -53,6 +56,29 @@ pub fn is_installed() -> bool {
 
 fn mail_file(name: &str) -> PathBuf {
     Path::new(MAIL_DIR).join(name)
+}
+
+/// Postfix yapılandırma dosyalarının (`main.cf`, `master.cf`) anlık görüntüsü: `postconf` ile
+/// yapılan bir değişiklik `postfix check`ten geçmezse eski hâline dönmek için.
+pub(crate) struct PostfixSnapshot {
+    main: Option<Vec<u8>>,
+    master: Option<Vec<u8>>,
+}
+
+impl PostfixSnapshot {
+    pub(crate) fn take() -> Self {
+        Self { main: std::fs::read("/etc/postfix/main.cf").ok(), master: std::fs::read("/etc/postfix/master.cf").ok() }
+    }
+
+    pub(crate) fn restore(&self) {
+        for (path, content) in [("/etc/postfix/main.cf", &self.main), ("/etc/postfix/master.cf", &self.master)] {
+            if let Some(content) = content {
+                if let Err(err) = atomic_write(Path::new(path), content, 0o644) {
+                    tracing::error!(error = %err, path, "Postfix yapılandırması geri alınamadı");
+                }
+            }
+        }
+    }
 }
 
 // ---- Adres doğrulama ----
@@ -532,6 +558,7 @@ pub async fn sync(db: &Db) -> AppResult<()> {
     })?;
     let mailboxes = list_mailboxes(db, None)?;
     let aliases = list_aliases(db, None)?;
+    let list_data = lists::all_list_data(db)?;
 
     let mut domain_map = String::new();
     let mut mailbox_map = String::new();
@@ -567,6 +594,14 @@ pub async fn sync(db: &Db) -> AppResult<()> {
                 sender_map.push_str(&format!("{} {}\n", alias.address, owners.join(", ")));
             }
         }
+        // Posta listeleri: `liste@alan` → üyeler (yalnızca Postfix'in kendi alias genişletmesi).
+        let suffix = format!("@{domain}");
+        for list in list_data.iter().filter(|list| list.address.ends_with(&suffix)) {
+            if let Some(line) = lists::alias_line(list) {
+                alias_map.push_str(&line);
+                alias_map.push('\n');
+            }
+        }
         if !catch_all.is_empty() {
             alias_map.push_str(&format!("@{domain} {catch_all}\n"));
         }
@@ -583,6 +618,9 @@ pub async fn sync(db: &Db) -> AppResult<()> {
     std::os::unix::fs::chown(&users_path, Some(0), Some(sysuser::group_id("dovecot")?))?;
 
     write_dkim_owners(db)?;
+    // Liste kısıtları: eşleme dosyaları ve Postfix kısıt sınıfları (hata olursa Postfix eski hâline döner).
+    lists::write_files(&list_data)?;
+    lists::apply_postfix(&list_data).await?;
 
     // texthash eşlemeleri süreç başlarken okunur; yeniden yükleme yeni içeriği devreye alır.
     if services::is_active("postfix.service").await {
@@ -1069,7 +1107,8 @@ async fn write_dovecot(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
         .replace("{{tls_cert}}", &cert.to_string_lossy())
         .replace("{{tls_key}}", &key.to_string_lossy())
         .replace("{{sieve_before}}", &before.to_string_lossy())
-        .replace("{{panel_sieve_dir}}", PANEL_SIEVE_DIR);
+        .replace("{{panel_sieve_dir}}", PANEL_SIEVE_DIR)
+        .replace("{{local_names}}", &tls::dovecot_blocks(db));
     if previous.as_deref() == Some(rendered.as_bytes()) {
         return Ok(());
     }
@@ -1187,10 +1226,14 @@ pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
     }
     configure_local_sender_mark().await?;
     policy::configure_postfix().await?;
+    // Liste kısıtları ve alan başına SNI eşlemesi policy ayarından sonra yeniden kurulur.
+    lists::apply_postfix(&lists::all_list_data(db)?).await?;
     exec::run_ok("postfix", &["check"]).await?;
 
     // ---- Rspamd ----
     write_rspamd(&load_spam(db)?).await?;
+    // ClamAV kuruluysa virüs taraması bağlantısı korunur.
+    antivirus::sync_rspamd().await;
 
     for (service, _) in SERVICES {
         exec::run_ok("systemctl", &["enable", "--quiet", "--", service]).await?;

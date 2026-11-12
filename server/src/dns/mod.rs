@@ -473,6 +473,19 @@ pub async fn add_site_records(state: &AppState, owner_id: i64, names: &[String])
     report
 }
 
+/// Verilen adlar için sunucunun genel adresini gösteren A kaydı ekler (posta ve web posta adları).
+/// Aynı adda A, AAAA ya da CNAME varsa dokunulmaz. Bölgesi panelde yönetilmeyen adlar atlanır.
+pub async fn add_address_records(state: &AppState, owner_id: i64, names: &[String]) -> Vec<String> {
+    let mut report = Vec::new();
+    for name in names {
+        let Ok(Some(zone)) = zone_for(&state.db, owner_id, name) else { continue };
+        let Ok(existing) = list_records(state, &zone).await else { continue };
+        let record = Record::new("A", name, &server_ip(&state.db));
+        report.push(ensure(state, &zone, &existing, record, Policy::IfNoAddress).await);
+    }
+    report
+}
+
 /// Sitenin adresi değişince, eski adresi gösteren kayıtları yenisine çevirir. Kullanıcının
 /// başka yere yönlendirdiği kayıtlara dokunulmaz: yalnızca içeriği eski adres olanlar silinir.
 ///
