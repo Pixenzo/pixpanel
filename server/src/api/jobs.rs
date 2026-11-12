@@ -22,8 +22,27 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/stream", get(stream_job))
 }
 
+/// Görev türünün ait olduğu yetki alanı. Alan kapsamlı API anahtarları yalnızca kapsamındaki
+/// alanların görevlerini görür; eşlenmeyen (sistem düzeyi) görevler kapsamlı anahtara kapalıdır.
+fn job_area(kind: &str) -> Option<&'static str> {
+    match kind.split('.').next().unwrap_or("") {
+        "cron" => Some("cron"),
+        "database" => Some("databases"),
+        "docker" => Some("docker"),
+        "mail" => Some("mail"),
+        "ssl" => Some("ssl"),
+        "site" | "wordpress" | "python" | "node" | "deploy" => Some("sites"),
+        "backup" | "restore" => Some("backups"),
+        _ => None,
+    }
+}
+
 /// Yönetici bütün görevleri, diğerleri yalnızca kendi başlattıklarını görür.
+/// Kapsamlı API anahtarı ayrıca yalnızca kapsamındaki alanların görevlerini görür.
 fn ensure_visible(user: &AuthUser, job: &JobInfo) -> AppResult<()> {
+    if user.token_scope.is_some() && !job_area(&job.kind).is_some_and(|area| user.scope_allows(area)) {
+        return Err(AppError::NotFound);
+    }
     if user.is_admin() || job.user_id == Some(user.id) { Ok(()) } else { Err(AppError::NotFound) }
 }
 

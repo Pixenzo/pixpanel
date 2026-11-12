@@ -91,6 +91,8 @@ mod tests {
             session_id: None,
             impersonator: None,
             impersonator_id: None,
+            token_scope: None,
+            scope_area: None,
         }
     }
 

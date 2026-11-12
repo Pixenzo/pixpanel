@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
-use axum::extract::{ConnectInfo, FromRequestParts};
+use axum::extract::{ConnectInfo, FromRequestParts, MatchedPath};
 use axum::http::header::{AUTHORIZATION, COOKIE};
 use axum::http::request::Parts;
 use axum::http::Method;
@@ -82,6 +82,15 @@ pub struct AuthUser {
     pub impersonator: Option<String>,
     #[serde(skip)]
     pub impersonator_id: Option<i64>,
+    /// İstek alan kapsamlı bir API anahtarıyla yapıldıysa anahtarın erişebildiği alanlar
+    /// (`None`: kapsam yok, hesabın bütün yetkileri). Kapsam yetkiyi hiçbir zaman genişletmez;
+    /// hesabın kendi yetkisiyle kesişim alınır.
+    #[serde(rename = "token_scope", skip_serializing_if = "Option::is_none")]
+    pub token_scope: Option<Vec<String>>,
+    /// Kapsamlı anahtarın isteği, yol tablosunda (`scope_gate`) hangi alana eşlendi?
+    /// Alan uçlarının `require_admin` çağırması kapsamlı anahtarı düşürmesin diye tutulur.
+    #[serde(skip)]
+    pub scope_area: Option<&'static str>,
 }
 
 impl AuthUser {
@@ -89,8 +98,18 @@ impl AuthUser {
         self.role == Role::Admin
     }
 
+    /// Yalnızca yönetici. Kapsamlı bir anahtar, yol tablosunda bir alana eşlenmemiş
+    /// (alan dışı) yönetim uçlarına hiçbir zaman erişemez.
     pub fn require_admin(&self) -> AppResult<()> {
+        if self.token_scope.is_some() && self.scope_area.is_none() {
+            return Err(AppError::Forbidden);
+        }
         if self.is_admin() { Ok(()) } else { Err(AppError::Forbidden) }
+    }
+
+    /// Anahtarın kapsamı bu alana izin veriyor mu? Kapsamsız anahtar ve oturum için hep doğru.
+    pub fn scope_allows(&self, area: &str) -> bool {
+        self.token_scope.as_ref().is_none_or(|scope| scope.iter().any(|a| a == area))
     }
 
     /// Kaynakların sahibi olan hesap: alt hesaplar üst hesabın kaynaklarını yönetir.
@@ -102,8 +121,9 @@ impl AuthUser {
     }
 
     /// Alt hesaplar yalnızca kendilerine verilen alanlarda işlem yapabilir.
+    /// API anahtarının kapsamı varsa onunla da kesişim alınır.
     pub fn can(&self, area: &str) -> bool {
-        self.role != Role::Member || self.permissions.iter().any(|p| p == area)
+        self.scope_allows(area) && (self.role != Role::Member || self.permissions.iter().any(|p| p == area))
     }
 
     pub fn require(&self, area: &str) -> AppResult<()> {
@@ -288,6 +308,69 @@ fn read_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserRow> {
     })
 }
 
+/// Alan kapsamlı bir API anahtarının bir uca girebilme kararı.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ScopeGate {
+    /// Alan gerektirmeyen zararsız uç (kimlik okuma, kendi görevleri).
+    Open,
+    /// Uç bu alana aittir; anahtarın kapsamı alanı içermiyorsa reddedilir.
+    Area(&'static str),
+    /// Kapsamlı anahtara kapalı (yönetim, hesap ve oturum uçları dahil).
+    Deny,
+}
+
+/// Eşleşen yol şablonunu (`/api/v1/sites/{id}/ssl` gibi) bir alana eşler. Tek merkezdir ve
+/// "varsayılan ret" ilkesiyle çalışır: tabloda olmayan her uç kapsamlı anahtara kapalıdır;
+/// yeni eklenen bir uç, buraya yazılmadıkça kapsamlı anahtardan erişilemez. Uçların kendi
+/// `require(alan)` denetimi ayrıca geçerlidir (kesişim).
+pub fn scope_gate(template: &str) -> ScopeGate {
+    let Some(rest) = template.strip_prefix("/api/v1/") else { return ScopeGate::Deny };
+    let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+    match segments.as_slice() {
+        ["auth", "me"] => ScopeGate::Open,
+        // Görevler (ör. site ekleyince dönen job_id): içerik alanına göre `api::jobs` içinde süzülür.
+        ["jobs", ..] => ScopeGate::Open,
+        ["sites", _, "ssl", ..] => ScopeGate::Area("ssl"),
+        ["sites", _, "ftp", ..] => ScopeGate::Area("ftp"),
+        ["sites", ..] => ScopeGate::Area("sites"),
+        ["databases", ..] => ScopeGate::Area("databases"),
+        // Redis: yalnızca hesabın kendi örneği; sunucu geneli yönetim uçları (özet, ayar, hesaplar) kapalı.
+        ["redis", "mine", ..] | ["redis", "keys"] | ["redis", "key"] | ["redis", "command"] | ["redis", "flush"] => ScopeGate::Area("databases"),
+        ["mail", ..] => ScopeGate::Area("mail"),
+        ["dns", ..] => ScopeGate::Area("dns"),
+        ["files", ..] => ScopeGate::Area("files"),
+        ["cron", ..] => ScopeGate::Area("cron"),
+        ["logs", ..] => ScopeGate::Area("logs"),
+        ["docker", ..] => ScopeGate::Area("docker"),
+        ["backup", "mine", ..] => ScopeGate::Area("backups"),
+        _ => ScopeGate::Deny,
+    }
+}
+
+/// Anahtar oluştururken istenen alan listesini doğrular ve saklanacak JSON'a çevirir.
+/// Boş liste "kapsam yok" demektir (`None`). Alt hesap, kendi yetkisinde olmayan alanı kapsama alamaz.
+pub fn normalize_scope(requested: &[String], creator: &AuthUser) -> AppResult<Option<String>> {
+    let mut areas: Vec<&str> = Vec::new();
+    for area in requested {
+        let area = area.trim();
+        let Some(&known) = PERMISSION_AREAS.iter().find(|known| **known == area) else {
+            return Err(AppError::bad(format!("Geçersiz erişim alanı: {area}")));
+        };
+        if creator.role == Role::Member && !creator.permissions.iter().any(|p| p == known) {
+            return Err(AppError::bad(format!("Bu alana yetkiniz yok: {known}")));
+        }
+        if !areas.contains(&known) {
+            areas.push(known);
+        }
+    }
+    if areas.is_empty() {
+        return Ok(None);
+    }
+    // Saklama düzeni sabit olsun diye alanlar tanım sırasına dizilir.
+    areas.sort_by_key(|area| PERMISSION_AREAS.iter().position(|known| known == area));
+    serde_json::to_string(&areas).map(Some).map_err(|err| AppError::internal(err.to_string()))
+}
+
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
@@ -297,12 +380,15 @@ impl FromRequestParts<AppState> for AuthUser {
         let safe_method = matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS);
 
         let mut impersonation: Option<(i64, String)> = None;
+        // Kapsamlı anahtarın bu istek için geçtiği kapı: `Some(None)` alan gerektirmeyen açık uç.
+        let mut gate: Option<Option<&'static str>> = None;
+        let mut token_scope: Option<Vec<String>> = None;
         let (row, via_token, session_id) = if let Some(token) = bearer_token(parts) {
             let token_hash = hash_token(token);
             let found = state.db.call(|conn| {
                 conn.query_row(
                     &format!(
-                        "SELECT {USER_COLUMNS}, t.id, t.read_only, t.allowed_ips, t.expires_at
+                        "SELECT {USER_COLUMNS}, t.id, t.read_only, t.allowed_ips, t.expires_at, t.scope
                          FROM api_tokens t JOIN users u ON u.id = t.user_id
                          WHERE t.token_hash = ?1"
                     ),
@@ -314,18 +400,31 @@ impl FromRequestParts<AppState> for AuthUser {
                             row.get::<_, bool>(9)?,
                             row.get::<_, String>(10)?,
                             row.get::<_, Option<i64>>(11)?,
+                            row.get::<_, Option<String>>(12)?,
                         ))
                     },
                 )
                 .optional()
             })?;
-            let (user, token_id, read_only, allowed_ips, expires_at) =
+            let (user, token_id, read_only, allowed_ips, expires_at, scope) =
                 found.ok_or(AppError::Unauthorized)?;
             if expires_at.is_some_and(|at| at < current) || !ip_allowed(&allowed_ips, &ip) {
                 return Err(AppError::Unauthorized);
             }
             if read_only && !safe_method {
                 return Err(AppError::Forbidden);
+            }
+            // Alan kapsamlı anahtar: yol tablosunda yer almayan ya da kapsamı dışında kalan uçlar reddedilir.
+            // Çözümlenemeyen kapsam sütunu "hiçbir alan" sayılır (güvenli yönde).
+            if let Some(raw) = scope {
+                let areas: Vec<String> = serde_json::from_str(&raw).unwrap_or_default();
+                let matched = parts.extensions.get::<MatchedPath>().map(|path| path.as_str().to_string());
+                gate = match matched.as_deref().map(scope_gate) {
+                    Some(ScopeGate::Open) => Some(None),
+                    Some(ScopeGate::Area(area)) if areas.iter().any(|a| a == area) => Some(Some(area)),
+                    _ => return Err(AppError::Forbidden),
+                };
+                token_scope = Some(areas);
             }
             state.db.call(|conn| {
                 conn.execute(
@@ -406,6 +505,8 @@ impl FromRequestParts<AppState> for AuthUser {
             session_id,
             impersonator: impersonation.as_ref().map(|(_, name)| name.clone()),
             impersonator_id: impersonation.map(|(id, _)| id),
+            token_scope,
+            scope_area: gate.flatten(),
         })
     }
 }
@@ -452,4 +553,93 @@ pub fn audit(db: &Db, user: &AuthUser, action: &str, target: &str, detail: &str)
     crate::events::changed(action, user.owner_id());
     // Hesabın tanımladığı web kancalarına da iletilir.
     crate::webhooks::emit_audit(action, user.owner_id(), &username, target, detail);
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    fn user(role: Role, permissions: &[&str]) -> AuthUser {
+        AuthUser {
+            id: 1,
+            username: "u".into(),
+            email: String::new(),
+            role,
+            parent_id: None,
+            permissions: permissions.iter().map(|p| p.to_string()).collect(),
+            language: "tr".into(),
+            ip: String::new(),
+            via_token: true,
+            session_id: None,
+            impersonator: None,
+            impersonator_id: None,
+            token_scope: None,
+            scope_area: None,
+        }
+    }
+
+    #[test]
+    fn gate_maps_areas_and_denies_the_rest() {
+        assert_eq!(scope_gate("/api/v1/auth/me"), ScopeGate::Open);
+        assert_eq!(scope_gate("/api/v1/jobs/{id}/stream"), ScopeGate::Open);
+        assert_eq!(scope_gate("/api/v1/sites"), ScopeGate::Area("sites"));
+        assert_eq!(scope_gate("/api/v1/sites/{id}"), ScopeGate::Area("sites"));
+        assert_eq!(scope_gate("/api/v1/sites/{id}/ssl/letsencrypt"), ScopeGate::Area("ssl"));
+        assert_eq!(scope_gate("/api/v1/sites/{id}/ftp/{account}"), ScopeGate::Area("ftp"));
+        assert_eq!(scope_gate("/api/v1/redis/mine/enable"), ScopeGate::Area("databases"));
+        assert_eq!(scope_gate("/api/v1/backup/mine/run"), ScopeGate::Area("backups"));
+        for denied in [
+            "/api/v1/users",
+            "/api/v1/users/{id}/access",
+            "/api/v1/auth/tokens",
+            "/api/v1/auth/password",
+            "/api/v1/system/services/{name}/{action}",
+            "/api/v1/firewall",
+            "/api/v1/components/{id}/install",
+            "/api/v1/terminal/ws",
+            "/api/v1/backup/targets",
+            "/api/v1/redis",
+            "/api/v1/redis/accounts",
+            "/api/v1/webhooks",
+            "/api/v1/events",
+            "/other/sites",
+        ] {
+            assert_eq!(scope_gate(denied), ScopeGate::Deny, "{denied}");
+        }
+    }
+
+    #[test]
+    fn scope_intersects_with_member_permissions() {
+        let mut member = user(Role::Member, &["sites"]);
+        member.token_scope = Some(vec!["sites".into(), "dns".into()]);
+        assert!(member.can("sites"));
+        assert!(!member.can("dns"), "kapsam alt hesabın yetkisini genişletmemeli");
+        let mut owner = user(Role::User, &[]);
+        owner.token_scope = Some(vec!["sites".into()]);
+        assert!(owner.can("sites"));
+        assert!(!owner.can("mail"));
+    }
+
+    #[test]
+    fn scoped_token_cannot_pass_require_admin_outside_areas() {
+        let mut admin = user(Role::Admin, &[]);
+        assert!(admin.require_admin().is_ok());
+        admin.token_scope = Some(vec!["sites".into()]);
+        assert!(admin.require_admin().is_err());
+        admin.scope_area = Some("docker");
+        assert!(admin.require_admin().is_ok());
+    }
+
+    #[test]
+    fn normalize_scope_validates_names_and_member_permissions() {
+        let owner = user(Role::User, &[]);
+        assert_eq!(normalize_scope(&[], &owner).unwrap(), None);
+        let wanted = vec!["dns".to_string(), "sites".to_string(), "dns".to_string()];
+        assert_eq!(normalize_scope(&wanted, &owner).unwrap().as_deref(), Some(r#"["sites","dns"]"#));
+        assert!(normalize_scope(&["users".to_string()], &owner).is_err());
+        assert!(normalize_scope(&["".to_string()], &owner).is_err());
+        let member = user(Role::Member, &["sites"]);
+        assert!(normalize_scope(&["sites".to_string()], &member).is_ok());
+        assert!(normalize_scope(&["dns".to_string()], &member).is_err());
+    }
 }
