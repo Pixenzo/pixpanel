@@ -184,6 +184,16 @@ pub fn disk_usage(db: &Db, account_id: i64) -> AppResult<Option<(i64, i64)>> {
     db.call(|conn| conn.query_row("SELECT disk_bytes, measured_at FROM account_usage WHERE user_id = ?1", params![account_id], |row| Ok((row.get(0)?, row.get(1)?))).optional())
 }
 
+/// Hesabın kalan disk kotası (bayt); aşılmışsa 0. Kotası ya da ölçümü olmayan hesapta `None`
+/// (sınırsız sayılır). Ölçüm periyodik olduğundan değer yaklaşıktır.
+pub fn remaining_disk(db: &Db, account_id: i64) -> AppResult<Option<u64>> {
+    let Some((_, limits)) = limits_for(db, account_id)? else { return Ok(None) };
+    let Some(limit_mb) = limits.disk_mb else { return Ok(None) };
+    let Some((used, _)) = disk_usage(db, account_id)? else { return Ok(None) };
+    let limit = limit_mb.saturating_mul(1024 * 1024);
+    Ok(Some(u64::try_from(limit.saturating_sub(used)).unwrap_or(0)))
+}
+
 /// Hesabın diskine `extra_bytes` kadar daha yer eklenirse (ör. veritabanı kopyası) kota aşılır mı?
 /// Kotası ya da ölçümü olmayan hesapta sorun çıkmaz.
 pub fn check_extra_disk(db: &Db, account_id: i64, extra_bytes: u64) -> AppResult<()> {
