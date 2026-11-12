@@ -34,6 +34,7 @@ mod totp;
 mod update;
 mod uptime;
 mod web;
+mod webhooks;
 mod wordpress;
 
 use std::net::SocketAddr;
@@ -186,6 +187,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_stats_collector(state.clone());
     tasks::spawn_metrics_archive(state.clone());
     tasks::spawn_dns_cluster_sync(state.clone());
+    webhooks::spawn(state.clone());
     // Uygulama portlarının korunması arka planda kurulur; panelin açılışını bekletmez.
     tokio::spawn(hosting::portguard::apply());
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.

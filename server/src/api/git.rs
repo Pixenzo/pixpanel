@@ -1,7 +1,8 @@
 //! Git ile yayınlama uçları ve depo sağlayıcılarının çağırdığı web kancası.
 
 use axum::extract::{Path, Request, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -38,15 +39,19 @@ struct View {
     webhook_path: Option<String>,
     deployments: Vec<Deployment>,
     running: bool,
+    /// İmza gizli anahtarının kendisi geri gönderilmez; yalnızca tanımlı olup olmadığı.
+    signature_secret_set: bool,
 }
 
 fn view(state: &AppState, site_id: i64) -> AppResult<View> {
     let config = deploy::load_config(&state.db, site_id)?;
+    let signature_secret_set = config.as_ref().is_some_and(|config| !config.signature_secret.is_empty());
     Ok(View {
         webhook_path: config.as_ref().map(|config| format!("/api/v1/hooks/deploy/{}", config.webhook_token)),
         config,
         deployments: deploy::list_deployments(&state.db, site_id, 30)?,
         running: deploy::is_running(site_id),
+        signature_secret_set,
     })
 }
 
@@ -64,6 +69,9 @@ struct SaveBody {
     auto_deploy: bool,
     #[serde(default)]
     script: String,
+    /// Verilmezse kayıtlı imza gizli anahtarı korunur; boş metin anahtarı kaldırır.
+    #[serde(default)]
+    signature_secret: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -83,6 +91,12 @@ async fn save(
     let script = deploy::validate_script(&body.script)?;
 
     let existing = deploy::load_config(&state.db, site.id)?;
+    let previous_secret = existing.as_ref().map(|c| c.signature_secret.clone()).unwrap_or_default();
+    let signature_secret = match body.signature_secret.as_deref().map(str::trim) {
+        None => previous_secret.clone(),
+        Some("") => String::new(),
+        Some(value) => deploy::validate_signature_secret(value)?,
+    };
     let public_key = deploy::ensure_deploy_key(&site).await?;
     let config = GitConfig {
         site_id: site.id,
@@ -91,11 +105,16 @@ async fn save(
         auto_deploy: body.auto_deploy,
         script,
         webhook_token: existing.as_ref().map(|c| c.webhook_token.clone()).unwrap_or_else(deploy::new_webhook_token),
+        signature_secret: signature_secret.clone(),
         public_key,
         created_at: existing.map(|c| c.created_at).unwrap_or_else(crate::db::now),
     };
     deploy::save_config(&state.db, &config)?;
     auth::audit(&state.db, &user, "git.update", &site.domain, &config.repo_url);
+    if signature_secret != previous_secret {
+        let action = if signature_secret.is_empty() { "git.signature.clear" } else { "git.signature.set" };
+        auth::audit(&state.db, &user, action, &site.domain, "");
+    }
     Ok(Json(view(&state, site.id)?))
 }
 
@@ -167,31 +186,86 @@ struct PushPayload {
     git_ref: Option<String>,
 }
 
+/// Web kancasının reddedilme nedenleri; imza hatası ayrı bir iletiyle 401 döner.
+enum Reject {
+    BadSignature,
+    App(AppError),
+}
+
+impl From<AppError> for Reject {
+    fn from(err: AppError) -> Self {
+        Self::App(err)
+    }
+}
+
+impl IntoResponse for Reject {
+    fn into_response(self) -> Response {
+        match self {
+            Self::App(err) => err.into_response(),
+            Self::BadSignature => (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": { "code": "invalid_signature", "message": "İmza doğrulanamadı: gizli anahtar eşleşmiyor ya da imza başlığı yok" } })),
+            )
+                .into_response(),
+        }
+    }
+}
+
+fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+async fn read_body(request: Request) -> AppResult<axum::body::Bytes> {
+    axum::body::to_bytes(request.into_body(), MAX_WEBHOOK_BYTES)
+        .await
+        .map_err(|_| AppError::bad("İstek gövdesi okunamadı ya da çok büyük"))
+}
+
 async fn webhook(
     State(state): State<AppState>,
     Path(token): Path<String>,
     headers: HeaderMap,
     request: Request,
-) -> AppResult<Json<serde_json::Value>> {
+) -> Result<Json<serde_json::Value>, Reject> {
     // Anahtar gövde okunmadan önce denetlenir; tanımayan istekler için bellek harcanmaz.
     let token_ok = (16..=128).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
     if !token_ok {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound.into());
     }
     let config = deploy::config_by_token(&state.db, &token)?.ok_or(AppError::NotFound)?;
     let site = sites::load(&state.db, config.site_id)?.ok_or(AppError::NotFound)?;
 
+    // İmza gizli anahtarı tanımlıysa her istek (GitHub'ın "ping"i dahil) imzalı olmalıdır;
+    // imza gövdeye bağlı olduğundan gövde baştan okunur. Tanımlı değilse eski davranış sürer.
+    let mut request = Some(request);
+    let mut body = None;
+    if !config.signature_secret.is_empty() {
+        let bytes = read_body(request.take().ok_or(AppError::NotFound)?).await?;
+        let verified = deploy::verify_hook_signature(
+            &config.signature_secret,
+            header_text(&headers, "x-hub-signature-256"),
+            header_text(&headers, "x-gitlab-token"),
+            &bytes,
+        );
+        if !verified {
+            tracing::warn!(site_id = site.id, "web kancası imzası doğrulanamadı");
+            return Err(Reject::BadSignature);
+        }
+        body = Some(bytes);
+    }
+
     // GitHub kancayı kaydederken bir "ping" gönderir; bu bir gönderim değildir.
-    if headers.get("x-github-event").and_then(|value| value.to_str().ok()) == Some("ping") {
+    if header_text(&headers, "x-github-event") == Some("ping") {
         return Ok(Json(json!({ "ok": true, "result": "pong" })));
     }
     if !config.auto_deploy {
         return Ok(Json(json!({ "ok": true, "result": "skipped", "reason": "Otomatik yayınlama kapalı" })));
     }
 
-    let body = axum::body::to_bytes(request.into_body(), MAX_WEBHOOK_BYTES)
-        .await
-        .map_err(|_| AppError::bad("İstek gövdesi okunamadı ya da çok büyük"))?;
+    let body = match body {
+        Some(bytes) => bytes,
+        None => read_body(request.take().ok_or(AppError::NotFound)?).await?,
+    };
     // Gövde JSON değilse (ya da dal bilgisi taşımıyorsa) her çağrı yayın başlatır.
     let pushed_ref = serde_json::from_slice::<PushPayload>(&body).ok().and_then(|payload| payload.git_ref);
     if let Some(pushed) = &pushed_ref {

@@ -35,6 +35,10 @@ pub struct GitConfig {
     pub auto_deploy: bool,
     pub script: String,
     pub webhook_token: String,
+    /// Web kancası imza gizli anahtarı (GitHub/GitLab); boşsa yalnızca adresteki anahtar geçerlidir.
+    /// Arayüze ve yanıtlara hiçbir zaman gönderilmez.
+    #[serde(skip_serializing)]
+    pub signature_secret: String,
     pub public_key: String,
     pub created_at: i64,
 }
@@ -133,10 +137,11 @@ fn read_config(row: &rusqlite::Row<'_>) -> rusqlite::Result<GitConfig> {
         webhook_token: row.get(5)?,
         public_key: row.get(6)?,
         created_at: row.get(7)?,
+        signature_secret: row.get(8)?,
     })
 }
 
-const CONFIG_COLUMNS: &str = "site_id, repo_url, branch, auto_deploy, script, webhook_token, public_key, created_at";
+const CONFIG_COLUMNS: &str = "site_id, repo_url, branch, auto_deploy, script, webhook_token, public_key, created_at, signature_secret";
 
 pub fn load_config(db: &Db, site_id: i64) -> AppResult<Option<GitConfig>> {
     db.call(|conn| {
@@ -155,14 +160,15 @@ pub fn config_by_token(db: &Db, token: &str) -> AppResult<Option<GitConfig>> {
 pub fn save_config(db: &Db, config: &GitConfig) -> AppResult<()> {
     db.call(|conn| {
         conn.execute(
-            "INSERT INTO site_git (site_id, repo_url, branch, auto_deploy, script, webhook_token, public_key, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO site_git (site_id, repo_url, branch, auto_deploy, script, webhook_token, public_key, created_at, signature_secret)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(site_id) DO UPDATE SET repo_url = excluded.repo_url, branch = excluded.branch,
                  auto_deploy = excluded.auto_deploy, script = excluded.script,
-                 webhook_token = excluded.webhook_token, public_key = excluded.public_key",
+                 webhook_token = excluded.webhook_token, public_key = excluded.public_key,
+                 signature_secret = excluded.signature_secret",
             params![
                 config.site_id, config.repo_url, config.branch, config.auto_deploy, config.script,
-                config.webhook_token, config.public_key, config.created_at
+                config.webhook_token, config.public_key, config.created_at, config.signature_secret
             ],
         )
     })?;
@@ -560,4 +566,92 @@ async fn restart_node(ctx: &JobCtx, site: &Site) -> AppResult<()> {
 /// Yeni bir web kancası anahtarı üretir.
 pub fn new_webhook_token() -> String {
     auth::random_token(24)
+}
+
+// ---- Web kancası imzası ----
+
+/// İmza gizli anahtarı: GitHub/GitLab'a da yazılacağından yazdırılabilir ASCII, boşluksuz.
+pub fn validate_signature_secret(value: &str) -> AppResult<String> {
+    let secret = value.trim();
+    let valid = (8..=128).contains(&secret.len()) && secret.bytes().all(|b| b.is_ascii_graphic());
+    if valid {
+        Ok(secret.to_string())
+    } else {
+        Err(AppError::bad("İmza gizli anahtarı 8-128 karakter olmalı; boşluk ve Türkçe karakter içeremez"))
+    }
+}
+
+/// Depo sağlayıcısının gönderdiği imzayı doğrular. GitHub'ın `X-Hub-Signature-256` başlığı
+/// (`sha256=<hex HMAC-SHA256(gizli, gövde)>`) varsa yalnızca o geçerlidir; yoksa GitLab'ın
+/// `X-Gitlab-Token` başlığı gizli anahtarla birebir eşleşmelidir. Karşılaştırmalar sabit zamanlıdır.
+pub fn verify_hook_signature(secret: &str, github: Option<&str>, gitlab: Option<&str>, body: &[u8]) -> bool {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    if secret.is_empty() {
+        return false;
+    }
+    if let Some(header) = github {
+        let Some(hex_digest) = header.trim().strip_prefix("sha256=") else { return false };
+        let Ok(expected) = hex::decode(hex_digest) else { return false };
+        let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(secret.as_bytes()) else { return false };
+        mac.update(body);
+        return mac.verify_slice(&expected).is_ok();
+    }
+    if let Some(token) = gitlab {
+        // Uzunluğu sızdırmamak için iki taraf da aynı anahtarla özetlenip özetler karşılaştırılır.
+        const KEY: &[u8] = b"pixpanel-hook-token";
+        let Ok(mut provided) = Hmac::<Sha256>::new_from_slice(KEY) else { return false };
+        provided.update(token.trim().as_bytes());
+        let provided = provided.finalize().into_bytes();
+        let Ok(mut expected) = Hmac::<Sha256>::new_from_slice(KEY) else { return false };
+        expected.update(secret.as_bytes());
+        return expected.verify_slice(&provided).is_ok();
+    }
+    false
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    fn github_header(secret: &str, body: &[u8]) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(body);
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    #[test]
+    fn github_signature_is_checked() {
+        let body = br#"{"ref":"refs/heads/main"}"#;
+        let good = github_header("gizli-anahtar", body);
+        assert!(verify_hook_signature("gizli-anahtar", Some(&good), None, body));
+        assert!(!verify_hook_signature("baska-anahtar", Some(&good), None, body));
+        assert!(!verify_hook_signature("gizli-anahtar", Some(&good), None, b"{}"));
+        assert!(!verify_hook_signature("gizli-anahtar", Some("sha256=zz"), None, body));
+        assert!(!verify_hook_signature("gizli-anahtar", Some(&good[7..]), None, body));
+    }
+
+    #[test]
+    fn gitlab_token_is_checked() {
+        assert!(verify_hook_signature("gizli-anahtar", None, Some("gizli-anahtar"), b""));
+        assert!(!verify_hook_signature("gizli-anahtar", None, Some("yanlis"), b""));
+    }
+
+    #[test]
+    fn missing_headers_are_rejected() {
+        assert!(!verify_hook_signature("gizli-anahtar", None, None, b""));
+        // GitHub başlığı varken GitLab anahtarı kurtarmaz.
+        assert!(!verify_hook_signature("gizli-anahtar", Some("sha256=00"), Some("gizli-anahtar"), b""));
+    }
+
+    #[test]
+    fn secret_format() {
+        assert!(validate_signature_secret("kisa").is_err());
+        assert!(validate_signature_secret("içinde türkçe var").is_err());
+        assert!(validate_signature_secret("boşluk var burada").is_err());
+        assert_eq!(validate_signature_secret("  abcdefgh12  ").unwrap(), "abcdefgh12");
+    }
 }

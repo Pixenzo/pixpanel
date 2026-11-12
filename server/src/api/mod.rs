@@ -36,6 +36,7 @@ mod system;
 mod terminal;
 mod update;
 mod users;
+mod webhooks;
 mod wordpress;
 
 /// Hesap adının biçim denetimi (hesap adı Linux kullanıcı adı ve klasör adıdır).
@@ -67,5 +68,6 @@ pub fn router() -> Router<AppState> {
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())
         .nest("/hooks", git::hooks_router())
+        .nest("/webhooks", webhooks::router())
         .nest("/sites", sites::router().merge(ssl::router()).merge(git::router()).merge(ftp::router()).merge(wordpress::router()))
 }

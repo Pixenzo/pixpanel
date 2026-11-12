@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { AccessPanel } from "../components/AccessPanel";
 import { NotificationSettings } from "../components/NotificationSettings";
+import { WebhookSettings } from "../components/WebhookSettings";
 import { TwoFactorPanel } from "../components/TwoFactorPanel";
 import {
   Badge,
@@ -374,6 +375,7 @@ export function AccountPage() {
         <AccessPanel accountId={me.id} />
         <TwoFactorPanel />
         <NotificationSettings />
+        {role !== "member" && <WebhookSettings />}
         <LanguagePanel />
         <SessionsPanel />
         <TokensPanel />
