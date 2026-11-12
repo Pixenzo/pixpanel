@@ -33,6 +33,7 @@ import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDateTime, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { MailLimitsTab } from "./MailLimits";
 
 // ---- Türler (MailDomain sayfası da kullanır) ----
 
@@ -46,6 +47,12 @@ export interface MailDomain {
   mailbox_count: number;
   alias_count: number;
   created_at: number;
+  /** Saatlik alıcı sınırı (null: varsayılan, 0: sınırsız). */
+  send_limit: number | null;
+  /** Geçerli sınır (0: sınırsız). */
+  effective_limit: number;
+  /** Son bir saatte gönderilen alıcı sayısı. */
+  sent_last_hour: number;
 }
 
 export interface AutoReply {
@@ -93,6 +100,9 @@ export interface Mailbox {
   filters: MailFilter[];
   used_bytes: number | null;
   created_at: number;
+  send_limit: number | null;
+  effective_limit: number;
+  sent_last_hour: number;
 }
 
 export interface MailAlias {
@@ -105,7 +115,7 @@ export interface MailAlias {
 }
 
 export interface DnsRecord {
-  kind: "MX" | "TXT";
+  kind: "MX" | "TXT" | "CNAME" | "SRV";
   name: string;
   value: string;
   purpose: string;
@@ -737,13 +747,14 @@ function ActivityTab() {
 
 // ---- Sayfa ----
 
-type MailTab = "domains" | "queue" | "spam" | "activity";
+type MailTab = "domains" | "queue" | "spam" | "limits" | "activity";
 
 /** Sekmenin adres çubuğundaki karşılığı (`?sekme=`). */
 const tabParams: Record<MailTab, string> = {
   domains: "alan-adlari",
   queue: "kuyruk",
   spam: "istenmeyen-posta",
+  limits: "gonderim-siniri",
   activity: "etkinlik",
 };
 
@@ -792,6 +803,7 @@ export function MailPage() {
     { id: "domains", label: t("Alan adları") },
     { id: "queue", label: t("Kuyruk") },
     { id: "spam", label: t("İstenmeyen posta") },
+    { id: "limits", label: t("Gönderim sınırı") },
     { id: "activity", label: t("Etkinlik") },
   ];
 
@@ -837,6 +849,7 @@ export function MailPage() {
       {tab === "domains" && <DomainsTab overview={data} isAdmin={isAdmin} showOwner={showOwner} onAdd={() => setCreating(true)} />}
       {tab === "queue" && <QueueTab />}
       {tab === "spam" && <SpamTab />}
+      {tab === "limits" && <MailLimitsTab />}
       {tab === "activity" && <ActivityTab />}
       {creating && <CreateDomainModal onClose={() => setCreating(false)} overview={data} isAdmin={isAdmin} />}
     </>

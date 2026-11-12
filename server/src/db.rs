@@ -522,6 +522,22 @@ const MIGRATIONS: &[&str] = &[
      WHERE type = 'table' AND name = 'sites';
     PRAGMA writable_schema = OFF;
     "#,
+    // 28: giden posta sınırı. `send_limit` saatlik alıcı sayısı sınırıdır: NULL sunucu varsayılanını
+    //     (alan adında varsayılanın 5 katını), 0 sınırsızı gösterir. `mail_limit_hits` sınıra
+    //     takılanları listeler (kutu ya da alan adı başına saatte en çok bir kayıt).
+    r#"
+    ALTER TABLE mailboxes ADD COLUMN send_limit INTEGER;
+    ALTER TABLE mail_domains ADD COLUMN send_limit INTEGER;
+    CREATE TABLE mail_limit_hits (
+        id          INTEGER PRIMARY KEY,
+        kind        TEXT NOT NULL,
+        address     TEXT NOT NULL,
+        domain      TEXT NOT NULL,
+        limit_value INTEGER NOT NULL,
+        hit_at      INTEGER NOT NULL
+    );
+    CREATE INDEX mail_limit_hits_at ON mail_limit_hits(hit_at);
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

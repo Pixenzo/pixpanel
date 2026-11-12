@@ -11,7 +11,7 @@ use crate::hosting::atomic_write;
 use crate::sys::exec;
 
 const BASE_CONF: &str = "/etc/nginx/conf.d/pixpanel.conf";
-const SITES_DIR: &str = "/etc/nginx/pixpanel/sites";
+pub(crate) const SITES_DIR: &str = "/etc/nginx/pixpanel/sites";
 pub const ACME_ROOT: &str = "/var/lib/pixpanel/acme";
 pub const SSL_DIR: &str = "/etc/pixpanel/ssl";
 
@@ -140,7 +140,7 @@ async fn supports_http2_directive() -> bool {
     (major, minor, patch) >= (1, 25, 1)
 }
 
-fn listen_lines(out: &mut String, port: u16, flags: &str, bind: Option<std::net::IpAddr>) {
+pub(crate) fn listen_lines(out: &mut String, port: u16, flags: &str, bind: Option<std::net::IpAddr>) {
     // Adrese bağlı site yalnızca o adresi dinler; nginx o adrese gelen isteği yalnızca
     // o adresi dinleyen sitelere dağıtır.
     match bind {
@@ -160,20 +160,20 @@ fn listen_lines(out: &mut String, port: u16, flags: &str, bind: Option<std::net:
     }
 }
 
-const ACME_LOCATION: &str = "    location ^~ /.well-known/acme-challenge/ {\n        root /var/lib/pixpanel/acme;\n        default_type text/plain;\n        auth_basic off;\n        allow all;\n    }\n";
+pub(crate) const ACME_LOCATION: &str = "    location ^~ /.well-known/acme-challenge/ {\n        root /var/lib/pixpanel/acme;\n        default_type text/plain;\n        auth_basic off;\n        allow all;\n    }\n";
 
 /// Dosyanın şimdiki içeriğini saklar; `restore` ile eski hâline döndürülür.
-struct Snapshot {
+pub(crate) struct Snapshot {
     path: PathBuf,
     previous: Option<Vec<u8>>,
 }
 
 impl Snapshot {
-    fn take(path: &Path) -> Self {
+    pub(crate) fn take(path: &Path) -> Self {
         Self { path: path.to_path_buf(), previous: std::fs::read(path).ok() }
     }
 
-    fn restore(&self) {
+    pub(crate) fn restore(&self) {
         let result = match &self.previous {
             Some(content) => atomic_write(&self.path, content, 0o644),
             None => std::fs::remove_file(&self.path).or_else(ignore_missing).map_err(Into::into),
@@ -250,7 +250,7 @@ server {
     reload().await
 }
 
-async fn test() -> AppResult<()> {
+pub(crate) async fn test() -> AppResult<()> {
     let output = exec::run("nginx", &["-t"]).await?;
     if output.success() {
         Ok(())
@@ -290,7 +290,7 @@ fn active_workers() -> Vec<u32> {
 /// `systemctl reload` yalnızca sinyal gönderip döner; eski işçiler kısa bir
 /// süre daha eski yapılandırmayla istek kabul eder. Bu beklenmeden eski
 /// arka uç (ör. PHP havuzu) kapatılırsa o aralıktaki istekler 502 alır.
-async fn reload() -> AppResult<()> {
+pub(crate) async fn reload() -> AppResult<()> {
     let old_workers = active_workers();
     exec::run_ok("systemctl", &["reload-or-restart", "nginx.service"]).await?;
     for _ in 0..100 {
@@ -376,6 +376,9 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
 
     let has_docroot = matches!(site.backend, Backend::Static { .. } | Backend::Php { .. });
     out.push_str(&crate::hosting::rules::render_server(site.id, site.rules, site.domain, has_docroot));
+    // Posta istemcisi otomatik ayarı: site (ya da takma adı) bir posta alan adıysa panel, bu klasöre
+    // autoconfig/autodiscover konumlarını yazar. `*` içerdiği için dosya yoksa nginx hata vermez.
+    let _ = writeln!(out, "    include {}/{}.inc*;", crate::mail::autoconfig::WELLKNOWN_DIR, site.domain);
 
     // Yol bazlı vekil kuralları sitenin asıl içeriğinden önce eşleşir (`^~`).
     for rule in site.proxy_rules {
