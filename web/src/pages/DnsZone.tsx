@@ -2,8 +2,8 @@
 // Cloudflare ayarları ve site/posta kayıtlarının otomatik eklenmesi.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Upload } from "lucide-react";
-import type { FormEvent } from "react";
+import { ArrowLeft, Check, ChevronDown, ChevronUp, ChevronsUpDown, Copy, Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
+import type { FormEvent, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useFeedback } from "../components/feedback";
@@ -507,14 +507,30 @@ function CloudflareStrip({ zoneId, info }: { zoneId: number; info: CloudflareInf
 
 // ---- Kayıtlar ----
 
+type SortKey = "name" | "type" | "content" | "ttl";
+
+/** Tıklanınca tabloyu o sütuna göre sıralayan başlık. */
+function SortHeader({ label, active, descending, onClick }: { label: string; active: boolean; descending: boolean; onClick: () => void }) {
+  const Icon = !active ? ChevronsUpDown : descending ? ChevronDown : ChevronUp;
+  return (
+    <button type="button" onClick={onClick} className={classNames("-mx-1 inline-flex items-center gap-1 rounded px-1 hover:text-ink", active && "text-ink")}>
+      {label}
+      <Icon aria-hidden className={classNames("size-3.5", active ? "text-accent" : "text-ink-3")} />
+    </button>
+  );
+}
+
 function RecordsPanel({
   detail,
   onAdd,
   onEdit,
+  tools,
 }: {
   detail: ZoneDetail;
   onAdd: () => void;
   onEdit: (record: DnsRecord) => void;
+  /** Araç çubuğunun sağındaki ek düğmeler (içe/dışa aktarma gibi). */
+  tools: ReactNode;
 }) {
   const feedback = useFeedback();
   const updateRecords = useRecordsCache(detail.zone.id);
@@ -522,6 +538,8 @@ function RecordsPanel({
   const cloudflare = detail.cloudflare;
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: "name", descending: false });
+  const sortBy = (key: SortKey) => setSort((current) => ({ key, descending: current.key === key ? !current.descending : false }));
 
   const remove = useMutation({
     mutationFn: (record: DnsRecord) => api.post<RecordsResult>(`/dns/zones/${detail.zone.id}/records/delete`, { record }),
@@ -557,72 +575,87 @@ function RecordsPanel({
       .filter((record) => (query ? record.name.toLowerCase().includes(query) || record.content.toLowerCase().includes(query) : true))
       .map((record) => ({ record, short: relativeName(record.name, zone) }))
       .sort((a, b) => {
-        if (a.short === "@" && b.short !== "@") return -1;
-        if (b.short === "@" && a.short !== "@") return 1;
-        return a.short.localeCompare(b.short) || typeOrder.indexOf(a.record.type) - typeOrder.indexOf(b.record.type) || a.record.content.localeCompare(b.record.content);
+        // Varsayılan sıra: kök (@) kayıtları başta, sonra ada göre.
+        const byName = () => {
+          if (a.short === "@" && b.short !== "@") return -1;
+          if (b.short === "@" && a.short !== "@") return 1;
+          return a.short.localeCompare(b.short);
+        };
+        const byType = () => typeOrder.indexOf(a.record.type) - typeOrder.indexOf(b.record.type);
+        const byContent = () => a.record.content.localeCompare(b.record.content);
+        const order =
+          sort.key === "type"
+            ? byType() || byName() || byContent()
+            : sort.key === "content"
+              ? byContent() || byName()
+              : sort.key === "ttl"
+                ? a.record.ttl - b.record.ttl || byName()
+                : byName() || byType() || byContent();
+        return sort.descending ? -order : order;
       });
-  }, [detail.records, search, typeFilter, zone]);
+  }, [detail.records, search, typeFilter, zone, sort]);
 
   const total = detail.records.length;
 
   return (
-    <Panel
-      flush
-      title={t("DNS kayıtları")}
-      actions={
-        <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={onAdd}>
+    <section aria-label={t("DNS kayıtları")}>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <SearchInput
+          aria-label={t("Kayıtlarda ara")}
+          placeholder={t("Ad ya da değer ara")}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="min-w-48 flex-1 sm:w-auto"
+        />
+        <select
+          aria-label={t("Türe göre süz")}
+          value={typeFilter}
+          onChange={(event) => setTypeFilter(event.target.value)}
+          className="h-9.5 rounded-lg border border-line-strong bg-surface px-3 pr-8 text-ink focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30 max-sm:h-10.5"
+        >
+          <option value="">{t("Bütün türler")}</option>
+          {presentTypes.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+        {tools}
+        <Button variant="primary" icon={<Plus className="size-4" />} onClick={onAdd}>
           {t("Kayıt ekle")}
         </Button>
-      }
-    >
-      {total === 0 ? (
-        <EmptyState
-          title={t("Bu bölgede henüz kayıt yok")}
-          description={t("İlk kaydı ekleyin ya da sitelerinizin ve posta alan adlarınızın kayıtlarını otomatik ekletin.")}
-          action={
-            <Button variant="primary" icon={<Plus className="size-4" />} onClick={onAdd}>
-              {t("Kayıt ekle")}
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 sm:px-6 py-2">
-            <SearchInput
-              aria-label={t("Kayıtlarda ara")}
-              placeholder={t("Ad ya da değer ara")}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="w-64"
-            />
-            <select
-              aria-label={t("Türe göre süz")}
-              value={typeFilter}
-              onChange={(event) => setTypeFilter(event.target.value)}
-              className="h-8 rounded-md border border-line-strong bg-surface px-2.5 pr-7 text-ink focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent/30"
-            >
-              <option value="">{t("Tümü")}</option>
-              {presentTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            <p className="tabular ml-auto text-[13.5px] text-ink-2">
-              {rows.length === total ? t("{n} kayıt", { n: total }) : t("{shown} / {total} kayıt", { shown: rows.length, total })}
-            </p>
-          </div>
-          {rows.length === 0 ? (
-            <EmptyState title={t("Aramanızla eşleşen kayıt yok")} />
-          ) : (
+      </div>
+      <Panel flush>
+        {total === 0 ? (
+          <EmptyState
+            title={t("Bu bölgede henüz kayıt yok")}
+            description={t("İlk kaydı ekleyin ya da sitelerinizin ve posta alan adlarınızın kayıtlarını otomatik ekletin.")}
+            action={
+              <Button variant="primary" icon={<Plus className="size-4" />} onClick={onAdd}>
+                {t("Kayıt ekle")}
+              </Button>
+            }
+          />
+        ) : rows.length === 0 ? (
+          <EmptyState title={t("Aramanızla eşleşen kayıt yok")} />
+        ) : (
+          <>
             <Table>
               <thead>
                 <tr>
-                  <Th>{t("Tür")}</Th>
-                  <Th>{t("Ad")}</Th>
-                  <Th>{t("Değer")}</Th>
-                  <Th>{t("TTL")}</Th>
+                  <Th>
+                    <SortHeader label={t("Ad")} active={sort.key === "name"} descending={sort.descending} onClick={() => sortBy("name")} />
+                  </Th>
+                  <Th>
+                    <SortHeader label={t("Tür")} active={sort.key === "type"} descending={sort.descending} onClick={() => sortBy("type")} />
+                  </Th>
+                  <Th>
+                    <SortHeader label={t("Değer")} active={sort.key === "content"} descending={sort.descending} onClick={() => sortBy("content")} />
+                  </Th>
                   {cloudflare && <Th>{t("Vekil")}</Th>}
+                  <Th>
+                    <SortHeader label={t("TTL")} active={sort.key === "ttl"} descending={sort.descending} onClick={() => sortBy("ttl")} />
+                  </Th>
                   <Th align="right">
                     <span className="sr-only">{t("İşlemler")}</span>
                   </Th>
@@ -634,13 +667,20 @@ function RecordsPanel({
                   const lockedTitle = t("Bu tür kayıtlar Cloudflare panelinden yönetilir.");
                   return (
                     <tr key={record.id || `${record.type}-${record.name}-${record.content}`} className="hover:bg-sunken/50">
-                      <Td className="whitespace-nowrap">
-                        <Badge tone="accent">{record.type}</Badge>
-                      </Td>
-                      <Td className="max-w-56">
+                      <Td className="max-w-64">
                         <p className="truncate" title={record.name}>
-                          <Mono className="text-[13.5px] font-medium">{short}</Mono>
+                          {short === "@" ? (
+                            <Mono className="text-[13.5px] font-medium">{zone}</Mono>
+                          ) : (
+                            <>
+                              <Mono className="text-[13.5px] font-medium">{short}</Mono>
+                              <Mono className="text-[13.5px] text-ink-3">.{zone}</Mono>
+                            </>
+                          )}
                         </p>
+                      </Td>
+                      <Td className="whitespace-nowrap">
+                        <span className="font-mono text-[13px] font-semibold text-ink-2">{record.type}</span>
                       </Td>
                       <Td className="max-w-md">
                         <p className="truncate" title={record.content}>
@@ -648,16 +688,16 @@ function RecordsPanel({
                           <Mono>{record.content}</Mono>
                         </p>
                       </Td>
-                      <Td className="whitespace-nowrap text-ink-2">{formatTtl(record.ttl)}</Td>
                       {cloudflare && (
                         <Td className="whitespace-nowrap">
                           {proxyableTypes.includes(record.type) ? (
                             record.proxied ? <Status tone="accent">{t("Cloudflare üzerinden")}</Status> : <Status tone="idle">{t("Yalnızca DNS")}</Status>
                           ) : (
-                            <span className="text-ink-3">—</span>
+                            <span className="text-ink-3">{t("Yalnızca DNS")}</span>
                           )}
                         </Td>
                       )}
+                      <Td className="whitespace-nowrap text-ink-2">{formatTtl(record.ttl)}</Td>
                       <Td align="right" className="whitespace-nowrap">
                         <div className="flex justify-end gap-1">
                           <IconButton label={locked ? lockedTitle : t("Düzenle")} disabled={locked} onClick={() => onEdit(record)}>
@@ -673,10 +713,89 @@ function RecordsPanel({
                 })}
               </tbody>
             </Table>
-          )}
-        </>
+          </>
+        )}
+        {total > 0 && (
+          <p className="tabular border-t border-line px-4 py-2.5 text-[13px] text-ink-3 sm:px-6">
+            {rows.length === total ? t("{n} kayıt", { n: total }) : t("{shown} / {total} kayıt", { shown: rows.length, total })}
+          </p>
+        )}
+      </Panel>
+    </section>
+  );
+}
+
+// ---- Öneriler ----
+
+interface Advice {
+  id: string;
+  title: string;
+  detail: string;
+}
+
+/** Kayıtlara bakarak eksik görünen yaygın ayarları bulur (posta sahteciliği koruması, sertifika yetkisi). */
+function zoneAdvice(detail: ZoneDetail): Advice[] {
+  const zone = detail.zone.domain;
+  const records = detail.records;
+  const has = (type: string, name: string, test?: (content: string) => boolean) =>
+    records.some((record) => record.type === type && record.name.replace(/\.$/, "").toLowerCase() === name && (!test || test(record.content.toLowerCase().replace(/^"/, ""))));
+  const advice: Advice[] = [];
+  const receivesMail = has("MX", zone);
+  if (receivesMail && !has("TXT", zone, (content) => content.startsWith("v=spf1"))) {
+    advice.push({
+      id: "spf",
+      title: t("Gönderen doğrulaması (SPF) eksik"),
+      detail: t("SPF kaydı olmadan alan adınız adına başkaları posta gönderebilir ve iletileriniz istenmeyen klasörüne düşebilir. “Site ve posta kayıtlarını ekle” bu kaydı ekler."),
+    });
+  }
+  if (receivesMail && !has("TXT", `_dmarc.${zone}`, (content) => content.startsWith("v=dmarc1"))) {
+    advice.push({
+      id: "dmarc",
+      title: t("Sahte postaları engelleyen DMARC kaydı eksik"),
+      detail: t("DMARC kaydı, alan adınızı taklit eden iletilerin alıcılara ulaşmasını engeller. “Site ve posta kayıtlarını ekle” bu kaydı ekler."),
+    });
+  }
+  if (has("A", zone) && !has("A", `www.${zone}`) && !has("CNAME", `www.${zone}`) && !has("AAAA", `www.${zone}`)) {
+    advice.push({
+      id: "www",
+      title: t("www adı tanımlı değil"),
+      detail: t("Ziyaretçilerin bir bölümü adresi www ile yazar; www.{zone} için bir A ya da CNAME kaydı ekleyin.", { zone }),
+    });
+  }
+  if (detail.zone.provider === "local" && detail.dnssec && !detail.dnssec.enabled && records.length > 0) {
+    advice.push({
+      id: "dnssec",
+      title: t("DNSSEC kapalı"),
+      detail: t("DNSSEC, ziyaretçilerin sahte yanıtlarla başka adrese yönlendirilmesini önler. Aşağıdaki DNSSEC bölümünden açabilirsiniz."),
+    });
+  }
+  return advice;
+}
+
+function AdvicePanel({ advice }: { advice: Advice[] }) {
+  const [open, setOpen] = useState(true);
+  if (advice.length === 0) return null;
+  return (
+    <section aria-label={t("Öneriler")} className="mb-5 overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex w-full items-center gap-2.5 px-4 py-3 text-left sm:px-6">
+        <span className="font-medium">{t("Öneriler")}</span>
+        <span className="tabular grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[12px] font-semibold text-accent-ink">{advice.length}</span>
+        <ChevronDown aria-hidden className={classNames("ml-auto size-4 text-ink-3 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <ul className="flex flex-col gap-3 border-t border-line px-4 py-3.5 sm:px-6">
+          {advice.map((item) => (
+            <li key={item.id} className="flex gap-3">
+              <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" />
+              <div className="min-w-0">
+                <p className="font-medium">{item.title}</p>
+                <p className="max-w-[80ch] text-[13.5px] text-ink-2">{item.detail}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-    </Panel>
+    </section>
   );
 }
 
@@ -1126,35 +1245,47 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
       <Link to="/dns" className="mb-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-ink-2 hover:text-ink">
         <ArrowLeft className="size-3.5" /> {t("DNS")}
       </Link>
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="font-mono text-[22px] leading-tight font-medium tracking-[-0.01em] break-all">{zone.domain}</h1>
-          <Badge tone={isLocal ? "idle" : "accent"}>{t(providerLabels[zone.provider])}</Badge>
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <h1 className="text-[23px] leading-[1.15] font-semibold tracking-[-0.02em] break-all sm:text-[26px]">
+              <span className="font-mono font-medium">{zone.domain}</span>
+            </h1>
+            <Badge tone={isLocal ? "idle" : "accent"}>{t(providerLabels[zone.provider])}</Badge>
+          </div>
+          <p className="mt-1.5 max-w-[42rem] text-ink-2">{t("Alan adının sitelere, postaya ve öteki hizmetlere nasıl yönleneceğini buradaki kayıtlar belirler.")}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setRecordModal({ record: null })}>
-            {t("Kayıt ekle")}
-          </Button>
-          <Button loading={sync.isPending} onClick={() => sync.mutate()}>
-            {t("Site ve posta kayıtlarını ekle")}
-          </Button>
-          <Button icon={<Download className="size-3.5" />} loading={exportZone.isPending} onClick={() => exportZone.mutate()}>
-            {t("Dışa aktar")}
-          </Button>
-          <Button icon={<Upload className="size-3.5" />} onClick={() => setImporting(true)}>
-            {t("İçe aktar")}
-          </Button>
-          <Button variant="danger" loading={removeZone.isPending} onClick={() => void confirmRemove()}>
-            {isLocal ? t("Bölgeyi sil") : t("Bağlantıyı kaldır")}
-          </Button>
-        </div>
+        <Button variant="danger" loading={removeZone.isPending} onClick={() => void confirmRemove()}>
+          {isLocal ? t("Bölgeyi sil") : t("Bağlantıyı kaldır")}
+        </Button>
       </header>
 
-      {isLocal && detail.nameservers && <NameserversPanel nameservers={detail.nameservers} serverIp={detail.server_ip} />}
-      {isLocal && detail.dnssec && <DnssecPanel zone={zone} info={detail.dnssec} />}
+      <AdvicePanel advice={zoneAdvice(detail)} />
       {detail.cloudflare && <CloudflareStrip zoneId={zone.id} info={detail.cloudflare} />}
 
-      <RecordsPanel detail={detail} onAdd={() => setRecordModal({ record: null })} onEdit={(record) => setRecordModal({ record })} />
+      <RecordsPanel
+        detail={detail}
+        onAdd={() => setRecordModal({ record: null })}
+        onEdit={(record) => setRecordModal({ record })}
+        tools={
+          <>
+            <Button loading={sync.isPending} icon={<Wand2 className="size-3.5" />} onClick={() => sync.mutate()}>
+              {t("Site ve posta kayıtlarını ekle")}
+            </Button>
+            <Button icon={<Upload className="size-3.5" />} onClick={() => setImporting(true)}>
+              {t("İçe aktar")}
+            </Button>
+            <Button icon={<Download className="size-3.5" />} loading={exportZone.isPending} onClick={() => exportZone.mutate()}>
+              {t("Dışa aktar")}
+            </Button>
+          </>
+        }
+      />
+
+      <div className="mt-5 flex flex-col">
+        {isLocal && detail.nameservers && <NameserversPanel nameservers={detail.nameservers} serverIp={detail.server_ip} />}
+        {isLocal && detail.dnssec && <DnssecPanel zone={zone} info={detail.dnssec} />}
+      </div>
 
       {recordModal && <RecordModal detail={detail} record={recordModal.record} onClose={() => setRecordModal(null)} />}
       {report && <SyncReportModal report={report} onClose={() => setReport(null)} />}
