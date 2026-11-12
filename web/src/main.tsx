@@ -10,6 +10,7 @@ import { LiveProvider } from "./lib/live";
 import { SessionProvider, useSession } from "./lib/session";
 import { AccountPage } from "./pages/Account";
 import { AuditPage } from "./pages/Audit";
+import { ToolsPage } from "./pages/Tools";
 import { ComponentsPage } from "./pages/Components";
 import { CronPage } from "./pages/Cron";
 import { DashboardPage } from "./pages/Dashboard";
@@ -76,6 +77,7 @@ function App() {
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/services" element={<ServicesPage />} />
             <Route path="/updates" element={<SystemUpdatesPage />} />
+            <Route path="/tools" element={<ToolsPage />} />
             <Route path="/processes" element={<ProcessesPage />} />
             <Route path="/terminal" element={<TerminalPage />} />
             <Route path="/audit" element={<AuditPage />} />

@@ -30,6 +30,9 @@ const roleLabels: Record<string, string> = {
 
 function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const me = useMe();
+  // "Araçlar ve ayarlar" sayfasından açılan bir sayfadayken menüde o satır seçili görünür.
+  const { pathname } = useLocation();
+  const inHub = navigation.some((group) => group.items.some((item) => item.hub && (pathname === item.to || pathname.startsWith(`${item.to}/`))));
   return (
     <nav aria-label={t("Ana gezinme")} className="flex h-full flex-col overflow-y-auto bg-rail text-rail-ink">
       <div className="flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6">
@@ -40,7 +43,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
       </div>
       <div className="flex flex-1 flex-col gap-7 px-3 pt-2 pb-6">
         {navigation.map((group, index) => {
-          const items = group.items.filter((item) => item.visible(me));
+          const items = group.items.filter((item) => item.visible(me) && !item.hub);
           if (items.length === 0) return null;
           return (
             <div key={group.title ?? index} className="flex flex-col gap-0.5">
@@ -53,7 +56,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
                   className={({ isActive }) =>
                     classNames(
                       "relative flex h-9.5 items-center gap-3 rounded-lg px-3 text-[14.5px] font-medium transition-colors outline-offset-[-2px] max-lg:h-11 max-lg:text-[15.5px]",
-                      isActive
+                      isActive || (inHub && item.to === "/tools")
                         ? "bg-rail-raised text-white before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-rail-accent"
                         : "text-rail-ink-2 hover:bg-rail-raised/60 hover:text-rail-ink",
                     )
@@ -61,7 +64,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
                 >
                   {({ isActive }) => (
                     <>
-                      <item.icon className={classNames("size-[18px] shrink-0", isActive && "text-rail-accent")} />
+                      <item.icon className={classNames("size-[18px] shrink-0", (isActive || (inHub && item.to === "/tools")) && "text-rail-accent")} />
                       {t(item.label)}
                     </>
                   )}

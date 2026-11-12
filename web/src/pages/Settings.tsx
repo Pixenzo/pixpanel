@@ -2,7 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 import { useFeedback } from "../components/feedback";
 import { BrandingSettings } from "../components/BrandingSettings";
 import { IpAddresses } from "../components/IpAddresses";
@@ -170,14 +171,30 @@ function SmtpForm({ initial }: { initial: SmtpSettings }) {
 
 export function SettingsPage() {
   const smtp = useQuery({ queryKey: ["smtp"], queryFn: () => api.get<SmtpSettings>("/notifications/smtp") });
+  // "Araçlar ve ayarlar" sayfasındaki bağlantılar doğrudan ilgili bölüme iner.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash) return;
+    const timer = window.setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }), 150);
+    return () => window.clearTimeout(timer);
+  }, [hash]);
 
   return (
     <>
       <PageHeader title={t("Ayarlar")} description={t("Panelin genel ayarları.")} />
-      <PanelCertificate />
-      <PanelUpdate />
-      <BrandingSettings />
-      <IpAddresses />
+      <div id="panel-sertifikasi" className="scroll-mt-20">
+        <PanelCertificate />
+      </div>
+      <div id="panel-surumu" className="scroll-mt-20">
+        <PanelUpdate />
+      </div>
+      <div id="marka" className="mb-4 scroll-mt-20">
+        <BrandingSettings />
+      </div>
+      <div id="ip-adresleri" className="scroll-mt-20">
+        <IpAddresses />
+      </div>
+      <div id="eposta-gonderimi" className="scroll-mt-20">
       <Panel title={t("E-posta gönderimi (SMTP)")}>
         <p className="mb-4 max-w-[70ch] text-ink-2">
           {t("Panel, bildirim e-postalarını (başarısız dağıtımlar, sertifika sorunları gibi) bu sunucu üzerinden gönderir.")}
@@ -186,6 +203,7 @@ export function SettingsPage() {
         {smtp.isError && <ErrorBlock message={errorMessage(smtp.error)} onRetry={() => void smtp.refetch()} />}
         {smtp.data && <SmtpForm key={JSON.stringify(smtp.data)} initial={smtp.data} />}
       </Panel>
+      </div>
     </>
   );
 }

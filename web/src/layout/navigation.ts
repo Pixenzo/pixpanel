@@ -22,6 +22,7 @@ import {
   PackageCheck,
   ScrollText,
   Settings,
+  SlidersHorizontal,
   ShieldBan,
   ShieldCheck,
   SquareTerminal,
@@ -34,6 +35,8 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   visible: (me: Me) => boolean;
+  /** Yan menüde gösterilmez; "Araçlar ve ayarlar" sayfasında yer alır. */
+  hub?: boolean;
 }
 
 export interface NavGroup {
@@ -58,24 +61,27 @@ export const navigation: NavGroup[] = [
       { to: "/files", label: "Dosyalar", icon: FolderOpen, visible: can("files") },
       { to: "/cron", label: "Zamanlı görevler", icon: CalendarClock, visible: can("cron") },
       { to: "/logs", label: "Günlükler", icon: FileText, visible: can("logs") },
-      { to: "/backups", label: "Yedekler", icon: Archive, visible: (me) => !isAdmin(me) && can("backups")(me) },
+      { to: "/backups", label: "Yedekler", icon: Archive, visible: (me) => isAdmin(me) || can("backups")(me) },
     ],
   },
   {
     title: "Sunucu",
     items: [
       { to: "/server", label: "Sunucu durumu", icon: Gauge, visible: isAdmin },
-      { to: "/firewall", label: "Güvenlik duvarı", icon: ShieldCheck, visible: isAdmin },
-      { to: "/fail2ban", label: "Saldırı engelleme", icon: ShieldBan, visible: isAdmin },
       { to: "/docker", label: "Docker", icon: Container, visible: isAdmin },
-      { to: "/php", label: "PHP", icon: FileCode2, visible: isAdmin },
-      { to: "/redis", label: "Redis", icon: DatabaseZap, visible: isAdmin },
-      { to: "/backups", label: "Yedekler", icon: Archive, visible: isAdmin },
-      { to: "/components", label: "Bileşenler", icon: Boxes, visible: isAdmin },
-      { to: "/services", label: "Servisler", icon: Cog, visible: isAdmin },
-      { to: "/updates", label: "Güncellemeler", icon: PackageCheck, visible: isAdmin },
-      { to: "/processes", label: "Süreçler", icon: Activity, visible: isAdmin },
-      { to: "/terminal", label: "Terminal", icon: SquareTerminal, visible: isAdmin },
+      { to: "/tools", label: "Araçlar ve ayarlar", icon: SlidersHorizontal, visible: isAdmin },
+      // Aşağıdakiler yan menüde görünmez; "Araçlar ve ayarlar" sayfasından ve hızlı aramadan açılır.
+      { to: "/firewall", label: "Güvenlik duvarı", icon: ShieldCheck, visible: isAdmin, hub: true },
+      { to: "/fail2ban", label: "Saldırı engelleme", icon: ShieldBan, visible: isAdmin, hub: true },
+      { to: "/php", label: "PHP", icon: FileCode2, visible: isAdmin, hub: true },
+      { to: "/redis", label: "Redis", icon: DatabaseZap, visible: isAdmin, hub: true },
+      { to: "/components", label: "Bileşenler", icon: Boxes, visible: isAdmin, hub: true },
+      { to: "/services", label: "Servisler", icon: Cog, visible: isAdmin, hub: true },
+      { to: "/updates", label: "Güncellemeler", icon: PackageCheck, visible: isAdmin, hub: true },
+      { to: "/processes", label: "Süreçler", icon: Activity, visible: isAdmin, hub: true },
+      { to: "/terminal", label: "Terminal", icon: SquareTerminal, visible: isAdmin, hub: true },
+      { to: "/audit", label: "Denetim günlüğü", icon: ScrollText, visible: isAdmin, hub: true },
+      { to: "/settings", label: "Ayarlar", icon: Settings, visible: isAdmin, hub: true },
     ],
   },
   {
@@ -83,8 +89,6 @@ export const navigation: NavGroup[] = [
     items: [
       { to: "/users", label: "Kullanıcılar", icon: Users, visible: (me) => me.role !== "member" },
       { to: "/jobs", label: "Görevler", icon: ListChecks, visible: () => true },
-      { to: "/audit", label: "Denetim günlüğü", icon: ScrollText, visible: isAdmin },
-      { to: "/settings", label: "Ayarlar", icon: Settings, visible: isAdmin },
     ],
   },
 ];
