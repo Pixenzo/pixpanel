@@ -131,7 +131,8 @@ fn format_host(spec: &HostSpec) -> String {
 /// Boş değer `localhost` sayılır.
 pub fn normalize_host(engine: Engine, host: Option<&str>) -> AppResult<String> {
     // Kırpılmaz: baştaki/sondaki boşluk ya da satır sonu adresin geçersiz olduğunu gösterir.
-    let host = host.filter(|h| !h.is_empty()).unwrap_or("localhost");
+    // Tümüyle boşluk "verilmedi" sayılır; içinde değer varsa kırpılmadan doğrulanır.
+    let host = host.filter(|h| !h.trim().is_empty()).unwrap_or("localhost");
     let spec = parse_host(host)?;
     match (engine, &spec) {
         (Engine::Postgresql, HostSpec::Pattern(_)) => {

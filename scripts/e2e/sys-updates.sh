@@ -238,7 +238,8 @@ else
   check "PHP hâlâ kurulu" "$(component php-$PHPV installed)" True
   check "PHP hâlâ listede" "$(api GET /php | jget "any(v['version']=='$PHPV' for v in d)")" True
   api DELETE "/sites/$S?delete_files=true" >/dev/null
-  check "site silinince kullanım nedeni kalkar" "$(component php-$PHPV in_use)" None
+  # Makinede bu sürümü kullanan başka siteler olabilir; yalnız sınamanın sitesi nedenden kalkmalıdır.
+  check "site silinince kullanım nedeninden kalkar" "$(component php-$PHPV in_use | grep -c "$SITE" || true)" 0
 fi
 
 say "Bileşen kaldırma: Adminer'i kaldır ve yeniden kur"

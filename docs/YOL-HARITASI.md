@@ -187,7 +187,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 ## P2 — Plesk'le aradaki fark
 
-### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; 12.11.2026: hazırlık ortamı ve güncellemede kendiliğinden geri dönüş; kalan: alt klasördeki kurulumları bulma, sıkılaştırma denetimi)
+### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; 12.11.2026: hazırlık ortamı ve güncellemede kendiliğinden geri dönüş; güvenlik denetimi; kalan: alt klasördeki kurulumları bulma)
 
 - **Kapsam:** wp-cli ile tek tıkla kurulum (veritabanını da açar), var olan kurulumları bulma, çekirdek/eklenti/tema güncelleme (toplu ve kendiliğinden), parolasız yönetici girişi, klonlama ve hazırlık ortamı (alt alan adına kopya, geri aktarma), sıkılaştırma (dosya izinleri, `xmlrpc`, dosya düzenleyici, `wp-config` koruması), bakım kipi.
 - **Örnek al:** `deploy.rs` (kullanıcı adına komut, canlı günlük).
@@ -225,11 +225,11 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 - 17f. Posta listeleri (düşük öncelik).
 - 17g. Alan adı başına sertifika (SNI) ve `webmail.<alan>` adresi.
 
-### 18. DNS derinliği — TAMAMLANDI (12.11.2026; kalan: bölge şablonları)
+### 18. DNS derinliği — TAMAMLANDI (12.11.2026)
 
 - DNSSEC (anahtar üretimi, DS kaydının gösterimi), ikincil ad sunucusu (AXFR, bildirim), bölge şablonları, BIND bölge dosyası içe/dışa aktarma, Cloudflare'de SRV ve CAA yazma.
 
-### 19. Veritabanı derinliği — İLK SÜRÜM TAMAMLANDI (12.11.2026: boyutlar, kopyalama, denetim/onarım, yavaş sorgu günlüğü; kalan: PostgreSQL uzaktan erişim, zamanlı döküm, uzak sunucu)
+### 19. Veritabanı derinliği — İLK SÜRÜM TAMAMLANDI (12.11.2026: boyutlar, kopyalama, denetim/onarım, yavaş sorgu günlüğü; uzaktan erişim (iki motor); kalan: uzak veritabanı sunucusu)
 
 - PostgreSQL uzaktan erişim (`pg_hba`), veritabanı kopyalama, denetim ve onarım, zamanlı döküm (5 ile birlikte), yavaş sorgu günlüğü görünümü, uzak veritabanı sunucusu (düşük öncelik).
 
@@ -240,11 +240,11 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 | # | İş | Büyüklük | Devir |
 |---|---|---|---|
 | 20 | İngilizce çeviri (`t()` anahtarlarının çıkarılması, sözlük, dil seçimi; arka uç hata iletileri dahil) | O | Uygun |
-| 21 | API belgesi (OpenAPI), API anahtarı kapsamları (alan bazında izin) | O | Uygun |
+| 21 | API belgesi (`docs/api.md`), API anahtarı kapsamları (alan bazında izin) — **tamamlandı (12.11.2026; OpenAPI dosyası üretilmiyor)** | O | Uygun |
 | 22 | Komut satırı aracı (`pixpanel site add …`; API'nin ince sarmalayıcısı) | O | Uygun |
 | 23 | Olay kancaları (site açıldı, yayın bitti gibi olaylarda webhook) — **tamamlandı (12.11.2026)** | K | Uygun |
 | 24 | Çoklu IP ve IPv6 (siteye adres atama, DNS'te AAAA) | O | Sistem katmanı |
-| 25 | Kaynak sınırı (hesap başına işlemci ve bellek; systemd dilimleri) | O | Sistem katmanı |
+| 25 | Kaynak sınırı (hesap başına işlemci ve bellek; systemd dilimleri) — **tamamlandı (12.11.2026; `runas` komutları ve BPF'li sunucuda uygulama servisleri dilim dışında)** | O | Sistem katmanı |
 | 26 | Eklenti sistemi | B | Tasarım önce |
 | 27 | Mobil görünüm ve erişilebilirlik denetimi | O | Uygun |
 
@@ -254,7 +254,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 
 - ~~Bileşen kaldırma~~ (12.11.2026: güvenli olanlar kaldırılabiliyor); sürüm güncelleme (Node.js dahil) kaldı.
 - ~~Git web kancasında imza doğrulaması (`X-Hub-Signature-256`).~~ Tamamlandı (12.11.2026).
-- Arşiv açmada boyut sınırı (zip bombası).
+- ~~Arşiv açmada boyut sınırı (zip bombası).~~ Tamamlandı (12.11.2026).
 - Redis için hesap başına yalıtım (ACL) ya da kullanımı yöneticiye bırakma kararı.
 - Birim testleri: bugün 14; doğrulama işlevlerinin hepsi kapsanmalı.
 - Arayüz paketinin bölünmesi (ilk yükleme boyutu), sayfa bazında tembel yükleme.
