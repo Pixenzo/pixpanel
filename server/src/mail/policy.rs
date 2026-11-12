@@ -491,7 +491,8 @@ pub async fn run(state: AppState) {
 /// yapılandırma zaten yerindeyse `false` döner. Servisler henüz tanımlı değilse (posta
 /// kurulumu sürüyor) hiçbir şey yapmaz.
 pub async fn configure_postfix() -> AppResult<bool> {
-    let wanted = format!("check_policy_service {POSTFIX_ENDPOINT},permit");
+    // `postconf -P` değerde boşluk kabul etmez; Postfix kısıt listelerinde virgül de ayırıcıdır.
+    let wanted = format!("check_policy_service,{POSTFIX_ENDPOINT},permit");
     let mut changed = false;
     for service in ["submission", "submissions"] {
         let defined = exec::run("postconf", &["-M", &format!("{service}/inet")]).await?;

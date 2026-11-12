@@ -171,7 +171,7 @@ has "adres verilmezse alan adı ana makine adından çıkarılır" "$XH" "<domai
 check "panelin genel ucu doğrudan da yanıt verir" "$(curl -sk -o /dev/null -w '%{http_code}' -G --data-urlencode "emailaddress=$A1@$DOM" $B/mail/public/autoconfig)" 200
 check "bilinmeyen alan adı: 404 (nginx üzerinden)" "$(webqcode autoconfig.$DOM /mail/config-v1.1.xml emailaddress "biri@bilinmeyen-$T.test")" 404
 check "bilinmeyen alan adı: 404 (doğrudan)" "$(curl -sk -o /dev/null -w '%{http_code}' -G --data-urlencode "emailaddress=biri@bilinmeyen-$T.test" $B/mail/public/autoconfig)" 404
-check "var olmayan kutu ile var olan kutu aynı yanıtı alır" "$(webq autoconfig.$DOM /mail/config-v1.1.xml emailaddress "yok$T@$DOM" | sha256sum | cut -d' ' -f1)" "$(printf '%s' "$X" | sha256sum | cut -d' ' -f1)"
+check "var olmayan kutu ile var olan kutu aynı yanıtı alır" "$(webq autoconfig.$DOM /mail/config-v1.1.xml emailaddress "yok$T@$DOM" | sed "s/yok$T@/kutu@/g" | sha256sum | cut -d' ' -f1)" "$(webq autoconfig.$DOM /mail/config-v1.1.xml emailaddress "$A1@$DOM" | sed "s/$A1@/kutu@/g" | sha256sum | cut -d' ' -f1)"
 check "oturum çerezi gerekmez (oturumsuz istek 200)" "$(curl -sk -o /dev/null -w '%{http_code}' -G --data-urlencode "emailaddress=$A1@$DOM" $B/mail/public/autoconfig)" 200
 
 say "Otomatik ayar: Outlook (autodiscover)"

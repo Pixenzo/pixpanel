@@ -240,7 +240,9 @@
     "Site önbelleğini temizledi",
     "DNSSEC'i açtı",
     "DNSSEC'i kapattı",
-    "Bölge dosyası içe aktardı"
+    "Bölge dosyası içe aktardı",
+    "Posta gönderim sınırına takıldı",
+    "Gönderim sınırı ayarını değiştirdi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
@@ -305,7 +307,8 @@
     "Yedekleme başarısız olduğunda",
     "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde",
     "Siteniz yanıt vermediğinde ve yeniden yanıt vermeye başladığında",
-    "Disk kotanız dolmak üzereyken ya da dolduğunda"
+    "Disk kotanız dolmak üzereyken ya da dolduğunda",
+    "Posta kutusu ya da alan adı saatlik gönderim sınırına takıldığında"
   ],
   "server/src/health.rs (sağlık bulgusu düzeltme düğmeleri, Overview.tsx içinde t(finding.fix))": [
     "Yeniden başlat",

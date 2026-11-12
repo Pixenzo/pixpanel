@@ -85,6 +85,8 @@ const actionLabels: Record<string, string> = {
   "package.delete": "Paketi sildi",
   "site.clone": "Siteyi kopyaladı",
   "site.migrate": "Başka sunucudan site taşıdı",
+  "mail.limit.hit": "Posta gönderim sınırına takıldı",
+  "mail.limit.settings": "Gönderim sınırı ayarını değiştirdi",
   "dns.dnssec.enable": "DNSSEC'i açtı",
   "dns.dnssec.disable": "DNSSEC'i kapattı",
   "dns.zone.import": "Bölge dosyası içe aktardı",
