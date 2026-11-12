@@ -54,10 +54,12 @@ struct Session {
     database: String,
     role: String,
     password: String,
+    /// PostgreSQL istemcisi ilk hatada dursun mu (yoksa hataları yazıp devam eder).
+    strict: bool,
 }
 
 impl Session {
-    async fn open(engine: Engine, database: &str) -> AppResult<Self> {
+    async fn open(engine: Engine, database: &str, strict: bool) -> AppResult<Self> {
         super::validate_name(database, "Veritabanı adı")?;
         let password = auth::random_token(24);
         let role = match engine {
@@ -77,7 +79,7 @@ impl Session {
                 role
             }
         };
-        Ok(Self { engine, database: database.to_string(), role, password })
+        Ok(Self { engine, database: database.to_string(), role, password, strict })
     }
 
     /// Dökümü standart girdisinden okuyan istemci.
@@ -90,7 +92,12 @@ impl Session {
                 command
             }
             Engine::Postgresql => {
-                let mut command = unprivileged("psql", &["-X", "-q", "-h", "127.0.0.1", "-U", &self.role, "-d", &self.database, "-f", "-"]);
+                let mut args = vec!["-X", "-q"];
+                if self.strict {
+                    args.extend(["-v", "ON_ERROR_STOP=1"]);
+                }
+                args.extend(["-h", "127.0.0.1", "-U", &self.role, "-d", &self.database, "-f", "-"]);
+                let mut command = unprivileged("psql", &args);
                 command.env("PGPASSWORD", &self.password);
                 command
             }
@@ -134,7 +141,18 @@ impl Session {
 
 /// `source`tan okunan dökümü veritabanına yükler. İstemcinin hata satırları görev günlüğüne yazılır.
 pub async fn run(ctx: &JobCtx, engine: Engine, database: &str, source: Stdio) -> AppResult<()> {
-    let session = Session::open(engine, database).await?;
+    load(ctx, engine, database, source, false).await
+}
+
+/// `run` gibi, ama PostgreSQL'de ilk hatada durur ve hatayla sonlanır. Kopyalama gibi "ya hep ya
+/// hiç" işlerde yarım yüklenmiş veritabanı sessizce kalmasın diye kullanılır (MariaDB istemcisi zaten
+/// ilk hatada durur).
+pub async fn run_strict(ctx: &JobCtx, engine: Engine, database: &str, source: Stdio) -> AppResult<()> {
+    load(ctx, engine, database, source, true).await
+}
+
+async fn load(ctx: &JobCtx, engine: Engine, database: &str, source: Stdio, strict: bool) -> AppResult<()> {
+    let session = Session::open(engine, database, strict).await?;
     let outcome = pipe(ctx, &session, source).await;
     session.close().await;
     outcome

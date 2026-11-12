@@ -4,11 +4,13 @@
 //! yönetici kimliğiyle sürülür. SQL metni istemciye standart girdiden verilir;
 //! böylece parolalar süreç listesinde görünmez.
 
+pub mod busy;
 pub mod import;
 pub mod mariadb;
 pub mod postgres;
+pub mod slowlog;
+pub mod stats;
 
-use std::collections::HashMap;
 use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
@@ -172,27 +174,22 @@ async fn run_client(mut command: Command, script: &str, label: &str) -> AppResul
     }
 }
 
-/// Veritabanı adı → bayt cinsinden boyut.
-pub async fn sizes(engine: Engine) -> HashMap<String, u64> {
-    let result = match engine {
-        Engine::Mariadb => mariadb::sizes().await,
-        Engine::Postgresql => postgres::sizes().await,
-    };
-    result.unwrap_or_default()
-}
-
 pub async fn create_database(engine: Engine, name: &str) -> AppResult<()> {
-    match engine {
+    let result = match engine {
         Engine::Mariadb => mariadb::create_database(name).await,
         Engine::Postgresql => postgres::create_database(name).await,
-    }
+    };
+    stats::invalidate(engine);
+    result
 }
 
 pub async fn drop_database(engine: Engine, name: &str) -> AppResult<()> {
-    match engine {
+    let result = match engine {
         Engine::Mariadb => mariadb::drop_database(name).await,
         Engine::Postgresql => postgres::drop_database(name).await,
-    }
+    };
+    stats::invalidate(engine);
+    result
 }
 
 pub async fn create_user(engine: Engine, name: &str, host: &str, password: &str) -> AppResult<()> {
@@ -238,4 +235,60 @@ pub fn dump_command(engine: Engine, database: &str) -> Command {
     }
 }
 
+/// Kopyalama için döküm süreci. Yalnızca okuma yapar; yükleme tarafı mutlaka `import` ile,
+/// sınırlı yetkili hesapla yapılmalıdır.
+pub fn copy_dump_command(engine: Engine, database: &str) -> Command {
+    match engine {
+        Engine::Mariadb => mariadb::dump_command(database),
+        Engine::Postgresql => postgres::copy_dump_command(database),
+    }
+}
+
+/// Veritabanı bakım işlemleri.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Maintenance {
+    Check,
+    Repair,
+    Optimize,
+}
+
+impl Maintenance {
+    pub fn parse(value: &str) -> AppResult<Self> {
+        match value {
+            "check" => Ok(Self::Check),
+            "repair" => Ok(Self::Repair),
+            "optimize" => Ok(Self::Optimize),
+            _ => Err(AppError::bad("Geçersiz işlem; denetle (check), onar (repair) ya da iyileştir (optimize) olmalı")),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Check => "check",
+            Self::Repair => "repair",
+            Self::Optimize => "optimize",
+        }
+    }
+
+    /// Görev başlığında gösterilen ad.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Check => "denetleniyor",
+            Self::Repair => "onarılıyor",
+            Self::Optimize => "iyileştiriliyor",
+        }
+    }
+}
+
+/// Bakım işlemini yürütecek süreç ve günlükte görünecek program adı. `database` çağıran
+/// tarafından `validate_name` ile doğrulanmış olmalıdır.
+pub fn maintenance_command(engine: Engine, database: &str, action: Maintenance) -> AppResult<(Command, &'static str)> {
+    match (engine, action) {
+        (Engine::Mariadb, Maintenance::Check) => Ok((mariadb::maintenance_command(database, "--check"), "mariadb-check")),
+        (Engine::Mariadb, Maintenance::Repair) => Ok((mariadb::maintenance_command(database, "--repair"), "mariadb-check")),
+        (Engine::Mariadb, Maintenance::Optimize) => Ok((mariadb::maintenance_command(database, "--optimize"), "mariadb-check")),
+        (Engine::Postgresql, Maintenance::Optimize) => Ok((postgres::vacuum_command(database), "psql")),
+        (Engine::Postgresql, _) => Err(AppError::bad("PostgreSQL'de denetim ve onarım işlemi yok; tabloları düzenlemek için “İyileştir” kullanın")),
+    }
+}
 

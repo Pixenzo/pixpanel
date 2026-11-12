@@ -527,6 +527,11 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sites ADD COLUMN staging_of INTEGER REFERENCES sites(id) ON DELETE SET NULL;
     "#,
+    // 29: hesabın veritabanlarının ölçülen toplam boyutu (disk_bytes bunu da kapsar; kullanım
+    //     görünümünde ayrı kalem olarak gösterilir).
+    r#"
+    ALTER TABLE account_usage ADD COLUMN db_bytes INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

@@ -6,10 +6,13 @@
 //! ölçer, sınır aşılınca yeni kaynak açılmasını engeller ama var olan dosyalara
 //! dokunmaz (dosya sistemi kotası konteynerlerde güvenilir çalışmadığı için).
 
+use std::collections::HashMap;
+
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::db::{now, Db};
+use crate::dbms::Engine;
 use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +61,7 @@ pub struct Limits {
     pub mailboxes: Option<i64>,
     pub ftp_accounts: Option<i64>,
     pub dns_zones: Option<i64>,
-    /// Disk sınırı (MB): site dosyaları ve posta kutuları.
+    /// Disk sınırı (MB): site dosyaları, posta kutuları ve veritabanları.
     pub disk_mb: Option<i64>,
 }
 
@@ -181,6 +184,21 @@ pub fn disk_usage(db: &Db, account_id: i64) -> AppResult<Option<(i64, i64)>> {
     db.call(|conn| conn.query_row("SELECT disk_bytes, measured_at FROM account_usage WHERE user_id = ?1", params![account_id], |row| Ok((row.get(0)?, row.get(1)?))).optional())
 }
 
+/// Hesabın diskine `extra_bytes` kadar daha yer eklenirse (ör. veritabanı kopyası) kota aşılır mı?
+/// Kotası ya da ölçümü olmayan hesapta sorun çıkmaz.
+pub fn check_extra_disk(db: &Db, account_id: i64, extra_bytes: u64) -> AppResult<()> {
+    let Some((package, limits)) = limits_for(db, account_id)? else { return Ok(()) };
+    let Some(limit_mb) = limits.disk_mb else { return Ok(()) };
+    let Some((used, _)) = disk_usage(db, account_id)? else { return Ok(()) };
+    let limit = limit_mb.saturating_mul(1024 * 1024);
+    if used.saturating_add(i64::try_from(extra_bytes).unwrap_or(i64::MAX)) > limit {
+        return Err(AppError::bad(format!(
+            "Bu işlem disk kotasını aşar ({limit_mb} MB, “{package}” paketi). Yer açın ya da paketi yükseltin."
+        )));
+    }
+    Ok(())
+}
+
 /// Hesap bu türden bir kaynak daha açabilir mi? Açamıyorsa nedenini söyleyen hata döner.
 pub fn check(db: &Db, account_id: i64, resource: Resource) -> AppResult<()> {
     let Some((package, limits)) = limits_for(db, account_id)? else { return Ok(()) };
@@ -220,7 +238,14 @@ pub struct Usage {
     pub traffic_bytes: i64,
     /// Son ölçülen disk kullanımı (bayt); henüz ölçülmediyse `None`.
     pub disk_bytes: Option<i64>,
+    /// `disk_bytes` içindeki veritabanları payı (bayt); henüz ölçülmediyse `None`.
+    pub database_bytes: Option<i64>,
     pub disk_measured_at: Option<i64>,
+}
+
+/// Son ölçülen veritabanı toplam boyutu (bayt).
+fn database_usage(db: &Db, account_id: i64) -> AppResult<Option<i64>> {
+    db.call(|conn| conn.query_row("SELECT db_bytes FROM account_usage WHERE user_id = ?1", params![account_id], |row| row.get(0)).optional())
 }
 
 pub fn usage(db: &Db, account_id: i64) -> AppResult<Usage> {
@@ -240,6 +265,7 @@ pub fn usage(db: &Db, account_id: i64) -> AppResult<Usage> {
         dns_zones: count(db, account_id, Resource::DnsZone)?,
         traffic_bytes: crate::stats::account_month_bytes(db, account_id)?,
         disk_bytes: disk.map(|(bytes, _)| bytes),
+        database_bytes: database_usage(db, account_id)?,
         disk_measured_at: disk.map(|(_, at)| at),
     })
 }
@@ -307,7 +333,31 @@ pub async fn notify_disk(state: &crate::state::AppState) -> AppResult<()> {
     Ok(())
 }
 
+/// Hesap başına veritabanlarının toplam boyutu (bayt). Her motor tek sorguyla taze ölçülür;
+/// kurulu olmayan ya da çalışmayan motorun veritabanları 0 sayılır.
+async fn database_bytes_by_account(db: &Db) -> AppResult<HashMap<i64, i64>> {
+    let mut sizes: HashMap<Engine, crate::dbms::stats::Stats> = HashMap::new();
+    for engine in Engine::ALL {
+        if engine.is_installed() && crate::sys::services::is_active(engine.service()).await {
+            sizes.insert(engine, crate::dbms::stats::refresh(engine).await);
+        }
+    }
+    let rows: Vec<(i64, String, String)> = db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT user_id, engine, name FROM databases")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect()
+    })?;
+    let mut totals: HashMap<i64, i64> = HashMap::new();
+    for (user_id, engine, name) in rows {
+        let Ok(engine) = Engine::parse(&engine) else { continue };
+        let size = sizes.get(&engine).and_then(|stats| stats.get(&name)).map_or(0, |stat| stat.size);
+        *totals.entry(user_id).or_default() += i64::try_from(size).unwrap_or(i64::MAX);
+    }
+    Ok(totals)
+}
+
 pub async fn measure_disk(db: &Db) -> AppResult<()> {
+    let database_bytes = database_bytes_by_account(db).await?;
     let accounts: Vec<(i64, String)> = db.call(|conn| {
         let mut stmt = conn.prepare("SELECT id, username FROM users WHERE role != 'member'")?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -329,11 +379,14 @@ pub async fn measure_disk(db: &Db) -> AppResult<()> {
                 bytes += directory_size(&format!("{}/{domain}", crate::mail::MAIL_ROOT)).await;
             }
         }
+        // Veritabanları da hesabın diskinden sayılır; ayrıca kullanım görünümünde ayrı kalem olarak gösterilir.
+        let databases = database_bytes.get(&id).copied().unwrap_or(0);
+        bytes = bytes.saturating_add(databases);
         db.call(|conn| {
             conn.execute(
-                "INSERT INTO account_usage (user_id, disk_bytes, measured_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(user_id) DO UPDATE SET disk_bytes = excluded.disk_bytes, measured_at = excluded.measured_at",
-                params![id, bytes, now()],
+                "INSERT INTO account_usage (user_id, disk_bytes, db_bytes, measured_at) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(user_id) DO UPDATE SET disk_bytes = excluded.disk_bytes, db_bytes = excluded.db_bytes, measured_at = excluded.measured_at",
+                params![id, bytes, databases, now()],
             )
         })?;
     }
