@@ -122,7 +122,9 @@ check "hesapta olmayan bölge" "$(code POST /dns/zones -d '{"domain":"yok.test",
 CZ=$(api POST /dns/zones -d '{"domain":"bulut.test","provider":"cloudflare"}' | jget 'd["zone"]["id"]')
 check "vekilli A ekle" "$(code POST /dns/zones/$CZ/records -d "$(rec A @ 203.0.113.20 3600 '' 1)")" 200
 check "MX ekle" "$(code POST /dns/zones/$CZ/records -d "$(rec MX @ posta.bulut.test 3600 10)")" 200
-check "SRV panelden yazılamaz" "$(code POST /dns/zones/$CZ/records -d "$(rec SRV _sip._tcp '10 5060 sip.bulut.test' 3600 5)")" 400
+check "SRV artık Cloudflare'e yazılır (data alanıyla)" "$(code POST /dns/zones/$CZ/records -d "$(rec SRV _sip._tcp '10 5060 sip.bulut.test' 3600 5)")" 200
+check "CAA artık Cloudflare'e yazılır (data alanıyla)" "$(code POST /dns/zones/$CZ/records -d "$(rec CAA @ '0 issue "letsencrypt.org"' 3600)")" 200
+check "desteklenmeyen tür Cloudflare'e yazılmaz" "$(code POST /dns/zones/$CZ/records -d "$(rec PTR x y.bulut.test)")" 400
 D=$(api GET /dns/zones/$CZ)
 echo "$D" | jget '[(r["type"], r["name"], r["content"], r["ttl"], r["proxied"], r["priority"]) for r in d["records"]]'
 echo "$D" | jget '("ayarlar:", d["cloudflare"]["ssl_mode"], d["cloudflare"]["development_mode"], d["nameservers"])'

@@ -63,6 +63,7 @@ pub fn spawn_dns_cluster_sync(state: AppState) {
             if crate::dns::cluster::secondaries(&state.db).iter().any(|item| !item.panel_url.is_empty()) {
                 let _ = crate::dns::cluster::sync(&state).await;
             }
+            crate::dns::refresh_signed_zones(&state).await;
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;
         }
     });

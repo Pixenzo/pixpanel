@@ -8,6 +8,7 @@
 pub mod cloudflare;
 pub mod cluster;
 pub mod local;
+pub mod zonefile;
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
@@ -237,12 +238,46 @@ pub async fn list_records(state: &AppState, zone: &Zone) -> AppResult<Vec<Record
 
 /// Yerel bölge değişince ikincil ad sunucularına hemen haber verilir; DNS sunucusu kendi
 /// başına değişikliği ancak bir sonraki denetiminde (dakikada bir) fark eder.
-async fn announce(state: &AppState, zone: &Zone) {
+pub async fn announce(state: &AppState, zone: &Zone) {
     if !cluster::secondaries(&state.db).is_empty() {
         if let Err(err) = local::notify(&zone.domain).await {
             tracing::debug!(domain = %zone.domain, error = %err, "ikincillere bildirim gönderilemedi");
         }
     }
+}
+
+const DNSSEC_REFRESH_KEY: &str = "dns.dnssec_refreshed_at";
+/// İkincillerdeki imzalar, birincilin aktarım anında ürettiği imzalardır ve süreleri dolar
+/// (PowerDNS imzaları yaklaşık iki hafta geçerlidir); seri numarası değişmezse ikincil yeniden aktarım yapmaz.
+const DNSSEC_REFRESH_AFTER: i64 = 3 * 86400;
+
+/// İkincil ad sunucusu tanımlıysa, DNSSEC'li yerel bölgelerin seri numarasını birkaç günde bir artırıp
+/// bildirim gönderir; ikinciller imzaları tazelenmiş bölgeyi yeniden çeker. Düzenli görevden çağrılır.
+pub async fn refresh_signed_zones(state: &AppState) {
+    if cluster::secondaries(&state.db).is_empty() || !local::is_installed() {
+        return;
+    }
+    let last: i64 = state.db.setting(DNSSEC_REFRESH_KEY).ok().flatten().and_then(|value| value.parse().ok()).unwrap_or(0);
+    if crate::db::now() - last < DNSSEC_REFRESH_AFTER {
+        return;
+    }
+    let domains: Vec<String> = state
+        .db
+        .call(|conn| {
+            let mut stmt = conn.prepare("SELECT domain FROM dns_zones WHERE provider = 'local'")?;
+            stmt.query_map([], |row| row.get(0))?.collect()
+        })
+        .unwrap_or_default();
+    for domain in domains {
+        if local::dnssec_status(&domain).await.map(|status| status.enabled).unwrap_or(false) {
+            if let Err(err) = local::bump_serial(&domain).await {
+                tracing::warn!(domain = %domain, error = %err, "DNSSEC'li bölgenin seri numarası artırılamadı");
+                continue;
+            }
+            let _ = local::notify(&domain).await;
+        }
+    }
+    let _ = state.db.set_setting(DNSSEC_REFRESH_KEY, &crate::db::now().to_string());
 }
 
 pub async fn create_record(state: &AppState, zone: &Zone, record: &Record) -> AppResult<()> {

@@ -24,6 +24,33 @@ def log(text):
         handle.write(text + "\n")
 
 
+def with_structured_data(body):
+    """SRV/CAA gövdesini doğrular; `content` ve `priority` alanlarını gerçek API gibi `data`dan türetir."""
+    kind = body.get("type")
+    if kind not in ("SRV", "CAA"):
+        if "content" not in body:
+            raise ValueError("content is required")
+        return body
+    data = body.get("data")
+    if not isinstance(data, dict) or "content" in body:
+        raise ValueError("Invalid request: SRV and CAA records are written with a data object only")
+    result = {k: v for k, v in body.items() if k != "data"}
+    if kind == "SRV":
+        for field in ("priority", "weight", "port"):
+            if not isinstance(data.get(field), int):
+                raise ValueError(f"data.{field} must be an integer")
+        if not isinstance(data.get("target"), str) or not data["target"]:
+            raise ValueError("data.target is required")
+        result["content"] = f"{data['weight']} {data['port']} {data['target']}"
+        result["priority"] = data["priority"]
+    else:
+        if not isinstance(data.get("flags"), int) or data.get("tag") not in ("issue", "issuewild", "iodef") or not data.get("value"):
+            raise ValueError("invalid CAA data")
+        result["content"] = f"{data['flags']} {data['tag']} \"{data['value']}\""
+    result["data"] = data
+    return result
+
+
 class Handler(BaseHTTPRequestHandler):
     def reply(self, status, result=None, errors=None, info=None):
         body = {"success": errors is None, "errors": errors or [], "messages": [], "result": result}
@@ -56,18 +83,28 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET":
                 page = int(query.get("page", ["1"])[0])
                 return self.reply(200, records if page == 1 else [], info={"page": page, "total_pages": 1})
+            if method in ("POST", "PUT"):
+                # Gerçek API gibi: SRV ve CAA `content` değil yapılandırılmış `data` ister.
+                try:
+                    body = with_structured_data(body)
+                except ValueError as err:
+                    return self.reply(400, errors=[{"code": 9005, "message": str(err)}])
             if method == "POST":
                 if any(r["type"] == body["type"] and r["name"] == body["name"] and r["content"] == body["content"] for r in records):
                     return self.reply(400, errors=[{"code": 81058, "message": "An identical record already exists."}])
                 record = {"id": uuid.uuid4().hex, **body}
                 records.append(record)
                 log(f"create {body['type']} {body['name']} {body['content'][:40]} proxied={body.get('proxied')} ttl={body.get('ttl')}")
+                if "data" in body:
+                    log(f"data {json.dumps(body['data'], sort_keys=True)}")
                 return self.reply(200, record)
             existing = next((r for r in records if r["id"] == record_id), None)
             if existing is None:
                 return self.reply(404, errors=[{"code": 81044, "message": "Record does not exist."}])
             if method == "PUT":
                 existing.update(body)
+                if "data" in body:
+                    log(f"data {json.dumps(body['data'], sort_keys=True)}")
                 log(f"update {body['type']} {body['name']} {body['content'][:40]} proxied={body.get('proxied')}")
                 return self.reply(200, existing)
             if method == "DELETE":
