@@ -222,7 +222,9 @@ fn from_wire(kind: &str, name: &str, ttl: u32, content: &str) -> Record {
         "CNAME" | "NS" => (undotted(content), None),
         "MX" => {
             let (priority, target) = content.split_once(' ').unwrap_or(("10", content));
-            (undotted(target), priority.parse().ok())
+            // Boş MX'in hedefi kökün kendisidir ("."); noktası atılırsa boş kalır.
+            let target = if target.trim() == "." { ".".to_string() } else { undotted(target) };
+            (target, priority.parse().ok())
         }
         "SRV" => {
             let parts: Vec<&str> = content.split_whitespace().collect();
@@ -552,5 +554,13 @@ mod tests {
         let srv = from_wire("SRV", "_sip._tcp.ornek.com.", 300, "5 10 5060 sip.ornek.com.");
         assert_eq!((srv.content.as_str(), srv.priority), ("10 5060 sip.ornek.com", Some(5)));
         assert_eq!(to_wire(&srv), "5 10 5060 sip.ornek.com.");
+    }
+
+    #[test]
+    fn null_mx_keeps_its_root_target() {
+        let null = Record { id: String::new(), kind: "MX".into(), name: "ornek.com".into(), content: ".".into(), ttl: 3600, priority: Some(0), proxied: None };
+        assert_eq!(to_wire(&null), "0 .");
+        let back = from_wire("MX", "ornek.com.", 3600, "0 .");
+        assert_eq!((back.content.as_str(), back.priority), (".", Some(0)));
     }
 }

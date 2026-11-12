@@ -2,7 +2,7 @@
 // Cloudflare ayarları ve site/posta kayıtlarının otomatik eklenmesi.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, ChevronDown, ChevronUp, ChevronsUpDown, Copy, Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronUp, ChevronsUpDown, Copy, Download, ListChecks, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Upload, Wand2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -1179,6 +1179,273 @@ function ImportModal({ detail, onClose }: { detail: ZoneDetail; onClose: () => v
   );
 }
 
+// ---- Hazır kayıtlar (bölge şablonları) ----
+
+interface TemplateChoice {
+  value: string;
+  label: string;
+}
+
+interface TemplateField {
+  name: string;
+  label: string;
+  hint: string;
+  required: boolean;
+  choices: TemplateChoice[];
+}
+
+interface TemplateInfo {
+  id: string;
+  title: string;
+  description: string;
+  fields: TemplateField[];
+  /** Çakışan var olan kayıtların adı ("var olan MX ve SPF kayıtlarını"); boşsa şablon hiçbir şeyi değiştirmez. */
+  replaces: string;
+}
+
+interface TemplateReply {
+  template: string;
+  add: DnsRecord[];
+  existing: DnsRecord[];
+  conflicts: DnsRecord[];
+  remove: DnsRecord[];
+  skipped: SkippedLine[];
+  /** Çakışma var ve değiştirme kapalı: şablon uygulanamaz. */
+  blocked: boolean;
+  notes: string[];
+  result: { added: number; removed: number; failed: string[] } | null;
+  records?: DnsRecord[];
+}
+
+/** Şablonun alanları için başlangıç değerleri: seçmeli alanlarda ilk seçenek. */
+function initialFields(template: TemplateInfo): Record<string, string> {
+  return Object.fromEntries(template.fields.map((field) => [field.name, field.choices[0]?.value ?? ""]));
+}
+
+function TemplatesModal({ detail, onClose }: { detail: ZoneDetail; onClose: () => void }) {
+  const feedback = useFeedback();
+  const updateRecords = useRecordsCache(detail.zone.id);
+  const zone = detail.zone.domain;
+  const templates = useQuery({ queryKey: ["dns-templates"], queryFn: () => api.get<{ templates: TemplateInfo[] }>("/dns/templates"), staleTime: Infinity });
+  const [selected, setSelected] = useState<TemplateInfo | null>(null);
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [replace, setReplace] = useState(false);
+  const [preview, setPreview] = useState<TemplateReply | null>(null);
+  const [applied, setApplied] = useState<TemplateReply | null>(null);
+
+  const run = useMutation({
+    mutationFn: (apply: boolean) => api.post<TemplateReply>(`/dns/zones/${detail.zone.id}/templates/${selected?.id ?? ""}`, { fields, replace, apply }),
+    onSuccess: (reply, apply) => {
+      if (!apply) {
+        setPreview(reply);
+        return;
+      }
+      if (reply.records) updateRecords(reply.records);
+      setApplied(reply);
+      if (reply.result && reply.result.failed.length === 0) {
+        feedback.success(t("{added} kayıt eklendi, {removed} kayıt silindi", { added: reply.result.added, removed: reply.result.removed }));
+        onClose();
+      }
+    },
+  });
+
+  function resetResult() {
+    setPreview(null);
+    setApplied(null);
+    run.reset();
+  }
+
+  function choose(template: TemplateInfo) {
+    setSelected(template);
+    setFields(initialFields(template));
+    setReplace(false);
+    resetResult();
+  }
+
+  async function apply() {
+    if (!preview) return;
+    if (preview.remove.length > 0) {
+      const confirmed = await feedback.confirm({
+        title: t("{n} var olan kayıt silinsin mi?", { n: preview.remove.length }),
+        description: t("Şablonla çakışan var olan kayıtlar silinir ve şablondakilerle değiştirilir. Bu işlem geri alınamaz."),
+        confirmLabel: t("Uygula"),
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    run.mutate(true);
+  }
+
+  const missingRequired = selected ? selected.fields.some((field) => field.required && !(fields[field.name] ?? "").trim()) : true;
+  const nothingToDo = preview !== null && preview.add.length === 0 && preview.remove.length === 0;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      extraWide
+      title={t("Hazır kayıtlar")}
+      description={t("Yaygın hizmetler için gereken DNS kayıtlarını {domain} bölgesine tek seferde ekler. Önce ne yapılacağı gösterilir.", { domain: zone })}
+      footer={
+        <>
+          <Button onClick={onClose}>{applied ? t("Kapat") : t("Vazgeç")}</Button>
+          {!applied && (
+            <>
+              <Button loading={run.isPending && !run.variables} onClick={() => run.mutate(false)} disabled={!selected || missingRequired || run.isPending}>
+                {t("Önizle")}
+              </Button>
+              <Button variant="primary" loading={run.isPending && run.variables === true} disabled={!preview || nothingToDo || preview.blocked || run.isPending} onClick={() => void apply()}>
+                {t("Uygula")}
+              </Button>
+            </>
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        {templates.isPending && <LoadingBlock />}
+        {templates.isError && <ErrorBlock message={errorMessage(templates.error)} onRetry={() => void templates.refetch()} />}
+        {templates.data && (
+          <div role="group" aria-label={t("Hazır kayıt kümesi")} className="grid gap-2 sm:grid-cols-2">
+            {templates.data.templates.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                aria-pressed={selected?.id === template.id}
+                onClick={() => choose(template)}
+                className={classNames(
+                  "rounded-lg border px-3.5 py-3 text-left transition-colors",
+                  selected?.id === template.id ? "border-accent bg-accent-soft" : "border-line-strong bg-surface hover:bg-sunken",
+                )}
+              >
+                <span className="block font-medium">{t(template.title)}</span>
+                <span className="mt-0.5 block text-[13px] text-ink-2">{t(template.description)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selected && selected.fields.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {selected.fields.map((field) =>
+              field.choices.length > 0 ? (
+                <Select
+                  key={field.name}
+                  label={t(field.label)}
+                  hint={field.hint ? t(field.hint) : undefined}
+                  value={fields[field.name] ?? ""}
+                  onChange={(event) => {
+                    setFields({ ...fields, [field.name]: event.target.value });
+                    resetResult();
+                  }}
+                >
+                  {field.choices.map((choice) => (
+                    <option key={choice.value} value={choice.value}>
+                      {t(choice.label)}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <div key={field.name} className="sm:col-span-2">
+                  <Input
+                    label={t(field.label)}
+                    hint={field.hint ? t(field.hint) : undefined}
+                    value={fields[field.name] ?? ""}
+                    onChange={(event) => {
+                      setFields({ ...fields, [field.name]: event.target.value });
+                      resetResult();
+                    }}
+                    className="font-mono"
+                    maxLength={300}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </div>
+              ),
+            )}
+          </div>
+        )}
+
+        {selected && selected.replaces && (
+          <Checkbox
+            label={t("Çakışan var olan kayıtları değiştir")}
+            hint={t("Açıkken {what} silinir ve şablondakilerle değiştirilir. Kapalıyken çakışma varsa hiçbir şey eklenmez.", { what: t(selected.replaces) })}
+            checked={replace}
+            onChange={(event) => {
+              setReplace(event.target.checked);
+              resetResult();
+            }}
+          />
+        )}
+
+        {run.isError && <ErrorBlock message={errorMessage(run.error)} />}
+
+        {preview && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <Status tone="ok">{t("Eklenecek: {n}", { n: preview.add.length })}</Status>
+              <Status tone="idle">{t("Zaten var: {n}", { n: preview.existing.length })}</Status>
+              {preview.conflicts.length > 0 && <Status tone={preview.blocked ? "warn" : "bad"}>{preview.blocked ? t("Çakışan: {n}", { n: preview.conflicts.length }) : t("Silinecek: {n}", { n: preview.remove.length })}</Status>}
+            </div>
+            {preview.blocked && (
+              <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+                {t("Bölgede bu şablonla bir arada bulunamayacak kayıtlar var. Şablonu uygulamak için yukarıdaki “Çakışan var olan kayıtları değiştir” seçeneğini işaretleyin ya da bu kayıtları önce silin.")}
+              </p>
+            )}
+            {preview.notes.map((note) => (
+              <p key={note} className="text-ink-2">
+                {t(note)}
+              </p>
+            ))}
+            {nothingToDo && !preview.blocked && <p className="text-ink-2">{t("Eklenecek ya da silinecek bir şey yok.")}</p>}
+            {preview.conflicts.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className={classNames("font-semibold", preview.blocked ? "text-warn" : "text-bad")}>{preview.blocked ? t("Çakışan kayıtlar") : t("Silinecek kayıtlar")}</h3>
+                <RecordList records={preview.conflicts} zone={zone} />
+              </div>
+            )}
+            {preview.add.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold">{t("Eklenecek kayıtlar")}</h3>
+                <RecordList records={preview.add} zone={zone} />
+              </div>
+            )}
+            {preview.existing.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold text-ink-2">{t("Zaten var olan kayıtlar")}</h3>
+                <RecordList records={preview.existing} zone={zone} />
+              </div>
+            )}
+            {preview.skipped.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold">{t("Eklenemeyen kayıtlar")}</h3>
+                <ul className="list-disc pl-5 text-ink-2">
+                  {preview.skipped.map((item, index) => (
+                    <li key={index}>
+                      <Mono>{item.text}</Mono> — {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {applied?.result && applied.result.failed.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <ErrorBlock message={t("{added} kayıt eklendi, {removed} silindi; bazı kayıtlar yazılamadı:", { added: applied.result.added, removed: applied.result.removed })} />
+            <ul className="list-disc pl-5 text-ink-2">
+              {applied.result.failed.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // ---- Çalışma alanı ----
 
 function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
@@ -1190,6 +1457,7 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
   const [recordModal, setRecordModal] = useState<{ record: DnsRecord | null } | null>(null);
   const [report, setReport] = useState<string[] | null>(null);
   const [importing, setImporting] = useState(false);
+  const [templating, setTemplating] = useState(false);
 
   const exportZone = useMutation({
     mutationFn: () => api.get<{ filename: string; content: string }>(`/dns/zones/${zone.id}/export`),
@@ -1272,6 +1540,9 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
             <Button loading={sync.isPending} icon={<Wand2 className="size-3.5" />} onClick={() => sync.mutate()}>
               {t("Site ve posta kayıtlarını ekle")}
             </Button>
+            <Button icon={<ListChecks className="size-3.5" />} onClick={() => setTemplating(true)}>
+              {t("Hazır kayıtlar")}
+            </Button>
             <Button icon={<Upload className="size-3.5" />} onClick={() => setImporting(true)}>
               {t("İçe aktar")}
             </Button>
@@ -1290,6 +1561,7 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
       {recordModal && <RecordModal detail={detail} record={recordModal.record} onClose={() => setRecordModal(null)} />}
       {report && <SyncReportModal report={report} onClose={() => setReport(null)} />}
       {importing && <ImportModal detail={detail} onClose={() => setImporting(false)} />}
+      {templating && <TemplatesModal detail={detail} onClose={() => setTemplating(false)} />}
     </>
   );
 }
