@@ -117,6 +117,9 @@ async fn update(State(state): State<AppState>, user: AuthUser, Path(id): Path<i6
     }
     // Paketi kullanan bütün hesapların işlemci/bellek sınırları yeni değerlere getirilir.
     resource_limits::sync_package(&state, id).await;
+    // Trafik sınırı ya da davranışı değişmiş olabilir: askıya alınmış siteler yeni sınıra göre hemen yeniden değerlendirilir.
+    let enforce_state = state.clone();
+    tokio::spawn(async move { quota::traffic::enforce_all(&enforce_state).await });
     auth::audit(&state.db, &user, "package.update", &name, "");
     Ok(Json(json!({ "ok": true })))
 }

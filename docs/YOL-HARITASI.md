@@ -152,7 +152,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 ## P1 — Müşteriye açmak için gerekli
 
-### 8. Paketler ve kotalar — TAMAMLANDI (11.11.2026; kalan: trafik sınırı, izinli PHP sürümleri/özellikler, bayinin toplam kullanımı, veritabanı boyutlarının diske sayılması)
+### 8. Paketler ve kotalar — TAMAMLANDI (11.11.2026; trafik sınırı ve bayinin toplam kullanımı 12.11.2026'da tamamlandı; kalan: izinli PHP sürümleri/özellikler, bayinin toplam kullanımının bayinin kendi sınırına sayılması)
 
 - **Kapsam:** hizmet paketi (site, alt alan adı, veritabanı, posta kutusu, FTP hesabı, DNS bölgesi sayısı; disk ve aylık trafik sınırı; izinli PHP/Node.js sürümleri; izinli özellikler); hesaba paket atama; sınır aşımında oluşturmayı reddetme; kullanım görünümü (hesap ve bayi için).
 - **Disk kotası kararı:** dosya sistemi kotası LXC'de güvenilir değil; panel `du` ile düzenli ölçer, sınır aşılınca uyarır ve yüklemeyi/yeni kaynak açmayı engeller ("yumuşak kota"). Gerçek kota ayrı bir iş.
@@ -170,7 +170,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 - **Kapsam:** hesap başına SFTP (hapisli; ev klasörü düzeni buna hazır) ve isteğe bağlı kabuk erişimi; açık anahtar yönetimi; `sshd_config.d` altında panelin kendi dosyası; panelde hesap terminali (bugün yalnızca yönetici).
 - **Kabul:** hesap SFTP ile yalnızca kendi klasörünü görür; kabuk izni olmayan hesap komut çalıştıramaz; bozuk sshd yapılandırması uygulanmaz (`sshd -t`).
 
-### 10. İstatistik — TAMAMLANDI (11.11.2026; kalan: trafik sınırının uygulanması, yönlendiren/ülke/tarayıcı dökümü, veritabanı ve posta disk kullanımı)
+### 10. İstatistik — TAMAMLANDI (11.11.2026; trafik sınırının uygulanması 12.11.2026'da tamamlandı; kalan: yönlendiren/ülke/tarayıcı dökümü, veritabanı ve posta disk kullanımı)
 
 - **Kapsam:** nginx erişim günlüklerinden site başına günlük özet (istek, tekil ziyaretçi, bant genişliği, durum kodları, en çok istenen yollar, botlar); disk kullanımı (site, veritabanı, posta); aylık trafik (paket sınırı için). Özetler SQLite'ta tutulur, ham günlük saklanmaz.
 - **Kabul:** bilinen sayıda istek atılır, özet aynı sayıyı gösterir; günlük döndürme (logrotate) sayımı bozmaz.

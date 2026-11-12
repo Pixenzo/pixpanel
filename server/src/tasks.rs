@@ -196,6 +196,8 @@ pub fn spawn_stats_collector(state: AppState) {
                 Err(err) => tracing::warn!(error = %err, "istatistik görevi sonlandı"),
                 Ok(Ok(())) => {}
             }
+            // Yeni trafik sayıları işlendi: aylık trafik sınırları denetlenir (bildirim, askıya alma, geri açma).
+            crate::quota::traffic::enforce_all(&state).await;
             tokio::time::sleep(Duration::from_secs(300)).await;
         }
     });

@@ -8,13 +8,16 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { Button, EmptyState, ErrorBlock, IconButton, Input, LoadingBlock, Meter, Modal, Panel, Select, Table, Td, Th } from "../components/ui";
-import type { AccountUsage, PackageInfo, PackageLimits } from "../lib/api";
+import type { AccountUsage, CustomerTotals, PackageInfo, PackageLimits } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 
+/** Sayısal sınır alanları (davranış alanı `traffic_action` hariç). */
+type NumericLimit = Exclude<keyof PackageLimits, "traffic_action">;
+
 /** Sınır alanları, formda ve tabloda gösterildiği sırayla. */
-const LIMIT_FIELDS: { key: keyof PackageLimits; label: string; unit?: string }[] = [
+const LIMIT_FIELDS: { key: NumericLimit; label: string; unit?: string }[] = [
   { key: "sites", label: "Site" },
   { key: "databases", label: "Veritabanı" },
   { key: "mail_domains", label: "Posta alan adı" },
@@ -25,7 +28,7 @@ const LIMIT_FIELDS: { key: keyof PackageLimits; label: string; unit?: string }[]
 ];
 
 /** İşlemci, bellek ve süreç sınırları; aralıklar sunucudaki doğrulamayla aynıdır. */
-const RESOURCE_FIELDS: { key: keyof PackageLimits; label: string; unit: string; min: number; max: number; hint: string }[] = [
+const RESOURCE_FIELDS: { key: NumericLimit; label: string; unit: string; min: number; max: number; hint: string }[] = [
   {
     key: "cpu_percent",
     label: "İşlemci",
@@ -60,7 +63,18 @@ const RESOURCE_FIELDS: { key: keyof PackageLimits; label: string; unit: string; 
   },
 ];
 
-const ALL_FIELDS: { key: keyof PackageLimits }[] = [...LIMIT_FIELDS, ...RESOURCE_FIELDS];
+/** Aylık trafik sınırı (GB). Form ve tabloda ayrı gösterilir. */
+const TRAFFIC_FIELD = { key: "traffic_gb" as const, label: "Aylık trafik", unit: "GB" };
+
+const ALL_FIELDS: { key: NumericLimit }[] = [...LIMIT_FIELDS, ...RESOURCE_FIELDS, TRAFFIC_FIELD];
+
+const GIB = 1024 * 1024 * 1024;
+
+/** Paketin trafik sınırını tek satırda özetler (ör. "500 GB · dolunca askıya al"). */
+function trafficSummary(limits: PackageLimits): string {
+  if (limits.traffic_gb === null) return t("Sınırsız");
+  return `${limits.traffic_gb} GB · ${limits.traffic_action === "suspend" ? t("dolunca askıya al") : t("yalnız bildirim")}`;
+}
 
 function limitText(value: number | null, unit?: string): string {
   if (value === null) return t("Sınırsız");
@@ -86,12 +100,14 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(ALL_FIELDS.map((field) => [field.key, pack?.limits[field.key]?.toString() ?? ""])),
   );
+  const [trafficAction, setTrafficAction] = useState<"notify" | "suspend">(pack?.limits.traffic_action ?? "notify");
   const support = useQuery({ queryKey: ["packages", "limits-support"], queryFn: () => api.get<{ enforced: boolean; warning: string | null }>("/packages/limits-support") });
 
   const save = useMutation({
     mutationFn: () => {
       const limits = Object.fromEntries(ALL_FIELDS.map((field) => [field.key, values[field.key].trim() === "" ? null : Number(values[field.key])]));
-      const body = { name, limits };
+      // Davranış yalnız bir trafik sınırı varken anlamlıdır.
+      const body = { name, limits: { ...limits, traffic_action: limits.traffic_gb === null ? null : trafficAction } };
       return pack ? api.patch(`/packages/${pack.id}`, body) : api.post("/packages", body);
     },
     onSuccess: () => {
@@ -140,6 +156,38 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
               />
             ))}
           </div>
+        </fieldset>
+        <fieldset>
+          <legend className="text-[13.5px] font-medium text-ink-2">{t("Aylık trafik")}</legend>
+          <p className="mt-0.5 mb-3 text-[13px] text-ink-3">
+            {t("Hesabın bütün sitelerinin takvim ayında (UTC) aktardığı toplam veri. %80'e ulaşınca ve dolunca hesaba ve yöneticilere bildirim gider; her bildirim ayda bir kez gönderilir.")}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label={t("Aylık trafik sınırı (GB)")}
+              type="number"
+              min={1}
+              max={1000000}
+              inputMode="numeric"
+              value={values.traffic_gb}
+              onChange={(event) => setValues((current) => ({ ...current, traffic_gb: event.target.value }))}
+              placeholder={t("Sınırsız")}
+            />
+            <Select
+              label={t("Sınır dolunca")}
+              value={trafficAction}
+              onChange={(event) => setTrafficAction(event.target.value as "notify" | "suspend")}
+              disabled={values.traffic_gb.trim() === ""}
+            >
+              <option value="notify">{t("Yalnız bildirim gönder")}</option>
+              <option value="suspend">{t("Hesabın sitelerini askıya al")}</option>
+            </Select>
+          </div>
+          {trafficAction === "suspend" && values.traffic_gb.trim() !== "" && (
+            <p className="mt-2 text-[13px] text-ink-3">
+              {t("Askıya alınan siteler ay başında, sınır yükseltilince ya da paket değişince kendiliğinden yeniden açılır. Yöneticinin elle askıya aldığı siteler açılmaz.")}
+            </p>
+          )}
         </fieldset>
         <fieldset>
           <legend className="text-[13.5px] font-medium text-ink-2">{t("İşlemci ve bellek")}</legend>
@@ -236,6 +284,7 @@ export function PackagesPanel() {
                     {t(field.label)}
                   </Th>
                 ))}
+                <Th>{t("Aylık trafik")}</Th>
                 <Th>{t("İşlemci ve bellek")}</Th>
                 <Th align="right">{t("Hesap")}</Th>
                 <Th align="right">{t("İşlemler")}</Th>
@@ -252,6 +301,7 @@ export function PackagesPanel() {
                       {limitText(pack.limits[field.key], field.unit)}
                     </Td>
                   ))}
+                  <Td className={pack.limits.traffic_gb === null ? "text-ink-3" : undefined}>{trafficSummary(pack.limits)}</Td>
                   <Td className={resourceSummary(pack.limits) === t("Sınırsız") ? "text-ink-3" : undefined}>{resourceSummary(pack.limits)}</Td>
                   <Td align="right">{pack.accounts}</Td>
                   <Td align="right" className="py-0.5">
@@ -373,6 +423,38 @@ function ResourceUsage({ limits, runtime }: { limits: PackageLimits; runtime: Ac
   );
 }
 
+/** Bayinin müşterilerinin toplam kullanımı; bayinin kendi paketinde sınır varsa çubukla gösterilir (yalnız gösterim, engellemez). */
+export function CustomerTotalsView({ totals, limits }: { totals: CustomerTotals; limits: PackageLimits }) {
+  const diskLimit = limits.disk_mb === null ? null : limits.disk_mb * 1024 * 1024;
+  const trafficLimit = limits.traffic_gb === null ? null : limits.traffic_gb * GIB;
+  const count = (used: number, limit: number | null) => (limit === null ? String(used) : `${used} / ${limit}`);
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <h3 className="mb-1 text-[13.5px] font-medium text-ink-2">{t("Müşterilerin toplam kullanımı")}</h3>
+      <p className="mb-3 text-[13px] text-ink-3">
+        {t("{count} müşteri hesabının toplamı. Çubuklar bayinin kendi paketinin sınırlarına göredir; bu sınırlar müşterilerin kullanımını engellemez.", { count: totals.accounts })}
+      </p>
+      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+        <UsageRow label={t("Site")} used={totals.sites} limit={limits.sites} text={count(totals.sites, limits.sites)} />
+        <UsageRow label={t("Veritabanı")} used={totals.databases} limit={limits.databases} text={count(totals.databases, limits.databases)} />
+        <UsageRow label={t("Posta kutusu")} used={totals.mailboxes} limit={limits.mailboxes} text={count(totals.mailboxes, limits.mailboxes)} />
+        <UsageRow
+          label={t("Disk")}
+          used={totals.disk_bytes}
+          limit={diskLimit}
+          text={diskLimit === null ? formatBytes(totals.disk_bytes) : `${formatBytes(totals.disk_bytes)} / ${formatBytes(diskLimit, 0)}`}
+        />
+        <UsageRow
+          label={t("Aylık trafik")}
+          used={totals.traffic_bytes}
+          limit={trafficLimit}
+          text={trafficLimit === null ? formatBytes(totals.traffic_bytes) : `${formatBytes(totals.traffic_bytes)} / ${formatBytes(trafficLimit, 0)}`}
+        />
+      </dl>
+    </div>
+  );
+}
+
 /** Bir hesabın paketine göre kullanımı. `path`: kullanımın okunacağı uç. */
 export function UsagePanel({ path, title }: { path: string; title?: string }) {
   const usage = useQuery({ queryKey: ["usage", path], queryFn: () => api.get<AccountUsage>(path) });
@@ -380,6 +462,7 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
   if (usage.isError) return null;
   const data = usage.data;
   const diskLimit = data.limits.disk_mb === null ? null : data.limits.disk_mb * 1024 * 1024;
+  const trafficLimit = data.limits.traffic_gb === null ? null : data.limits.traffic_gb * GIB;
 
   return (
     <Panel title={title ?? t("Paket ve kullanım")}>
@@ -412,17 +495,32 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
           }
         />
       </dl>
+      <div className="mt-4 border-t border-line pt-3">
+        <dl>
+          <UsageRow
+            label={t("Aylık trafik")}
+            used={data.traffic_bytes}
+            limit={trafficLimit}
+            text={trafficLimit === null ? formatBytes(data.traffic_bytes) : `${formatBytes(data.traffic_bytes)} / ${formatBytes(trafficLimit, 0)}`}
+          />
+        </dl>
+        {trafficLimit !== null && <p className="mt-2 text-[13px] text-ink-3">{t("Trafik her ayın başında sıfırlanır (UTC).")}</p>}
+        {data.traffic_suspended_sites > 0 && (
+          <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-[13.5px] text-warn">
+            {t("Aylık trafik sınırı aşıldığı için {count} site askıya alındı. Ay başında, sınır yükseltilince ya da paket değişince kendiliğinden yeniden açılır.", {
+              count: data.traffic_suspended_sites,
+            })}
+          </p>
+        )}
+      </div>
       <ResourceUsage limits={data.limits} runtime={data.runtime} />
+      {data.customers && <CustomerTotalsView totals={data.customers} limits={data.limits} />}
       {data.database_bytes !== null && (
         <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
           <span className="text-ink-2">{t("Disk kullanımının veritabanları payı")}</span>
           <span className="tabular font-mono text-[13.5px]">{formatBytes(data.database_bytes)}</span>
         </p>
       )}
-      <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
-        <span className="text-ink-2">{t("Aylık trafik")}</span>
-        <span className="tabular font-mono text-[13.5px]">{formatBytes(data.traffic_bytes)}</span>
-      </p>
       {data.disk_measured_at !== null && (
         <p className="mt-3 text-[13px] text-ink-3">{t("Disk kullanımı saatte bir ölçülür; son ölçüm {when}.", { when: formatRelative(data.disk_measured_at) })}</p>
       )}

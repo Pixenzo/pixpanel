@@ -596,6 +596,24 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE api_tokens ADD COLUMN scope TEXT;
     "#,
+    // 34: aylık trafik sınırı. `traffic_state` hesabın o ay en son hangi düzeyde (1: %80, 2: doldu)
+    //     bildirildiğini tutar; bildirim ayda bir kez gitsin diye. `traffic_suspensions` sınır
+    //     yüzünden askıya alınan siteleri işaretler: yalnız bunlar kendiliğinden geri açılır,
+    //     yöneticinin elle askıya aldığı site asla açılmaz.
+    r#"
+    CREATE TABLE traffic_state (
+        user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        month        INTEGER NOT NULL,
+        warned_level INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE traffic_suspensions (
+        site_id    INTEGER PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        month      INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX traffic_suspensions_user ON traffic_suspensions(user_id);
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

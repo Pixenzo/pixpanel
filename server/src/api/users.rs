@@ -41,6 +41,8 @@ struct UserInfo {
     two_factor: bool,
     package_id: Option<i64>,
     package_name: Option<String>,
+    /// Yalnız bayi satırlarında: müşterilerinin toplam kullanımı.
+    customer_totals: Option<crate::quota::CustomerTotals>,
 }
 
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<UserInfo>>> {
@@ -74,10 +76,15 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
                 two_factor: row.get(11)?,
                 package_id: row.get(12)?,
                 package_name: row.get(13)?,
+                customer_totals: None,
             })
         })?;
-        rows.collect()
+        rows.collect::<rusqlite::Result<Vec<UserInfo>>>()
     })?;
+    let mut users = users;
+    for info in users.iter_mut().filter(|info| info.role == "reseller") {
+        info.customer_totals = crate::quota::totals_for_reseller(&state.db, info.id)?;
+    }
     Ok(Json(users))
 }
 
@@ -373,6 +380,13 @@ async fn update(
     // Paket atandı ya da kaldırıldı: hesabın işlemci/bellek sınırları sisteme uygulanır.
     if package_change.is_some() {
         crate::hosting::resource_limits::sync(&state, Some(&[id])).await;
+        // Yeni paketin trafik sınırı hemen uygulanır; eski paketin sınırı yüzünden askıda kalan siteler açılır.
+        let enforce_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(err) = crate::quota::traffic::enforce_account(&enforce_state, id).await {
+                tracing::warn!(error = %err, account = id, "trafik sınırı denetlenemedi");
+            }
+        });
     }
     auth::audit(&state.db, &user, "user.update", &target.username, "");
     Ok(Json(json!({ "ok": true })))

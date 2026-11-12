@@ -369,6 +369,25 @@ pub fn site_month_bytes(db: &Db, site_id: i64) -> AppResult<i64> {
     Ok(db.call(|conn| conn.query_row("SELECT COALESCE(SUM(bytes), 0) FROM site_stats_daily WHERE site_id = ?1 AND day > ?2", params![site_id, month_start], |row| row.get(0)))?)
 }
 
+/// Unix anının takvim ayı (UTC) `YYYYMM` olarak; trafik sınırının "bu ay" ayrımı için.
+pub fn month_key(unix: i64) -> i64 {
+    day_key(unix) / 100
+}
+
+/// Bayinin müşterilerinin (alt hesaplar kaynak sahibi olmadığından yalnız doğrudan müşteriler)
+/// bu ayki toplam aktarımı (bayt).
+pub fn customers_month_bytes(db: &Db, reseller_id: i64) -> AppResult<i64> {
+    let month_start = day_key(now()) / 100 * 100;
+    db.call(|conn| {
+        conn.query_row(
+            "SELECT COALESCE(SUM(d.bytes), 0) FROM site_stats_daily d JOIN sites s ON s.id = d.site_id JOIN users u ON u.id = s.user_id
+             WHERE u.parent_id = ?1 AND u.role = 'user' AND d.day > ?2",
+            params![reseller_id, month_start],
+            |row| row.get(0),
+        )
+    })
+}
+
 pub fn account_month_bytes(db: &Db, account_id: i64) -> AppResult<i64> {
     let month_start = day_key(now()) / 100 * 100;
     db.call(|conn| {

@@ -412,11 +412,11 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 
 | Yöntem | Yol | Açıklama | Yetki |
 | --- | --- | --- | --- |
-| GET | `/users` | Hesaplar (yönetici hepsini, bayi/müşteri kendi açtıklarını). Alt hesap `403`. | Giriş |
+| GET | `/users` | Hesaplar (yönetici hepsini, bayi/müşteri kendi açtıklarını). Bayi satırları `customer_totals` (müşterilerinin toplam kullanımı) taşır. Alt hesap `403`. | Giriş |
 | POST | `/users` | Hesap açar (yönetici: admin/bayi/müşteri; bayi: müşteri; müşteri: alt hesap). | Giriş |
 | PATCH | `/users/{id}` | Hesabı günceller (e-posta, paket, askıya alma, alt hesap yetkileri). | Sahip/yönetici |
 | DELETE | `/users/{id}` | Hesabı siler. | Sahip/yönetici |
-| GET | `/users/{id}/usage` | Hesabın kaynak kullanımı. | Sahip/yönetici |
+| GET | `/users/{id}/usage` | Hesabın kaynak kullanımı (`/packages/usage` ile aynı biçim; bayide müşteri toplamı dahil). | Sahip/yönetici |
 | POST | `/users/{id}/2fa/reset` | Hesabın iki adımlı doğrulamasını sıfırlar. | Oturum |
 | POST | `/users/{id}/impersonate` | Hesap adına oturum açar. | Oturum |
 | GET | `/users/{id}/access` | SFTP/SSH erişim durumu. | Sahip/yönetici |
@@ -431,10 +431,10 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | --- | --- | --- | --- |
 | GET | `/packages` | Hosting paketleri. | Yönetici/Bayi |
 | GET | `/packages/limits-support` | İşlemci ve bellek sınırlarının bu sunucuda uygulanıp uygulanamadığı. | Yönetici/Bayi |
-| POST | `/packages` | Paket oluşturur. | Yönetici/Bayi |
+| POST | `/packages` | Paket oluşturur. Sınır alanları arasında `traffic_gb` (aylık trafik, 1–1000000 GB) ve `traffic_action` (`notify` ya da `suspend`). | Yönetici/Bayi |
 | PATCH | `/packages/{id}` | Paketi günceller. | Yönetici/Bayi |
 | DELETE | `/packages/{id}` | Paketi siler. | Yönetici/Bayi |
-| GET | `/packages/usage` | Hesabın kendi kota kullanımı. | Giriş |
+| GET | `/packages/usage` | Hesabın kendi kota kullanımı: sınırlar, sayılar, disk, bu ayki trafik (`traffic_bytes`), trafik yüzünden askıdaki site sayısı (`traffic_suspended_sites`); bayi hesabında ayrıca müşterilerinin toplamı (`customers`: hesap, site, veritabanı, posta alanı/kutusu, disk, bu ayki trafik). | Giriş |
 | GET | `/branding` | Panel markası (ad, logo); oturumsuz da okunur, bayinin markası alan adına göre seçilir. | Genel |
 | PUT | `/branding` | Sunucu geneli markayı kaydeder. | Yönetici |
 | GET | `/branding/resellers/{id}` | Bayinin markası. | Yönetici/Bayi |

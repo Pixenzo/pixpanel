@@ -27,7 +27,7 @@ import {
 } from "../components/ui";
 import type { Role, UserInfo } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { formatRelative } from "../lib/format";
+import { formatBytes, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { PackageSelect, PackagesPanel, UsagePanel } from "./Packages";
@@ -393,6 +393,18 @@ export function UsersPage() {
                           </span>
                         )}
                         {user.email && <p className="text-[13px] text-ink-3">{user.email}</p>}
+                        {user.customer_totals && (
+                          <p className="text-[13px] text-ink-3">
+                            {t("{accounts} müşteri · {sites} site · {databases} veritabanı · {mailboxes} posta kutusu · {disk} disk · bu ay {traffic}", {
+                              accounts: user.customer_totals.accounts,
+                              sites: user.customer_totals.sites,
+                              databases: user.customer_totals.databases,
+                              mailboxes: user.customer_totals.mailboxes,
+                              disk: formatBytes(user.customer_totals.disk_bytes),
+                              traffic: formatBytes(user.customer_totals.traffic_bytes),
+                            })}
+                          </p>
+                        )}
                       </Td>
                       <Td>
                         <Badge tone={user.role === "admin" ? "accent" : "idle"}>{t(roleLabels[user.role])}</Badge>

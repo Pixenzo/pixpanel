@@ -15,6 +15,11 @@ use crate::db::{now, Db};
 use crate::dbms::Engine;
 use crate::error::{AppError, AppResult};
 
+mod totals;
+pub mod traffic;
+
+pub use totals::{for_reseller as totals_for_reseller, CustomerTotals};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Resource {
     Site,
@@ -71,6 +76,11 @@ pub struct Limits {
     pub php_workers: Option<i64>,
     /// Hesabın en çok kaç süreç/iş parçacığı çalıştırabileceği (systemd `TasksMax`). Aralık 20–10000.
     pub processes: Option<i64>,
+    /// Aylık trafik sınırı (GB): hesabın bütün sitelerinin takvim ayındaki toplam aktarımı. Aralık 1–1000000.
+    pub traffic_gb: Option<i64>,
+    /// Trafik sınırı dolunca ne olur: `notify` (yalnız bildirim; boşken de böyle) ya da `suspend`
+    /// (hesabın siteleri ay sonuna ya da sınır yükselene kadar askıya alınır).
+    pub traffic_action: Option<String>,
 }
 
 /// Kaynak sınırı alanlarının izin verilen aralıkları (dahil).
@@ -78,6 +88,7 @@ pub const CPU_PERCENT_RANGE: std::ops::RangeInclusive<i64> = 10..=3200;
 pub const MEMORY_MB_RANGE: std::ops::RangeInclusive<i64> = 64..=262_144;
 pub const PHP_WORKERS_RANGE: std::ops::RangeInclusive<i64> = 1..=200;
 pub const PROCESSES_RANGE: std::ops::RangeInclusive<i64> = 20..=10_000;
+pub const TRAFFIC_GB_RANGE: std::ops::RangeInclusive<i64> = 1..=1_000_000;
 
 impl Limits {
     fn of(&self, resource: Resource) -> Option<i64> {
@@ -91,7 +102,7 @@ impl Limits {
         }
     }
 
-    fn fields(&self) -> [(&'static str, Option<i64>); 11] {
+    fn fields(&self) -> [(&'static str, Option<i64>); 12] {
         [
             ("site", self.sites),
             ("veritabanı", self.databases),
@@ -104,6 +115,7 @@ impl Limits {
             ("bellek", self.memory_mb),
             ("PHP işçisi", self.php_workers),
             ("süreç", self.processes),
+            ("aylık trafik", self.traffic_gb),
         ]
     }
 
@@ -120,9 +132,15 @@ impl Limits {
             ("bellek", self.memory_mb, MEMORY_MB_RANGE),
             ("PHP işçisi", self.php_workers, PHP_WORKERS_RANGE),
             ("süreç", self.processes, PROCESSES_RANGE),
+            ("aylık trafik", self.traffic_gb, TRAFFIC_GB_RANGE),
         ] {
             if let Some(value) = value.filter(|value| !range.contains(value)) {
                 return Err(AppError::bad(format!("Geçersiz {label} sınırı: {value} ({}–{} arasında olmalı ya da boş bırakılmalı)", range.start(), range.end())));
+            }
+        }
+        if let Some(action) = self.traffic_action.as_deref() {
+            if !matches!(action, traffic::ACTION_NOTIFY | traffic::ACTION_SUSPEND) {
+                return Err(AppError::bad("Geçersiz trafik sınırı davranışı (notify ya da suspend olmalı)"));
             }
         }
         Ok(())
@@ -284,6 +302,10 @@ pub struct Usage {
     /// Hesabın işlemci/bellek/süreç sınırlarının sunucuda uygulanıp uygulanmadığı ve anlık kullanımı.
     /// Hesabın hiç kaynak sınırı yoksa `None`; uç işleyicileri doldurur (`resource_limits::runtime`).
     pub runtime: Option<crate::hosting::resource_limits::Runtime>,
+    /// Aylık trafik sınırı yüzünden şu an askıda olan site sayısı.
+    pub traffic_suspended_sites: i64,
+    /// Yalnız bayi hesabında: müşterilerinin toplam kullanımı.
+    pub customers: Option<CustomerTotals>,
 }
 
 /// Son ölçülen veritabanı toplam boyutu (bayt).
@@ -311,6 +333,8 @@ pub fn usage(db: &Db, account_id: i64) -> AppResult<Usage> {
         database_bytes: database_usage(db, account_id)?,
         disk_measured_at: disk.map(|(_, at)| at),
         runtime: None,
+        traffic_suspended_sites: traffic::suspended_site_count(db, account_id)?,
+        customers: totals::for_reseller(db, account_id)?,
     })
 }
 
@@ -528,6 +552,22 @@ mod tests {
         assert_eq!(mine(Some(300), Some(512)).within(&ceiling), Err("işlemci"));
         assert_eq!(mine(Some(100), None).within(&ceiling), Err("bellek"), "sınırsız, sınırlı tavanı aşar");
         assert!(mine(Some(3200), Some(262_144)).within(&Limits::default()).is_ok());
+    }
+
+    #[test]
+    fn traffic_limit_is_validated_and_capped_for_resellers() {
+        let with = |gb, action: Option<&str>| Limits { traffic_gb: gb, traffic_action: action.map(str::to_string), ..Limits::default() };
+        assert!(with(None, None).validate().is_ok());
+        assert!(with(Some(1), Some("notify")).validate().is_ok());
+        assert!(with(Some(1_000_000), Some("suspend")).validate().is_ok());
+        assert!(with(Some(0), None).validate().is_err());
+        assert!(with(Some(1_000_001), None).validate().is_err());
+        assert!(with(Some(-1), None).validate().is_err());
+        assert!(with(Some(10), Some("delete")).validate().is_err());
+        let ceiling = with(Some(500), None);
+        assert!(with(Some(100), Some("suspend")).within(&ceiling).is_ok());
+        assert_eq!(with(Some(501), None).within(&ceiling), Err("aylık trafik"));
+        assert_eq!(with(None, None).within(&ceiling), Err("aylık trafik"), "sınırsız, sınırlı tavanı aşar");
     }
 
     #[test]

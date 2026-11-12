@@ -577,6 +577,10 @@ async fn update(
         if !user.is_admin() && !(user.role == Role::Reseller && site.user_id != user.id) {
             return Err(AppError::Forbidden);
         }
+        // Elle verilen karar trafik sınırı kaydını geçersiz kılar: elle askıya alınan site kendiliğinden açılmaz.
+        if status == "suspended" {
+            crate::quota::traffic::forget_site(&state.db, site.id);
+        }
         site.status = status;
     }
     if let Some(settings) = body.node {
