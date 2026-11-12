@@ -77,9 +77,10 @@ struct PackageBody {
 async fn create(State(state): State<AppState>, user: AuthUser, Json(body): Json<PackageBody>) -> AppResult<Json<Value>> {
     require_manager(&user)?;
     let name = quota::validate_name(&body.name)?;
-    body.limits.validate()?;
-    check_ceiling(&state, &user, &body.limits)?;
-    let limits = serde_json::to_string(&body.limits).map_err(|err| AppError::internal(err.to_string()))?;
+    let wanted = body.limits.normalized();
+    wanted.validate()?;
+    check_ceiling(&state, &user, &wanted)?;
+    let limits = serde_json::to_string(&wanted).map_err(|err| AppError::internal(err.to_string()))?;
     let inserted = state.db.call(|conn| {
         let taken: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM packages WHERE owner_id = ?1 AND name = ?2)", params![user.id, name], |row| row.get(0))?;
         if taken {
@@ -97,9 +98,10 @@ async fn update(State(state): State<AppState>, user: AuthUser, Path(id): Path<i6
     require_manager(&user)?;
     let package = load_manageable(&state, &user, id)?;
     let name = quota::validate_name(&body.name)?;
-    body.limits.validate()?;
-    check_ceiling(&state, &user, &body.limits)?;
-    let limits = serde_json::to_string(&body.limits).map_err(|err| AppError::internal(err.to_string()))?;
+    let wanted = body.limits.normalized();
+    wanted.validate()?;
+    check_ceiling(&state, &user, &wanted)?;
+    let limits = serde_json::to_string(&wanted).map_err(|err| AppError::internal(err.to_string()))?;
     let renamed = state.db.call(|conn| {
         let taken: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM packages WHERE owner_id = ?1 AND name = ?2 AND id != ?3)",

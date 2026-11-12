@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useFeedback } from "../components/feedback";
 import {
+  Badge,
   Button,
   EmptyState,
   ErrorBlock,
@@ -43,6 +44,11 @@ const kindChoices: { id: SiteKind; title: string; description: string }[] = [
   { id: "proxy", title: "Ters vekil", description: "Başka bir adreste ya da portta çalışan uygulamaya yönlendirir" },
 ];
 
+/** Hesabın seçebileceği PHP sürümleri: kurulu sürümlerin paketin izin verdikleriyle kesişimi (yönetici için hepsi). */
+export function selectablePhpVersions(options: SiteOptions): string[] {
+  return options.php_allowed.length === 0 ? options.php_versions : options.php_versions.filter((version) => options.php_allowed.includes(version));
+}
+
 export function useSiteOptions() {
   return useQuery({ queryKey: ["site-options"], queryFn: () => api.get<SiteOptions>("/sites/options") });
 }
@@ -72,8 +78,9 @@ function CreateSiteModal({
   const domain = parent ? (prefix.trim() ? `${prefix.trim()}.${parent.domain}` : "") : fullDomain;
   const setDomain = setFullDomain;
   const [nodeVersion, setNodeVersion] = useState(options.node_versions[0] ?? "");
-  const [kind, setKind] = useState<SiteKind>(initialTarget !== undefined ? "proxy" : options.php_versions.length > 0 ? "php" : "static");
-  const [phpVersion, setPhpVersion] = useState(options.php_versions[0] ?? "");
+  const phpChoices = selectablePhpVersions(options);
+  const [kind, setKind] = useState<SiteKind>(initialTarget !== undefined ? "proxy" : phpChoices.length > 0 ? "php" : "static");
+  const [phpVersion, setPhpVersion] = useState(phpChoices[0] ?? "");
   const [proxyTarget, setProxyTarget] = useState(initialTarget || "http://127.0.0.1:3000");
   const [withWww, setWithWww] = useState(true);
   const [withWordPress, setWithWordPress] = useState(false);
@@ -106,7 +113,9 @@ function CreateSiteModal({
     create.mutate();
   }
 
-  const phpMissing = kind === "php" && options.php_versions.length === 0;
+  const phpMissing = kind === "php" && phpChoices.length === 0;
+  // Kurulu sürüm var ama paket hiçbirine izin vermiyorsa kurulum bağlantısı yerine paket uyarısı gösterilir.
+  const phpBlockedByPackage = phpMissing && options.php_versions.length > 0;
   const nodeMissing = kind === "node" && options.node_versions.length === 0;
   const pythonMissing = kind === "python" && options.python_versions.length === 0;
 
@@ -191,7 +200,9 @@ function CreateSiteModal({
         </fieldset>
 
         {kind === "php" &&
-          (phpMissing ? (
+          (phpBlockedByPackage ? (
+            <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">{t("Paketiniz kurulu hiçbir PHP sürümüne izin vermiyor. Paketinizin yükseltilmesini isteyin.")}</p>
+          ) : phpMissing ? (
             <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
               {t("Henüz kurulu bir PHP sürümü yok.")}{" "}
               <Link to="/components" className="font-medium underline">
@@ -201,7 +212,7 @@ function CreateSiteModal({
           ) : (
             <>
               <Select label={t("PHP sürümü")} value={phpVersion} onChange={(event) => setPhpVersion(event.target.value)}>
-                {options.php_versions.map((version) => (
+                {phpChoices.map((version) => (
                   <option key={version} value={version}>
                     PHP {version}
                   </option>
@@ -413,6 +424,11 @@ function SiteCard({
           </div>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[13px] text-ink-3">
             <span>{siteKindLabel(site)}</span>
+            {site.php_out_of_package && (
+              <span title={t("Bu PHP sürümü hesabın paketindeki izinli sürümlerin dışında; site çalışmaya devam eder ama sürümü yalnızca izinli bir sürüme değiştirebilirsiniz.")}>
+                <Badge tone="warn">{t("paket dışı sürüm")}</Badge>
+              </span>
+            )}
             <span className="flex items-center gap-1">
               {site.ssl_mode === "none" ? <LockOpen aria-hidden className="size-3" /> : <Lock aria-hidden className="size-3 text-ok" />}
               {site.ssl_mode === "none" ? t("SSL yok") : "SSL"}

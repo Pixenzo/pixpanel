@@ -7,14 +7,17 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
-import { Button, EmptyState, ErrorBlock, IconButton, Input, LoadingBlock, Meter, Modal, Panel, Select, Table, Td, Th } from "../components/ui";
-import type { AccountUsage, PackageInfo, PackageLimits } from "../lib/api";
+import { Button, Checkbox, EmptyState, ErrorBlock, IconButton, Input, LoadingBlock, Meter, Modal, Panel, Select, Table, Td, Th } from "../components/ui";
+import type { AccountUsage, PackageInfo, PackageLimits, SiteOptions } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 
+/** Sayısal sınır alanları (PHP sürüm listesi hariç). */
+type NumericLimit = Exclude<keyof PackageLimits, "allowed_php_versions">;
+
 /** Sınır alanları, formda ve tabloda gösterildiği sırayla. */
-const LIMIT_FIELDS: { key: keyof PackageLimits; label: string; unit?: string }[] = [
+const LIMIT_FIELDS: { key: NumericLimit; label: string; unit?: string }[] = [
   { key: "sites", label: "Site" },
   { key: "databases", label: "Veritabanı" },
   { key: "mail_domains", label: "Posta alan adı" },
@@ -25,7 +28,7 @@ const LIMIT_FIELDS: { key: keyof PackageLimits; label: string; unit?: string }[]
 ];
 
 /** İşlemci, bellek ve süreç sınırları; aralıklar sunucudaki doğrulamayla aynıdır. */
-const RESOURCE_FIELDS: { key: keyof PackageLimits; label: string; unit: string; min: number; max: number; hint: string }[] = [
+const RESOURCE_FIELDS: { key: NumericLimit; label: string; unit: string; min: number; max: number; hint: string }[] = [
   {
     key: "cpu_percent",
     label: "İşlemci",
@@ -58,9 +61,17 @@ const RESOURCE_FIELDS: { key: keyof PackageLimits; label: string; unit: string; 
     max: 10000,
     hint: "Hesabın en çok kaç süreç ve iş parçacığı çalıştırabileceği.",
   },
+  {
+    key: "redis_memory_mb",
+    label: "Redis belleği",
+    unit: "MB",
+    min: 0,
+    max: 4096,
+    hint: "Hesabın Redis örneğinin bellek sınırı (maxmemory). 0 yazarsanız pakette Redis bulunmaz; boş bırakırsanız örnek varsayılan 64 MB ile açılır ve yönetici değiştirebilir.",
+  },
 ];
 
-const ALL_FIELDS: { key: keyof PackageLimits }[] = [...LIMIT_FIELDS, ...RESOURCE_FIELDS];
+const ALL_FIELDS: { key: NumericLimit }[] = [...LIMIT_FIELDS, ...RESOURCE_FIELDS];
 
 function limitText(value: number | null, unit?: string): string {
   if (value === null) return t("Sınırsız");
@@ -75,6 +86,8 @@ function resourceSummary(limits: PackageLimits): string {
   if (limits.memory_mb !== null) parts.push(t("Bellek {size}", { size: formatBytes(limits.memory_mb * 1024 * 1024, 0) }));
   if (limits.processes !== null) parts.push(t("{n} süreç", { n: limits.processes }));
   if (limits.php_workers !== null) parts.push(t("{n} PHP işçisi", { n: limits.php_workers }));
+  if (limits.redis_memory_mb !== null) parts.push(limits.redis_memory_mb === 0 ? t("Redis yok") : t("Redis {size}", { size: formatBytes(limits.redis_memory_mb * 1024 * 1024, 0) }));
+  if (limits.allowed_php_versions.length > 0) parts.push(t("PHP {list}", { list: limits.allowed_php_versions.join(", ") }));
   return parts.length === 0 ? t("Sınırsız") : parts.join(" · ");
 }
 
@@ -86,12 +99,17 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(ALL_FIELDS.map((field) => [field.key, pack?.limits[field.key]?.toString() ?? ""])),
   );
+  const [phpVersions, setPhpVersions] = useState<string[]>(pack?.limits.allowed_php_versions ?? []);
+  const siteOptions = useQuery({ queryKey: ["site-options"], queryFn: () => api.get<SiteOptions>("/sites/options") });
+  // Kurulu sürümlere, pakette zaten seçili olup artık kurulu olmayanlar da eklenir (seçimi kaldırabilmek için).
+  const installed = siteOptions.data?.php_versions ?? [];
+  const choices = [...installed, ...phpVersions.filter((version) => !installed.includes(version))];
   const support = useQuery({ queryKey: ["packages", "limits-support"], queryFn: () => api.get<{ enforced: boolean; warning: string | null }>("/packages/limits-support") });
 
   const save = useMutation({
     mutationFn: () => {
-      const limits = Object.fromEntries(ALL_FIELDS.map((field) => [field.key, values[field.key].trim() === "" ? null : Number(values[field.key])]));
-      const body = { name, limits };
+      const numbers = Object.fromEntries(ALL_FIELDS.map((field) => [field.key, values[field.key].trim() === "" ? null : Number(values[field.key])]));
+      const body = { name, limits: { ...numbers, allowed_php_versions: phpVersions } };
       return pack ? api.patch(`/packages/${pack.id}`, body) : api.post("/packages", body);
     },
     onSuccess: () => {
@@ -167,6 +185,26 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
             <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-[13.5px] text-warn">
               {t(support.data.warning ?? "Bu sunucuda işlemci ve bellek sınırları uygulanamıyor.")}
             </p>
+          )}
+        </fieldset>
+        <fieldset>
+          <legend className="text-[13.5px] font-medium text-ink-2">{t("İzinli PHP sürümleri")}</legend>
+          <p className="mt-0.5 mb-3 text-[13px] text-ink-3">
+            {t("Hiçbirini seçmezseniz kurulu bütün sürümler kullanılabilir. Seçerseniz hesap yalnızca bu sürümlerle site açabilir ve sürüm değiştirebilir; var olan siteler çalışmaya devam eder ama “paket dışı sürüm” olarak işaretlenir. Yönetici bu kısıttan muaftır.")}
+          </p>
+          {choices.length === 0 ? (
+            <p className="text-[13.5px] text-ink-3">{t("Henüz kurulu bir PHP sürümü yok.")}</p>
+          ) : (
+            <div className="grid gap-x-4 gap-y-1 sm:grid-cols-3">
+              {choices.map((version) => (
+                <Checkbox
+                  key={version}
+                  label={`PHP `}
+                  checked={phpVersions.includes(version)}
+                  onChange={(event) => setPhpVersions((current) => (event.target.checked ? [...current, version] : current.filter((item) => item !== version)))}
+                />
+              ))}
+            </div>
           )}
         </fieldset>
         {pack && pack.accounts > 0 && (
@@ -413,6 +451,22 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
         />
       </dl>
       <ResourceUsage limits={data.limits} runtime={data.runtime} />
+      {(data.limits.redis_memory_mb !== null || data.limits.allowed_php_versions.length > 0) && (
+        <dl className="mt-4 grid gap-x-8 gap-y-2 border-t border-line pt-3 sm:grid-cols-2">
+          {data.limits.redis_memory_mb !== null && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-ink-2">Redis</dt>
+              <dd className="tabular font-mono text-[13.5px]">{data.limits.redis_memory_mb === 0 ? t("Pakette yok") : t("En çok {size}", { size: formatBytes(data.limits.redis_memory_mb * 1024 * 1024, 0) })}</dd>
+            </div>
+          )}
+          {data.limits.allowed_php_versions.length > 0 && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-ink-2">{t("İzinli PHP sürümleri")}</dt>
+              <dd className="tabular font-mono text-[13.5px]">{data.limits.allowed_php_versions.join(", ")}</dd>
+            </div>
+          )}
+        </dl>
+      )}
       {data.database_bytes !== null && (
         <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
           <span className="text-ink-2">{t("Disk kullanımının veritabanları payı")}</span>

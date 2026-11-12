@@ -60,6 +60,7 @@ async fn client_for(state: &AppState, user: &AuthUser) -> AppResult<Client> {
         return Client::connect().await;
     }
     user.require(ACCOUNT_AREA)?;
+    redis_account::require_allowed(&state.db, user.owner_id())?;
     let instance = redis_account::get(&state.db, user.owner_id())?.ok_or_else(|| AppError::bad("Bu hesap için Redis açık değil"))?;
     redis_account::connect(&instance).await
 }
@@ -105,8 +106,13 @@ async fn instance_json(instance: &Instance, with_secret: bool) -> Json_ {
 
 async fn mine_view(state: &AppState, user: &AuthUser) -> AppResult<Json_> {
     let instance = redis_account::get(&state.db, user.owner_id())?;
+    let (package, plan) = redis_account::plan_for(&state.db, user.owner_id())?;
     Ok(json!({
         "available": redis_account::is_available(),
+        // Paket Redis'e izin vermiyorsa (`redis_memory_mb` = 0) örnek açılamaz; açık örnek durdurulmuştur.
+        "allowed": plan != redis_account::PackagePlan::Denied,
+        "package": package,
+        "package_memory_mb": match plan { redis_account::PackagePlan::Fixed(memory) => Some(memory), _ => None },
         "instance": match &instance {
             Some(instance) => instance_json(instance, true).await,
             None => Json_::Null,
@@ -143,6 +149,7 @@ async fn mine_disable(State(state): State<AppState>, user: AuthUser) -> AppResul
 async fn mine_password(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Json_>> {
     user.require(ACCOUNT_AREA)?;
     let _guard = state.sys_lock.lock().await;
+    redis_account::require_allowed(&state.db, user.owner_id())?;
     let instance = redis_account::rotate_password(&state.db, user.owner_id()).await?;
     auth::audit(&state.db, &user, "redis.account.password", &instance.username, "");
     Ok(Json(mine_view(&state, &user).await?))
@@ -155,7 +162,13 @@ async fn accounts(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
     let mut list = Vec::new();
     for instance in redis_account::list(&state.db)? {
         // Parola yöneticinin listesinde gösterilmez; hesabın kendi sayfasındadır.
-        list.push(instance_json(&instance, false).await);
+        let mut view = instance_json(&instance, false).await;
+        let (package, plan) = redis_account::plan_for(&state.db, instance.user_id)?;
+        // Bellek sınırı paketten geliyorsa yönetici örnek başına değiştiremez.
+        view["memory_from_package"] = json!(package.is_some() && plan != redis_account::PackagePlan::Unrestricted);
+        view["package"] = json!(package);
+        view["allowed"] = json!(plan != redis_account::PackagePlan::Denied);
+        list.push(view);
     }
     Ok(Json(json!({ "accounts": list, "max_memory_mb": redis_account::MAX_MEMORY_MB })))
 }

@@ -110,7 +110,12 @@ async fn resolve_scope(state: &AppState, user: &AuthUser, scope: &str) -> AppRes
 /// Yardımcı süreci başlatır ve istek zarfını standart girdisine yazar.
 async fn spawn_helper(scope: &Scope, request: Request) -> AppResult<Child> {
     let exe = std::env::current_exe()?;
-    let mut child = Command::new(exe)
+    // Ağır işlemler (kopyalama, sıkıştırma, arşiv açma) hesabın kaynak diliminde çalışır; dilim
+    // kullanılamıyorsa ya da hesabın sınırı yoksa yardımcı eskisi gibi doğrudan başlar.
+    let heavy = matches!(request, Request::Copy { .. } | Request::Compress { .. } | Request::Extract { .. });
+    let (program, prefix_args) = if heavy { crate::sys::runas::wrap_for_account(scope.uid, exe) } else { (exe.into_os_string(), Vec::new()) };
+    let mut child = Command::new(program)
+        .args(prefix_args)
         .arg("fs-helper")
         .env_clear()
         .stdin(Stdio::piped())

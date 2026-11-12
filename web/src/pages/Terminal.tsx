@@ -107,7 +107,7 @@ export function TerminalPage() {
   const roots = useQuery({ queryKey: ["file-roots"], queryFn: () => api.get<Root[]>("/files/roots") });
   // Başka sayfalar terminali belirli bir hedefle açabilir (ör. `?kapsam=container:web`).
   const [searchParams] = useSearchParams();
-  const [scope, setScope] = useState(searchParams.get("kapsam") || "root");
+  const [requested, setRequested] = useState(searchParams.get("kapsam") ?? "");
   const [attempt, setAttempt] = useState(0);
 
   if (roots.isPending) return <LoadingBlock />;
@@ -115,6 +115,10 @@ export function TerminalPage() {
 
   // Root en başta gelsin; hesaplar onun ardından listelenir.
   const targets = [...roots.data.filter((root) => root.id === "root"), ...roots.data.filter((root) => root.id !== "root")];
+  // Yönetici olmayan hesapta "root" yoktur: ilk hedef (kendi hesabı) seçilir. İstenen hedef listede yoksa
+  // (konteyner dışında) yine ilk hedefe dönülür; sunucu yetkisiz hedefi zaten reddeder.
+  const scope = requested.startsWith("container:") || targets.some((target) => target.id === requested) ? requested : (targets[0]?.id ?? "root");
+  const setScope = setRequested;
 
   return (
     <div className="flex h-[calc(100dvh-6.5rem)] flex-col">

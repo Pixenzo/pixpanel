@@ -67,7 +67,40 @@ function PasswordField({ value, onChange, label }: { value: string; onChange: (n
   );
 }
 
-function HostField({ value, onChange, remoteEnabled }: { value: string; onChange: (next: string) => void; remoteEnabled: boolean }) {
+/** Uzak adresten bağlanan kullanıcı için "TLS zorunlu" notu ve örnek istemci komutu. */
+function RemoteClientHint({ engine, userName }: { engine: DbEngine; userName?: string }) {
+  const server = window.location.hostname;
+  const user = userName ?? t("KULLANICI");
+  const command =
+    engine === "mariadb"
+      ? `mariadb --ssl -h ${server} -P 3306 -u ${user} -p`
+      : `psql "host=${server} port=5432 user=${user} dbname=${t("VERITABANI")} sslmode=require"`;
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
+      <p className="flex flex-wrap items-center gap-2">
+        <Badge tone="ok">{t("TLS zorunlu")}</Badge>
+        {t("Uzak adresten yalnızca şifreli (TLS) bağlantı kabul edilir; şifresiz bağlantı reddedilir.")}
+      </p>
+      <code className="block rounded border border-line bg-surface px-2.5 py-1.5 font-mono text-[12.5px] break-all select-all">{command}</code>
+      {engine === "mariadb" && <p className="text-[13px] text-ink-3">{t("Sunucu sertifikası kendinden imzalıysa istemciye --skip-ssl-verify-server-cert ekleyin (ya da panele alan adı verip Let's Encrypt sertifikası alın).")}</p>}
+    </div>
+  );
+}
+
+function HostField({
+  value,
+  onChange,
+  remoteEnabled,
+  engine,
+  userName,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  remoteEnabled: boolean;
+  engine?: DbEngine;
+  userName?: string;
+}) {
+
   const preset = value === "localhost" || value === "%" ? value : "custom";
   return (
     <div className="flex flex-col gap-3">
@@ -99,6 +132,7 @@ function HostField({ value, onChange, remoteEnabled }: { value: string; onChange
           {t("İnternetteki herkes bu kullanıcıyla bağlanmayı deneyebilir; tek koruma parolanızdır. Mümkünse belirli bir IP adresi girin.")}
         </p>
       )}
+      {value !== "localhost" && value !== "" && engine && <RemoteClientHint engine={engine} userName={userName} />}
       {value !== "localhost" && !remoteEnabled && (
         <p className="rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
           {t("Sunucuda uzaktan bağlantı kapalı; yöneticinin açması gerekir. Adres kaydedilir, ayar açılınca geçerli olur.")}
@@ -230,7 +264,7 @@ function CreateDatabaseModal({
               required
             />
             <PasswordField label={t("Parola")} value={password} onChange={setPassword} />
-            <HostField value={host} onChange={setHost} remoteEnabled={engines.find((item) => item.id === engine)?.remote_enabled ?? false} />
+            <HostField value={host} onChange={setHost} remoteEnabled={engines.find((item) => item.id === engine)?.remote_enabled ?? false} engine={engine} />
             <p className="rounded-md bg-accent-soft px-3 py-2 text-[13.5px] text-accent">
               {t("Parolayı şimdi kopyalayın; oluşturduktan sonra yeniden gösterilmez, yalnızca değiştirilebilir.")}
             </p>
@@ -292,7 +326,7 @@ function CreateUserModal({ engine, prefix, remoteEnabled, onClose }: { engine: D
           required
         />
         <PasswordField label={t("Parola")} value={password} onChange={setPassword} />
-        <HostField value={host} onChange={setHost} remoteEnabled={remoteEnabled} />
+        <HostField value={host} onChange={setHost} remoteEnabled={remoteEnabled} engine={engine} />
         <p className="text-[13.5px] text-ink-3">{t("Kullanıcıyı oluşturduktan sonra erişebileceği veritabanlarını “Erişim” düğmesinden seçin.")}</p>
         {create.isError && <ErrorBlock message={errorMessage(create.error)} />}
       </form>
@@ -335,7 +369,7 @@ function HostModal({ user, remoteEnabled, onClose }: { user: DbUserInfo; remoteE
         }}
         className="flex flex-col gap-5"
       >
-        <HostField value={host} onChange={setHost} remoteEnabled={remoteEnabled} />
+        <HostField value={host} onChange={setHost} remoteEnabled={remoteEnabled} engine={user.engine} userName={user.name} />
         <p className="text-[13.5px] text-ink-3">{t("Eski adresten yapılacak yeni bağlantılar reddedilir; zaten açık olan bağlantılar kapanana kadar sürer.")}</p>
         {change.isError && <ErrorBlock message={errorMessage(change.error)} />}
       </form>

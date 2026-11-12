@@ -44,10 +44,11 @@ export function RemoteAccessStrip({ engine, label }: { engine: DbEngine; label: 
 
   const warnings: string[] = [];
   if (info.remote_enabled && info.tls === false) {
-    warnings.push(t("Sunucuda TLS kapalı; uzak bağlantılar şifresiz gider. PostgreSQL’de ssl ayarını açmanız önerilir."));
-  }
-  if (info.remote_enabled && info.id === "mariadb") {
-    warnings.push(t("MariaDB uzak bağlantıda TLS zorunlu kılmaz; hassas veriler için istemcide TLS kullanın ya da adresi kısıtlayın."));
+    warnings.push(
+      info.id === "mariadb"
+        ? t("MariaDB’de TLS açık görünmüyor; uzak adresli kullanıcılar TLS şartı yüzünden bağlanamaz. Uzaktan erişimi kapatıp yeniden açın.")
+        : t("Sunucuda TLS kapalı; uzak bağlantılar şifresiz gider. PostgreSQL’de ssl ayarını açmanız önerilir."),
+    );
   }
   // Panel güvenlik duvarı portunu kendiliğinden açmaz; yalnızca bilgi verir.
   const firewallClosed = info.firewall_enabled && !info.firewall_port_open;
@@ -58,6 +59,11 @@ export function RemoteAccessStrip({ engine, label }: { engine: DbEngine; label: 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
           <span className="font-medium text-ink">{t("Uzaktan erişim")}</span>
           <Badge tone={info.remote_enabled ? "warn" : "idle"}>{info.remote_enabled ? t("Açık") : t("Kapalı")}</Badge>
+          {info.remote_enabled && info.tls !== false && (
+            <span title={t("Uzak adresli kullanıcılar yalnızca şifreli (TLS) bağlanabilir.")}>
+              <Badge tone="ok">{t("TLS zorunlu")}</Badge>
+            </span>
+          )}
           {info.listen && (
             <span className="text-[13.5px] text-ink-3">
               {t("Dinlenen adres")}: <Mono>{info.listen}</Mono>:<Mono>{info.port}</Mono>

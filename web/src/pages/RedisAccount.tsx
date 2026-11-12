@@ -51,7 +51,7 @@ function CopyField({ label, value, hint, secret }: { label: string; value: strin
   );
 }
 
-function ConnectionTab({ instance }: { instance: RedisAccountInstance }) {
+function ConnectionTab({ instance, fromPackage }: { instance: RedisAccountInstance; fromPackage: boolean }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const password = instance.password ?? "";
@@ -117,7 +117,11 @@ function ConnectionTab({ instance }: { instance: RedisAccountInstance }) {
               </span>
             </div>
             <Meter value={(instance.used_memory / limit) * 100} label={t("Bellek")} />
-            <p className="mt-2 text-[13px] text-ink-3">{t("Sınır dolunca en uzun süredir kullanılmayan anahtarlar kendiliğinden atılır. Sınırı sunucu yöneticisi belirler.")}</p>
+            <p className="mt-2 text-[13px] text-ink-3">
+              {fromPackage
+                ? t("Sınır dolunca en uzun süredir kullanılmayan anahtarlar kendiliğinden atılır. Sınır paketinizden gelir; artırmak için paketinizi yükseltin.")
+                : t("Sınır dolunca en uzun süredir kullanılmayan anahtarlar kendiliğinden atılır. Sınırı sunucu yöneticisi belirler.")}
+            </p>
           </div>
         )}
       </Panel>
@@ -158,7 +162,7 @@ function ConnectionTab({ instance }: { instance: RedisAccountInstance }) {
 type TabId = "connection" | "keys" | "console";
 const TAB_SLUGS: Record<TabId, string> = { connection: "baglanti", keys: "anahtarlar", console: "konsol" };
 
-function InstanceTabs({ instance }: { instance: RedisAccountInstance }) {
+function InstanceTabs({ instance, fromPackage }: { instance: RedisAccountInstance; fromPackage: boolean }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -205,7 +209,7 @@ function InstanceTabs({ instance }: { instance: RedisAccountInstance }) {
         onChange={selectTab}
         label={t("Redis bölümleri")}
       />
-      {tab === "connection" && <ConnectionTab instance={instance} />}
+      {tab === "connection" && <ConnectionTab instance={instance} fromPackage={fromPackage} />}
       {tab === "keys" && <RedisBrowser info={info} onFlush={(db) => void confirmFlush(db)} flushing={flush.isPending} />}
       {tab === "console" && <RedisConsole info={info} />}
     </>
@@ -226,6 +230,26 @@ export function AccountRedisPage() {
     },
   });
 
+  const disable = useMutation({
+    mutationFn: () => api.post<RedisAccountView>("/redis/mine/disable"),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["redis-mine"], updated);
+      feedback.success(t("Redis kapatıldı"));
+    },
+    onError: (error) => feedback.error(error),
+  });
+
+  async function closeDenied() {
+    const confirmed = await feedback.confirm({
+      title: t("Redis kapatılsın mı?"),
+      description: t("Redis örneğiniz durdurulur ve içindeki bütün veriler (önbellek, oturumlar, kuyruklar) kalıcı olarak silinir. Bu işlem geri alınamaz."),
+      confirmLabel: t("Redis'i kapat"),
+      danger: true,
+      typeToConfirm: "redis",
+    });
+    if (confirmed) disable.mutate();
+  }
+
   let body;
   if (!mine.data) {
     body = mine.isError ? <ErrorBlock message={errorMessage(mine.error)} onRetry={() => void mine.refetch()} /> : <LoadingBlock />;
@@ -233,6 +257,27 @@ export function AccountRedisPage() {
     body = (
       <Panel flush>
         <EmptyState title={t("Redis bu sunucuda kurulu değil")} description={t("Redis kullanmak için sunucu yöneticinizden kurmasını isteyin.")} />
+      </Panel>
+    );
+  } else if (!mine.data.allowed) {
+    // Paket Redis içermiyor: açılamaz; açık bir örnek varsa durdurulmuştur ve yalnızca kapatılabilir.
+    body = (
+      <Panel flush>
+        <EmptyState
+          title={t("Paketiniz Redis içermiyor")}
+          description={
+            mine.data.instance === null
+              ? t("“{name}” paketinde Redis yok. Redis kullanmak için paketinizin yükseltilmesini isteyin.", { name: mine.data.package ?? "" })
+              : t("“{name}” paketinde Redis yok; örneğiniz durduruldu, verileriniz korunuyor. Paketiniz Redis'e yeniden izin verirse örnek kendiliğinden başlar.", { name: mine.data.package ?? "" })
+          }
+          action={
+            mine.data.instance === null ? undefined : (
+              <Button variant="danger" onClick={() => void closeDenied()} loading={disable.isPending}>
+                {t("Redis'i kapat")}
+              </Button>
+            )
+          }
+        />
       </Panel>
     );
   } else if (mine.data.instance === null) {
@@ -255,7 +300,7 @@ export function AccountRedisPage() {
       </Panel>
     );
   } else {
-    body = <InstanceTabs instance={mine.data.instance} />;
+    body = <InstanceTabs instance={mine.data.instance} fromPackage={mine.data.package_memory_mb !== null} />;
   }
 
   return (
@@ -378,7 +423,9 @@ export function RedisAccountsPanel() {
                   <Td>
                     <span className="font-medium">{instance.username}</span>
                   </Td>
-                  <Td>{instance.running ? <Status tone="ok">{t("Çalışıyor")}</Status> : <Status tone="bad">{t("Durmuş")}</Status>}</Td>
+                  <Td>
+                    {instance.running ? <Status tone="ok">{t("Çalışıyor")}</Status> : <Status tone="bad">{instance.allowed === false ? t("Pakette yok") : t("Durmuş")}</Status>}
+                  </Td>
                   <Td align="right">
                     <Mono>{instance.port}</Mono>
                   </Td>
@@ -387,10 +434,19 @@ export function RedisAccountsPanel() {
                     <span className="tabular font-mono text-[13.5px]">
                       {instance.used_memory === null ? "—" : formatBytes(instance.used_memory)} / {instance.memory_mb} MB
                     </span>
+                    {instance.memory_from_package && <span className="ml-1.5 text-[12.5px] text-ink-3">{t("paketten")}</span>}
                   </Td>
                   <Td align="right" className="py-0.5">
                     <div className="flex justify-end gap-0.5">
-                      <IconButton label={t("{name} hesabının bellek sınırını değiştir", { name: instance.username })} onClick={() => setEditing(instance)}>
+                      <IconButton
+                        label={
+                          instance.memory_from_package
+                            ? t("{name} hesabının bellek sınırı “{package}” paketinden geliyor", { name: instance.username, package: instance.package ?? "" })
+                            : t("{name} hesabının bellek sınırını değiştir", { name: instance.username })
+                        }
+                        disabled={instance.memory_from_package}
+                        onClick={() => setEditing(instance)}
+                      >
                         <Pencil className="size-4" />
                       </IconButton>
                       <IconButton label={t("{name} hesabının Redis'ini kapat", { name: instance.username })} onClick={() => void confirmClose(instance)}>

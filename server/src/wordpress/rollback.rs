@@ -53,7 +53,7 @@ async fn try_take(ctx: &JobCtx, site: &Site) -> AppResult<Snapshot> {
         let mut args = vec!["-a", "--no-g"];
         args.extend(EXCLUDES);
         args.extend(["--", from.as_str(), to.as_str()]);
-        ctx.run_streaming(&mut runas::command(&wp.user, &wp.docroot, "rsync", &args), "rsync", None).await?;
+        ctx.run_streaming(&mut runas::heavy_command(&wp.user, &wp.docroot, "rsync", &args), "rsync", None).await?;
         let dump = dir.join("db.sql").to_string_lossy().into_owned();
         wp.stream(ctx, &["db", "export", &dump, "--add-drop-table"], None).await
     }
@@ -74,7 +74,7 @@ pub async fn restore(ctx: &JobCtx, site: &Site, snapshot: &Snapshot) -> AppResul
     let mut args = vec!["-a", "--no-g", "--delete"];
     args.extend(EXCLUDES);
     args.extend(["--", from.as_str(), to.as_str()]);
-    ctx.run_streaming(&mut runas::command(&wp.user, &wp.docroot, "rsync", &args), "rsync", None).await?;
+    ctx.run_streaming(&mut runas::heavy_command(&wp.user, &wp.docroot, "rsync", &args), "rsync", None).await?;
     let dump = snapshot.dir.join("db.sql").to_string_lossy().into_owned();
     wp.stream(ctx, &["db", "import", &dump], None).await?;
     let _ = wp.run(&["cache", "flush"]).await;

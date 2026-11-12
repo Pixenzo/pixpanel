@@ -435,10 +435,15 @@ struct Runner<'a> {
 }
 
 impl Runner<'_> {
-    fn command(&self, program: &str, args: &[&str]) -> tokio::process::Command {
-        let mut cmd = runas::command(&self.user, &self.root, program, args);
+    /// Ağır işler (git getirme, yayın betiği) hesabın kaynak diliminde, kısa sorgular panelin cgroup'unda çalışır.
+    fn command_in(&self, program: &str, args: &[&str], placement: runas::Placement) -> tokio::process::Command {
+        let mut cmd = runas::command_in(&self.user, &self.root, program, args, placement);
         cmd.envs(self.env.iter().map(|(key, value)| (key.as_str(), value.as_str())));
         cmd
+    }
+
+    fn command(&self, program: &str, args: &[&str]) -> tokio::process::Command {
+        self.command_in(program, args, runas::Placement::AccountSlice)
     }
 
     /// git komutunu çalıştırıp çıktısını görev günlüğüne aktarır.
@@ -449,7 +454,7 @@ impl Runner<'_> {
 
     /// git komutunun çıktısını döner; başarısızsa `None`.
     async fn git_output(&self, args: &[&str]) -> AppResult<Option<String>> {
-        let output = runas::output(self.command("git", args), Duration::from_secs(60)).await?;
+        let output = runas::output(self.command_in("git", args, runas::Placement::Panel), Duration::from_secs(60)).await?;
         Ok(output.success().then(|| output.stdout.trim().to_string()))
     }
 }

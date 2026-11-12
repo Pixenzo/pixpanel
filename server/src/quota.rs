@@ -71,6 +71,11 @@ pub struct Limits {
     pub php_workers: Option<i64>,
     /// Hesabın en çok kaç süreç/iş parçacığı çalıştırabileceği (systemd `TasksMax`). Aralık 20–10000.
     pub processes: Option<i64>,
+    /// Hesabın Redis örneğinin bellek sınırı (MB; `maxmemory`). Boş: pakette sınır yok (örnek varsayılan 64 MB ile
+    /// açılır, yönetici örnek başına değiştirebilir). 0: Redis pakette yok. Aksi halde 16–4096.
+    pub redis_memory_mb: Option<i64>,
+    /// Hesabın seçebileceği PHP sürümleri (`8.3` biçiminde). Boş: kurulu bütün sürümler.
+    pub allowed_php_versions: Vec<String>,
 }
 
 /// Kaynak sınırı alanlarının izin verilen aralıkları (dahil).
@@ -78,6 +83,10 @@ pub const CPU_PERCENT_RANGE: std::ops::RangeInclusive<i64> = 10..=3200;
 pub const MEMORY_MB_RANGE: std::ops::RangeInclusive<i64> = 64..=262_144;
 pub const PHP_WORKERS_RANGE: std::ops::RangeInclusive<i64> = 1..=200;
 pub const PROCESSES_RANGE: std::ops::RangeInclusive<i64> = 20..=10_000;
+/// Redis bellek sınırı (0 ayrıca geçerlidir: "pakette Redis yok").
+pub const REDIS_MEMORY_MB_RANGE: std::ops::RangeInclusive<i64> = 16..=4096;
+/// Pakette en çok kaç PHP sürümü listelenebilir.
+const MAX_PHP_VERSIONS: usize = 20;
 
 impl Limits {
     fn of(&self, resource: Resource) -> Option<i64> {
@@ -91,7 +100,7 @@ impl Limits {
         }
     }
 
-    fn fields(&self) -> [(&'static str, Option<i64>); 11] {
+    fn fields(&self) -> [(&'static str, Option<i64>); 12] {
         [
             ("site", self.sites),
             ("veritabanı", self.databases),
@@ -104,6 +113,7 @@ impl Limits {
             ("bellek", self.memory_mb),
             ("PHP işçisi", self.php_workers),
             ("süreç", self.processes),
+            ("Redis belleği", self.redis_memory_mb),
         ]
     }
 
@@ -125,7 +135,34 @@ impl Limits {
                 return Err(AppError::bad(format!("Geçersiz {label} sınırı: {value} ({}–{} arasında olmalı ya da boş bırakılmalı)", range.start(), range.end())));
             }
         }
+        // Redis belleği: sınırsız (boş), 0 (pakette Redis yok) ya da kendi aralığında bir değer.
+        if let Some(value) = self.redis_memory_mb.filter(|value| *value != 0 && !REDIS_MEMORY_MB_RANGE.contains(value)) {
+            return Err(AppError::bad(format!(
+                "Geçersiz Redis belleği sınırı: {value} (0 ya da {}–{} arasında olmalı; boş bırakılırsa pakette sınır yoktur)",
+                REDIS_MEMORY_MB_RANGE.start(),
+                REDIS_MEMORY_MB_RANGE.end()
+            )));
+        }
+        // İzinli PHP sürümleri: `8.3` biçiminde, tekrarsız ve makul sayıda.
+        if self.allowed_php_versions.len() > MAX_PHP_VERSIONS {
+            return Err(AppError::bad("Pakette en çok 20 PHP sürümü listelenebilir"));
+        }
+        for version in &self.allowed_php_versions {
+            crate::hosting::php::validate_version(version)?;
+        }
         Ok(())
+    }
+
+    /// Kayıttan önce: PHP sürüm listesi tekrarsız ve sıralı olur.
+    pub fn normalized(mut self) -> Self {
+        self.allowed_php_versions.sort_by_key(|version| php_version_key(version));
+        self.allowed_php_versions.dedup();
+        self
+    }
+
+    /// Bu paket PHP sürümüne izin veriyor mu? Liste boşsa bütün sürümlere.
+    pub fn php_version_allowed(&self, version: &str) -> bool {
+        self.allowed_php_versions.is_empty() || self.allowed_php_versions.iter().any(|allowed| allowed == version)
     }
 
     /// Bu sınırlar `ceiling`i hiçbir alanda aşmıyor mu? Bayi, kendi paketinden geniş paket veremez.
@@ -137,8 +174,20 @@ impl Limits {
                 _ => return Err(label),
             }
         }
+        // Tavanda sürüm listesi varsa bayinin paketi onun alt kümesi olmalı (boş liste "hepsi" demektir).
+        if !ceiling.allowed_php_versions.is_empty()
+            && (self.allowed_php_versions.is_empty() || self.allowed_php_versions.iter().any(|version| !ceiling.allowed_php_versions.contains(version)))
+        {
+            return Err("PHP sürümü");
+        }
         Ok(())
     }
+}
+
+/// `8.3` → (8, 3); sıralama için.
+fn php_version_key(version: &str) -> (u32, u32) {
+    let (major, minor) = version.split_once('.').unwrap_or(("0", "0"));
+    (major.parse().unwrap_or(0), minor.parse().unwrap_or(0))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -203,6 +252,29 @@ pub fn limits_for(db: &Db, account_id: i64) -> AppResult<Option<(String, Limits)
         Some((role, Some(name), Some(limits))) if role != "admin" => Some((name, serde_json::from_str(&limits).unwrap_or_default())),
         _ => None,
     })
+}
+
+/// Hesabın seçebileceği PHP sürümleri; boş liste kısıt yok demektir (yönetici ve paketsiz hesaplar dahil).
+pub fn allowed_php_versions(db: &Db, account_id: i64) -> AppResult<Vec<String>> {
+    Ok(limits_for(db, account_id)?.map(|(_, limits)| limits.allowed_php_versions).unwrap_or_default())
+}
+
+/// Site sürümü izinli listenin dışında mı? Liste boşsa (kısıt yok) ya da sürüm bilinmiyorsa hayır.
+pub fn version_outside(allowed: &[String], version: Option<&str>) -> bool {
+    match version {
+        Some(version) => !allowed.is_empty() && !allowed.iter().any(|item| item == version),
+        None => false,
+    }
+}
+
+/// Hesap bu PHP sürümünü seçebilir mi? Seçemiyorsa nedenini söyleyen hata döner. Çağıran, yöneticiyi
+/// (kısıttan muaf) bu denetimi çağırmadan geçirir; paketsiz hesapta kısıt yoktur.
+pub fn check_php_version(db: &Db, account_id: i64, version: &str) -> AppResult<()> {
+    let Some((package, limits)) = limits_for(db, account_id)? else { return Ok(()) };
+    if limits.php_version_allowed(version) {
+        return Ok(());
+    }
+    Err(AppError::bad(format!("“{package}” paketinde PHP {version} yok. İzinli sürümler: {}.", limits.allowed_php_versions.join(", "))))
 }
 
 pub fn count(db: &Db, account_id: i64, resource: Resource) -> AppResult<i64> {
@@ -536,6 +608,83 @@ mod tests {
         assert_eq!(parsed, limits(Some(3), None));
         assert_eq!(parsed.of(Resource::Site), Some(3));
         assert_eq!(parsed.of(Resource::Mailbox), None);
+    }
+
+    #[test]
+    fn redis_memory_field_ranges() {
+        let with = |value| Limits { redis_memory_mb: value, ..Limits::default() };
+        assert!(with(None).validate().is_ok(), "boş: pakette sınır yok");
+        assert!(with(Some(0)).validate().is_ok(), "0: Redis pakette yok");
+        assert!(with(Some(16)).validate().is_ok());
+        assert!(with(Some(4096)).validate().is_ok());
+        assert!(with(Some(15)).validate().is_err());
+        assert!(with(Some(4097)).validate().is_err());
+        assert!(with(Some(-1)).validate().is_err());
+    }
+
+    #[test]
+    fn reseller_redis_limit_is_bounded_by_its_own() {
+        let ceiling = Limits { redis_memory_mb: Some(256), ..Limits::default() };
+        let mine = |value| Limits { redis_memory_mb: value, ..Limits::default() };
+        assert!(mine(Some(128)).within(&ceiling).is_ok());
+        assert!(mine(Some(0)).within(&ceiling).is_ok());
+        assert_eq!(mine(Some(512)).within(&ceiling), Err("Redis belleği"));
+        assert_eq!(mine(None).within(&ceiling), Err("Redis belleği"));
+        assert!(mine(Some(4096)).within(&Limits::default()).is_ok());
+        // Redis'i olmayan paketin bayisi Redis'li paket veremez.
+        let none = Limits { redis_memory_mb: Some(0), ..Limits::default() };
+        assert_eq!(mine(Some(16)).within(&none), Err("Redis belleği"));
+    }
+
+    fn versions(list: &[&str]) -> Limits {
+        Limits { allowed_php_versions: list.iter().map(|v| v.to_string()).collect(), ..Limits::default() }
+    }
+
+    #[test]
+    fn allowed_php_versions_are_validated() {
+        assert!(versions(&[]).validate().is_ok());
+        assert!(versions(&["8.3", "8.2"]).validate().is_ok());
+        for bad in ["8", "8.", ".3", "8.3.1", "abc", "8.x", "../8", "8 3", ""] {
+            assert!(versions(&[bad]).validate().is_err(), "{bad:?}");
+        }
+        let many: Vec<String> = (0..21).map(|n| format!("8.{n}")).collect();
+        assert!(Limits { allowed_php_versions: many, ..Limits::default() }.validate().is_err());
+    }
+
+    #[test]
+    fn php_version_list_is_normalized_and_enforced() {
+        let limits = versions(&["8.3", "7.4", "8.3", "8.1"]).normalized();
+        assert_eq!(limits.allowed_php_versions, ["7.4", "8.1", "8.3"]);
+        assert!(limits.php_version_allowed("8.1"));
+        assert!(!limits.php_version_allowed("8.2"));
+        assert!(!limits.php_version_allowed("8.10"), "tam eşleşme gerekir");
+        assert!(versions(&[]).php_version_allowed("5.6"), "boş liste hepsine izin verir");
+    }
+
+    #[test]
+    fn sites_outside_the_package_are_flagged() {
+        let allowed = vec!["8.3".to_string()];
+        assert!(version_outside(&allowed, Some("8.1")));
+        assert!(!version_outside(&allowed, Some("8.3")));
+        assert!(!version_outside(&[], Some("5.6")), "kısıt yoksa rozet yok");
+        assert!(!version_outside(&allowed, None));
+    }
+
+    #[test]
+    fn reseller_php_versions_must_be_a_subset() {
+        let ceiling = versions(&["8.2", "8.3"]);
+        assert!(versions(&["8.3"]).within(&ceiling).is_ok());
+        assert_eq!(versions(&["8.1"]).within(&ceiling), Err("PHP sürümü"));
+        assert_eq!(versions(&[]).within(&ceiling), Err("PHP sürümü"), "boş liste tavandan geniştir");
+        assert!(versions(&["7.4"]).within(&Limits::default()).is_ok());
+        assert!(versions(&[]).within(&Limits::default()).is_ok());
+    }
+
+    #[test]
+    fn old_packages_without_new_fields_still_load() {
+        let parsed: Limits = serde_json::from_str(r#"{"sites":3,"cpu_percent":100}"#).unwrap();
+        assert_eq!(parsed.redis_memory_mb, None);
+        assert!(parsed.allowed_php_versions.is_empty());
     }
 
     #[test]

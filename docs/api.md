@@ -140,7 +140,7 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | --- | --- | --- | --- |
 | GET | `/sites` | Siteler. | `sites` |
 | POST | `/sites` | Site ekler: `{domain, kind, php_version?, proxy_target?, node_version?, aliases?, user_id?}`. | `sites` |
-| GET | `/sites/options` | Site eklerken seçilebilecekler (kurulu PHP/Node sürümleri, hesaplar vb.). | `sites` |
+| GET | `/sites/options` | Site eklerken seçilebilecekler (kurulu PHP/Node sürümleri, hesaplar vb.); `php_allowed`: hesabın paketinin izin verdiği PHP sürümleri (boş: kısıt yok). | `sites` |
 | GET | `/sites/summary` | Sitelerin özet görünümü. | `sites` |
 | GET | `/sites/{id}` | Site ayrıntısı. | `sites` |
 | PATCH | `/sites/{id}` | Site ayarlarını günceller (PHP sürümü, şablon, kurallar, takma adlar vb.). | `sites` |
@@ -214,7 +214,7 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | POST | `/databases` | Veritabanı oluşturur: `{engine, name, user?: {name, password, host?}}`. | `databases` |
 | GET | `/databases/slow-log` | Yavaş sorgu günlüğü ayarı. | Yönetici |
 | GET | `/databases/remote` | Uzaktan erişim durumu (motor başına). | Yönetici |
-| PUT | `/databases/remote/{engine}` | Motorda uzaktan bağlantıları açar ya da kapatır (sunucu yeniden başlar). | Yönetici |
+| PUT | `/databases/remote/{engine}` | Motorda uzaktan bağlantıları açar ya da kapatır (sunucu yeniden başlar). MariaDB'de panelin sertifikası yapılandırılır ve uzak adresli kullanıcılara `REQUIRE SSL` uygulanır. | Yönetici |
 | PUT | `/databases/users/{id}/host` | Veritabanı kullanıcısının bağlanabildiği adresi değiştirir. | `databases` |
 | PUT | `/databases/slow-log` | Yavaş sorgu günlüğü ayarını kaydeder. | Yönetici |
 | POST | `/databases/users` | Veritabanı kullanıcısı oluşturur. | `databases` |
@@ -238,7 +238,7 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | GET | `/redis/accounts` | Hesapların Redis örnekleri. | Yönetici |
 | PUT | `/redis/accounts/{user_id}` | Hesabın Redis bellek sınırını ayarlar. | Yönetici |
 | DELETE | `/redis/accounts/{user_id}` | Hesabın Redis örneğini kapatır. | Yönetici |
-| GET | `/redis/mine` | Hesabın kendi Redis örneği. | `databases` |
+| GET | `/redis/mine` | Hesabın kendi Redis örneği; `allowed` (paket Redis'e izin veriyor mu), `package`, `package_memory_mb` (bellek sınırı paketten geliyorsa). | `databases` |
 | POST | `/redis/mine/enable` | Kendi Redis örneğini açar. | `databases` |
 | POST | `/redis/mine/disable` | Kendi Redis örneğini kapatır. | `databases` |
 | POST | `/redis/mine/password` | Parolayı yeniler. | `databases` |
@@ -429,9 +429,9 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 
 | Yöntem | Yol | Açıklama | Yetki |
 | --- | --- | --- | --- |
-| GET | `/packages` | Hosting paketleri. | Yönetici/Bayi |
+| GET | `/packages` | Hosting paketleri (sınırlar: sayılar, disk, işlemci/bellek/süreç/PHP işçisi, `redis_memory_mb`, `allowed_php_versions`). | Yönetici/Bayi |
 | GET | `/packages/limits-support` | İşlemci ve bellek sınırlarının bu sunucuda uygulanıp uygulanamadığı. | Yönetici/Bayi |
-| POST | `/packages` | Paket oluşturur. | Yönetici/Bayi |
+| POST | `/packages` | Paket oluşturur. `redis_memory_mb`: boş sınır yok, 0 Redis yok, 16–4096 hesabın Redis bellek sınırı; `allowed_php_versions`: izinli PHP sürümleri (boş: hepsi). | Yönetici/Bayi |
 | PATCH | `/packages/{id}` | Paketi günceller. | Yönetici/Bayi |
 | DELETE | `/packages/{id}` | Paketi siler. | Yönetici/Bayi |
 | GET | `/packages/usage` | Hesabın kendi kota kullanımı. | Giriş |
@@ -505,7 +505,7 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | PUT | `/fail2ban` | Hapis ayarlarını ve beyaz listeyi kaydeder. | Yönetici |
 | POST | `/fail2ban/ban` | Adresi engeller. | Yönetici |
 | POST | `/fail2ban/unban` | Adresin engelini kaldırır. | Yönetici |
-| GET | `/terminal/ws` | Tarayıcı terminali (WebSocket). | Yönetici |
+| GET | `/terminal/ws` | Tarayıcı terminali (WebSocket). Yönetici her hedefi açar; hesap yalnızca kendi kabuğunu ve yalnızca SSH erişim düzeyi "Kabuk" ise (en çok 3 oturum, hesabın kaynak diliminde). | Yönetici / Kabuk erişimli hesap |
 
 ---
 

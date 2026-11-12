@@ -217,6 +217,25 @@ if [ -n "$HOLD_OK" ]; then
   check "süreç sayısı görünür" "$(jget 'type(d["runtime"]["tasks"]).__name__' <<<"$U")" int
   check "işlemci süresi görünür" "$(jget 'type(d["runtime"]["cpu_seconds"]).__name__' <<<"$U")" float
 
+  say "Panelin hesap adına çalıştırdığı ağır işler hesabın diliminde (systemd-run --scope)"
+  # Dosya yöneticisinin sıkıştırması ağır işlemdir: yardımcı süreç `systemd-run --scope --slice=user-<uid>.slice`
+  # ile başlar. İş dilimde yapıldıysa dilimin toplam işlemci süresi (CPUUsageNSec) artar; panelin cgroup'unda
+  # yapılsaydı dilim sayacı kıpırdamazdı. systemd-run bu makinede çalışmıyorsa panel eski yola düşer ve bu denetim atlanır.
+  if systemd-run --scope --quiet --collect true >/dev/null 2>&1; then
+    WS=/home/$CUSTOMER/tmp/px-lim-ws
+    runuser -u $CUSTOMER -- sh -c "rm -rf $WS $WS.tar.gz; mkdir -p $WS && head -c 48000000 /dev/urandom > $WS/data.bin" >/dev/null 2>&1
+    CPU0=$(slice_prop $UID_C CPUUsageNSec)
+    check "sıkıştırma isteği başarılı" "$(status $JC POST /files/op -d "{\"scope\":\"user:$CID\",\"request\":{\"op\":\"compress\",\"paths\":[\"/tmp/px-lim-ws\"],\"dest\":\"/tmp/px-lim-ws.tar.gz\",\"format\":\"tar_gz\"}}")" 200
+    CPU1=$(slice_prop $UID_C CPUUsageNSec)
+    check "sıkıştırma hesabın diliminin işlemci süresine yazıldı (> 0,3 sn)" "$([ "${CPU1:-0}" -gt "$(( ${CPU0:-0} + 300000000 ))" ] 2>/dev/null && echo evet || echo "hayır ($CPU0 -> $CPU1)")" evet
+    check "arşiv hesabın kimliğiyle yazıldı" "$(stat -c %U $WS.tar.gz 2>/dev/null)" $CUSTOMER
+    check "iş bitince kapsam birimi kalmaz" "$(until_eq 0 sh -c "ls -d $CG/run-*.scope 2>/dev/null | wc -l")" 0
+    check "çıkış kodu ve çıktı korunur (kapsam kipi)" "$(systemd-run --scope --slice=user-$UID_C.slice --quiet --collect -- sh -c 'echo selam; echo hata >&2; exit 7' 2>&1; echo "kod=$?")" "$(printf 'selam\nhata\nkod=7')"
+    runuser -u $CUSTOMER -- rm -rf $WS $WS.tar.gz >/dev/null 2>&1
+  else
+    skip "systemd-run --scope çalışmıyor (konteynerde D-Bus yok olabilir); panel eski yola düşer, dilim denetimi atlandı"
+  fi
+
   say "Çalışan dilimde sınır değişimi (daemon-reload yeter mi?)"
   check "bellek 256 MB" "$(code PATCH /packages/$LIM -d '{"name":"e2e-lim","limits":{"sites":5,"cpu_percent":150,"memory_mb":256,"php_workers":5,"processes":200}}')" 200
   LIM_MEM=268435456
@@ -269,6 +288,9 @@ rm -f "$(dropin $UID_C)"
 systemctl daemon-reload
 systemctl restart pixpanel
 for _ in $(seq 1 40); do curl -sk -o /dev/null "$B/auth/login" && break; sleep 1; done
+# Açılışta systemd-run kapsamı bir kez sınanır ve sonuç günlüğe yazılır; sonuç makinenin gerçek durumuyla uyuşmalıdır.
+if systemd-run --scope --quiet --collect true >/dev/null 2>&1; then PROBE=supported=true; else PROBE=supported=false; fi
+has "açılışta systemd-run kapsamı sınandı (sonuç makineyle uyuşur)" "$(journalctl -u pixpanel --no-pager -n 300 -o cat 2>/dev/null | grep 'systemd-run --scope' | tail -1)" "$PROBE"
 check "açılışta eksik dilim dosyası yeniden yazıldı" "$(until_eq var sh -c "[ -f $(dropin $UID_C) ] && echo var")" var
 check "açılışta fazla dilim dosyası silindi" "$(until_eq yok sh -c "[ -e $STRAY ] && echo var || echo yok")" yok
 check "açılışta fazla kayıt dosyası silindi" "$(until_eq yok sh -c "[ -e /etc/pixpanel/limits/olmayanhesap.json ] && echo var || echo yok")" yok

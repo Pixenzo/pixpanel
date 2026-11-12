@@ -15,8 +15,16 @@
 //! - **PHP-FPM:** havuzlar ortak servis cgroup'unda olduğundan dilim uygulanamaz; bunun yerine
 //!   havuzdaki `pm.max_children` paketin `php_workers` değerini, `memory_limit` ise paketin
 //!   `memory_mb` değerini aşamaz (`php::render_pool`).
-//! - `sys::runas` ile çalışan komutlar (git yayını, wp-cli, dosya işlemleri) panelin cgroup'unda
-//!   kalır; bu paketin kapsamı dışındadır.
+//! - **Panelin hesap adına çalıştırdığı ağır komutlar:** `sys::runas::heavy_command` (wp-cli,
+//!   composer/pip/npm, Git yayını, rsync/cp, WordPress yedek-geri dönüş) ve dosya yöneticisinin ağır
+//!   işlemleri (kopyalama, sıkıştırma, arşiv açma; `api/files.rs`) `systemd-run --scope
+//!   --slice=user-<uid>.slice` ile hesabın diliminde koşar. Dilimde uygulanacak sınır yoksa
+//!   (drop-in dosyası yok) ya da `systemd-run` kullanılamıyorsa (konteynerde D-Bus yok vb.; açılışta bir
+//!   kez sınanır, `sys::runas::probe_slice_support`) komut eskisi gibi panelin cgroup'unda çalışır.
+//!   Kısa, sık çalışan salt okuma komutları (`runas::command`) sarılmaz.
+//! - **Redis bellek sınırı:** paketteki `redis_memory_mb` hesabın Redis örneğinin `maxmemory` değeridir
+//!   (`sync_redis`): paket atanınca/değişince örnek yeni sınırla yeniden yazılır; 0 ise Redis pakette yok
+//!   sayılır (örnek durdurulur, yeniden açılamaz; veri silinmez).
 //!
 //! **Port korumasıyla çakışma:** `portguard`, uygulama port aralığını `user.slice` altında
 //! yasaklar; cgroup-BPF kuralları üst dilimlerden de uygulanır ve bir üst dilimdeki yasağı alt
@@ -95,6 +103,12 @@ impl Caps {
         }
         Some(out)
     }
+}
+
+/// Hesabın diliminde uygulanacak bir sınır (drop-in dosyası) var mı? `runas` ağır komutları yalnızca
+/// o zaman dilime alır.
+pub fn has_slice_limits(uid: u32) -> bool {
+    dropin_path(uid).exists()
 }
 
 pub fn slice_name(uid: u32) -> String {
@@ -326,6 +340,10 @@ async fn sync_locked(db: &Db, only: Option<&[i64]>) -> AppResult<()> {
             Err(err) => tracing::warn!(account = %username, error = %err, "servis birimleri güncellenemedi (kaynak sınırları)"),
         }
         refresh_pools(db, *id, &user).await;
+        // Paketteki Redis bellek sınırı (ya da "Redis yok") hesabın örneğine uygulanır.
+        if let Err(err) = redis_account::sync_package_limit(db, *id).await {
+            tracing::warn!(account = %username, error = %err, "hesabın Redis sınırı paketle eşitlenemedi");
+        }
     }
     if units_changed {
         daemon_reload().await;

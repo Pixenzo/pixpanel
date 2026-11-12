@@ -78,6 +78,8 @@ async fn reload_dependents(state: &AppState) {
             tracing::warn!(error = %err, "FTP sunucusu yeni sertifikaya geçirilemedi");
         }
     }
+    // Uzaktan erişimi açık MariaDB yeni sertifikayı yeniden başlamadan yükler.
+    crate::dbms::remote::refresh_mariadb_tls(&state.db, &state.cfg).await;
 }
 
 pub fn validate_hostname(value: &str) -> AppResult<String> {
