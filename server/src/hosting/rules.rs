@@ -1,5 +1,6 @@
 //! Site kuralları: yönlendirmeler, parola korumalı klasörler, adres engelleme, bakım kipi,
-//! WWW tercihi, görsel bağlantı (hotlink) koruması ve özel hata sayfaları.
+//! WWW tercihi, görsel bağlantı (hotlink) koruması, özel hata sayfaları, tarayıcı önbellek
+//! başlıkları, sunucu önbelleği (FastCGI / vekil) ve "yalnızca Cloudflare" kipi.
 //!
 //! Bunlar webcilerin sürekli elle yazdığı web sunucusu ayarlarıdır. Sitenin sahibi serbest
 //! metin yazmaz: her kural doğrulanmış alanlardan oluşur ve yapılandırma bu alanlardan
@@ -27,6 +28,27 @@ const MAX_USERS: usize = 30;
 /// özet hesabıdır; sınırsız olsaydı tek istek paneli uzun süre meşgul edebilirdi.
 const MAX_TOTAL_USERS: usize = 60;
 const MAX_ADDRESSES: usize = 200;
+/// Sitelerin sunucu önbelleği klasörleri: `<CACHE_DIR>/<site no>`.
+pub const CACHE_DIR: &str = "/var/cache/nginx/pixpanel";
+/// Cloudflare adres aralıkları (nginx `geo` bloğuna eklenir); en çok üç günde bir yenilenir.
+const CLOUDFLARE_RANGES_FILE: &str = "/etc/nginx/pixpanel/cloudflare-ranges.conf";
+const CLOUDFLARE_API: &str = "https://api.cloudflare.com/client/v4";
+const CLOUDFLARE_RANGES_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(3 * 24 * 3600);
+/// Tarayıcı önbelleği süreleri (boş: panel varsayılanı, 30 gün; `off`: başlık eklenmez).
+const BROWSER_CACHE_VALUES: &[&str] = &["off", "1h", "1d", "7d", "30d", "1y"];
+/// Sunucu önbelleğinde bir yanıtın taze sayıldığı süreler.
+const SERVER_CACHE_TTLS: &[&str] = &["1m", "5m", "10m", "30m", "1h", "6h", "1d"];
+const DEFAULT_SERVER_CACHE_TTL: &str = "10m";
+/// Durağan dosya uzantıları (tarayıcı önbelleği bunlara uygulanır).
+const ASSET_EXTENSIONS: &str = "css|js|mjs|jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm";
+
+/// Sunucu önbelleğinin türü: PHP sitelerinde FastCGI, vekil sitelerinde vekil önbelleği.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheKind {
+    Off,
+    Fastcgi,
+    Proxy,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -45,6 +67,20 @@ pub struct SiteRules {
     /// Görsellerin başka sitelerden doğrudan gösterilmesi engellensin mi?
     pub hotlink_protection: bool,
     pub error_pages: ErrorPages,
+    /// Durağan dosyaların tarayıcıda saklanma süresi: boş (varsayılan, 30 gün), `off`, `1h`, `1d`, `7d`, `30d`, `1y`.
+    pub browser_cache: String,
+    /// Sunucu tarafı önbellek (PHP sitelerinde FastCGI, vekil sitelerinde vekil önbelleği).
+    pub server_cache: ServerCache,
+    /// Açıkken siteye yalnızca Cloudflare adreslerinden gelen bağlantılar kabul edilir.
+    pub cloudflare_only: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ServerCache {
+    pub enabled: bool,
+    /// Önbellekteki yanıtın taze sayıldığı süre (`1m`, `5m`, `10m`, `30m`, `1h`, `6h`, `1d`).
+    pub ttl: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -208,8 +244,21 @@ async fn hash_password(password: &str) -> AppResult<String> {
 }
 
 /// İstekle gelen kuralları doğrular ve saklanacak hâle getirir. `previous`, parolası
-/// değiştirilmeyen kullanıcıların kayıtlı özetlerini korumak içindir.
-pub async fn normalize(input: SiteRules, previous: &SiteRules, names: &[String]) -> AppResult<SiteRules> {
+/// değiştirilmeyen kullanıcıların kayıtlı özetlerini korumak içindir. `kind`: site türü
+/// (sunucu önbelleği yalnızca PHP ve vekil türündeki sitelerde açılabilir).
+pub async fn normalize(input: SiteRules, previous: &SiteRules, names: &[String], kind: &str) -> AppResult<SiteRules> {
+    if !BROWSER_CACHE_VALUES.contains(&input.browser_cache.as_str()) && !input.browser_cache.is_empty() {
+        return Err(AppError::bad("Geçersiz tarayıcı önbelleği süresi"));
+    }
+    let ttl = match input.server_cache.ttl.as_str() {
+        "" => DEFAULT_SERVER_CACHE_TTL.to_string(),
+        ttl if SERVER_CACHE_TTLS.contains(&ttl) => ttl.to_string(),
+        _ => return Err(AppError::bad("Geçersiz sunucu önbelleği süresi")),
+    };
+    if input.server_cache.enabled && !matches!(kind, "php" | "proxy" | "node" | "python") {
+        return Err(AppError::bad("Sunucu önbelleği yalnızca PHP ve vekil (Node.js, Python dâhil) sitelerinde açılabilir"));
+    }
+
     let www = match input.www.as_str() {
         "" => String::new(),
         "www" | "apex" => {
@@ -321,6 +370,9 @@ pub async fn normalize(input: SiteRules, previous: &SiteRules, names: &[String])
             forbidden: normalize_error_page(&input.error_pages.forbidden, "403")?,
             server_error: normalize_error_page(&input.error_pages.server_error, "5xx")?,
         },
+        browser_cache: input.browser_cache,
+        server_cache: ServerCache { enabled: input.server_cache.enabled, ttl },
+        cloudflare_only: input.cloudflare_only,
     })
 }
 
@@ -342,9 +394,110 @@ fn path_regex(path: &str) -> String {
     format!("^(?:/.*\\.php)?{}(/|$)", path.replace('.', "\\."))
 }
 
+/// Önbelleğe ALINMAYACAK isteklerin eşlemeleri ve önbellek klasörü (http düzeyinde).
+///
+/// Bir isteğin önbelleğe girmesi için dört koşulun hepsi sağlanmalıdır (`$pix_nocache_<no>` = 0):
+/// yöntem GET/HEAD olmalı; kimlik bilgisi başlığı (Authorization, API anahtarı…) ve yükseltme
+/// (WebSocket) isteği olmamalı; oturum/giriş çerezi taşımamalı; yönetim ve sepet gibi adreslere
+/// gitmemeli. Yanıt `Set-Cookie`, `Cache-Control: private/no-store/no-cache` ya da `Vary: *`
+/// içeriyorsa nginx onu zaten saklamaz. Emin olunamayan her durumda istek önbelleği atlar.
+fn render_cache_preamble(out: &mut String, site_id: i64, cache: CacheKind) {
+    let directive = if cache == CacheKind::Proxy { "proxy_cache_path" } else { "fastcgi_cache_path" };
+    let _ = writeln!(out, "{directive} {CACHE_DIR}/{site_id} levels=1:2 keys_zone=pix_{site_id}:10m max_size=256m inactive=1d use_temp_path=off;");
+    // 1: önbellek atlanır.
+    let _ = writeln!(out, "map $request_method $pix_cm_{site_id} {{\n    default 1;\n    GET 0;\n    HEAD 0;\n}}");
+    let _ = writeln!(
+        out,
+        "map \"$http_authorization$http_proxy_authorization$http_x_api_key$http_x_auth_token$http_x_csrf_token$http_x_xsrf_token$http_upgrade\" $pix_ca_{site_id} {{\n    default 1;\n    \"\" 0;\n}}"
+    );
+    // Oturum, giriş, kimlik doğrulama ve alışveriş sepeti çerezleri (büyük/küçük harf ayırmaz).
+    let _ = writeln!(
+        out,
+        "map $http_cookie $pix_cc_{site_id} {{\n    default 0;\n    \"~*(^|[; ])([a-z0-9_.-]*(sess|auth|login|token|jwt|remember|logged|csrf|xsrf|wordpress_|wp-postpass|comment_author|woocommerce|laravel|connect[.]sid)[a-z0-9_.-]*|sid|uid)=\" 1;\n}}"
+    );
+    let _ = writeln!(
+        out,
+        "map $request_uri $pix_cu_{site_id} {{\n    default 0;\n    \"~*^/(wp-admin|wp-login[.]php|wp-cron[.]php|wp-json|xmlrpc[.]php|cart|checkout|my-account|admin|administrator|login|logout|register|account|dashboard|user)([/.?]|$)\" 1;\n    \"~*[?&](wc-ajax|preview|add-to-cart)=\" 1;\n}}"
+    );
+    let _ = writeln!(out, "map \"$pix_cm_{site_id}$pix_ca_{site_id}$pix_cc_{site_id}$pix_cu_{site_id}\" $pix_nocache_{site_id} {{\n    default 1;\n    \"0000\" 0;\n}}");
+}
+
+/// Sunucu önbelleğinin konum bloğuna eklenen yönergeler (PHP için FastCGI, vekil siteler için proxy).
+pub fn render_cache_location(site_id: i64, rules: &SiteRules, cache: CacheKind) -> String {
+    let prefix = match cache {
+        CacheKind::Off => return String::new(),
+        CacheKind::Fastcgi => "fastcgi",
+        CacheKind::Proxy => "proxy",
+    };
+    let ttl = if SERVER_CACHE_TTLS.contains(&rules.server_cache.ttl.as_str()) { rules.server_cache.ttl.as_str() } else { DEFAULT_SERVER_CACHE_TTL };
+    format!(
+        "        {prefix}_cache pix_{site_id};\n\
+         \x20       {prefix}_cache_key \"$scheme$request_method$host$request_uri\";\n\
+         \x20       {prefix}_cache_valid 200 301 302 {ttl};\n\
+         \x20       {prefix}_cache_methods GET HEAD;\n\
+         \x20       {prefix}_cache_bypass $pix_nocache_{site_id};\n\
+         \x20       {prefix}_no_cache $pix_nocache_{site_id};\n"
+    )
+}
+
+/// Vekil sitelerde durağan dosyalar için ayrı konum açılırken kullanılacak süre
+/// (`None`: varsayılan ya da kapalı; vekil sitede başlıklara dokunulmaz).
+pub fn proxy_asset_expires(rules: &SiteRules) -> Option<&'static str> {
+    match rules.browser_cache.as_str() {
+        "1h" => Some("1h"),
+        "1d" => Some("1d"),
+        "7d" => Some("7d"),
+        "30d" => Some("30d"),
+        "1y" => Some("365d"),
+        _ => None,
+    }
+}
+
+/// Durağan dosya konumundaki `expires` değeri (dosya sunan sitelerde).
+fn file_expires(rules: &SiteRules) -> &'static str {
+    match rules.browser_cache.as_str() {
+        "off" => "off",
+        "1h" => "1h",
+        "1d" => "1d",
+        "7d" => "7d",
+        "1y" => "365d",
+        // Boş ve 30d: panelin eski varsayılanı.
+        _ => "30d",
+    }
+}
+
+/// Durağan dosyaların konum bloğu (dosya sunan siteler).
+pub fn render_asset_location(rules: &SiteRules) -> String {
+    format!("    location ~* \\.(?:{ASSET_EXTENSIONS})$ {{\n        expires {};\n    }}\n", file_expires(rules))
+}
+
+/// Vekil sitelerde durağan dosyaların eşleneceği düzenli ifade.
+pub fn asset_regex() -> String {
+    format!("~* \\.(?:{ASSET_EXTENSIONS})$")
+}
+
 /// Sitenin yapılandırma dosyasının başına (http düzeyine) yazılan eşlemeler.
-pub fn render_preamble(site_id: i64, rules: &SiteRules) -> String {
+/// `cache`: etkin sunucu önbelleği türü; `local_addr`: sitenin bağlandığı adres (yerel yoklama için).
+pub fn render_preamble(site_id: i64, rules: &SiteRules, cache: CacheKind, local_addr: Option<IpAddr>) -> String {
     let mut out = String::new();
+    if cache != CacheKind::Off {
+        render_cache_preamble(&mut out, site_id, cache);
+    }
+    if rules.cloudflare_only {
+        // Karar, gerçek bağlantı adresine göre verilir: `real_ip` modülü `$remote_addr`'ı
+        // CF-Connecting-IP ile değiştirdiğinden `$realip_remote_addr` (bağlantıyı kuran adres) kullanılır.
+        // Yerel adresler (panelin sağlık yoklaması) ve sitenin kendi adresi açık kalır.
+        let _ = writeln!(out, "geo $realip_remote_addr $pix_cfip_{site_id} {{\n    default 0;\n    127.0.0.1 1;\n    ::1 1;");
+        if let Some(address) = local_addr {
+            let _ = writeln!(out, "    {address} 1;");
+        }
+        let _ = writeln!(out, "    include {CLOUDFLARE_RANGES_FILE};\n}}");
+        // Sertifika doğrulama yolu (http-01) her adresten açık kalır.
+        let _ = writeln!(
+            out,
+            "map \"$pix_cfip_{site_id}:$uri\" $pix_cfdeny_{site_id} {{\n    default 0;\n    \"~^0:/[.]well-known/acme-challenge/\" 0;\n    \"~^0:\" 1;\n}}"
+        );
+    }
     if !rules.protected.is_empty() {
         // Parola koruması yola göre değişken üzerinden açılır; böylece sitenin türünden
         // (PHP, durağan, vekil) bağımsız çalışır ve içerik kurallarını ezmez.
@@ -370,9 +523,17 @@ pub fn render_preamble(site_id: i64, rules: &SiteRules) -> String {
 }
 
 /// Sunucu bloğunun içine, içerik kurallarından önce yazılan yönergeler.
-/// `names`: sitenin adları (WWW tercihi için); `has_docroot`: site dosya sunuyor mu?
-pub fn render_server(site_id: i64, rules: &SiteRules, domain: &str, has_docroot: bool) -> String {
+/// `domain`: sitenin asıl adı (WWW tercihi için); `has_docroot`: site dosya sunuyor mu?
+pub fn render_server(site_id: i64, rules: &SiteRules, domain: &str, has_docroot: bool, cache: CacheKind) -> String {
     let mut out = String::new();
+    if rules.cloudflare_only {
+        // Sunucu düzeyindeki `return` konum seçiminden önce çalışır; sertifika yolu eşlemede ayrıldı.
+        let _ = writeln!(out, "    if ($pix_cfdeny_{site_id}) {{\n        return 403;\n    }}");
+    }
+    if cache != CacheKind::Off {
+        // Önbellekten gelip gelmediği görülebilsin (HIT, MISS, BYPASS…); önbelleksiz konumlarda değer boştur ve başlık eklenmez.
+        out.push_str("    add_header X-Cache $upstream_cache_status always;\n");
+    }
     match rules.www.as_str() {
         "www" => {
             let _ = writeln!(out, "    if ($host = '{domain}') {{\n        return 301 $scheme://www.{domain}$request_uri;\n    }}");
@@ -438,12 +599,98 @@ pub fn render_server(site_id: i64, rules: &SiteRules, domain: &str, has_docroot:
 }
 
 /// Görsellerin başka sitelerden gösterilmesini engelleyen kural (dosya sunan sitelerde).
-pub fn render_hotlink(rules: &SiteRules) -> &'static str {
+pub fn render_hotlink(rules: &SiteRules) -> String {
     if rules.hotlink_protection {
-        "    location ~* \\.(?:jpe?g|png|gif|webp|avif|svg)$ {\n        valid_referers none blocked server_names;\n        if ($invalid_referer) {\n            return 403;\n        }\n        expires 30d;\n    }\n"
+        format!(
+            "    location ~* \\.(?:jpe?g|png|gif|webp|avif|svg)$ {{\n        valid_referers none blocked server_names;\n        if ($invalid_referer) {{\n            return 403;\n        }}\n        expires {};\n    }}\n",
+            file_expires(rules)
+        )
     } else {
-        ""
+        String::new()
     }
+}
+
+// ---- Sunucu önbelleği klasörü ve Cloudflare aralıkları ----
+
+fn cache_path(site_id: i64) -> PathBuf {
+    PathBuf::from(format!("{CACHE_DIR}/{site_id}"))
+}
+
+/// Sitenin önbellek klasörünü hazırlar. Üst klasör root'undur; site klasörü web sunucusunun
+/// işçi kullanıcısına (www-data) verilir, böylece işçi klasörün yerine başka bir şey koyamaz.
+pub fn ensure_cache_dir(site_id: i64) -> AppResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = cache_path(site_id);
+    std::fs::create_dir_all(&path)?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
+    if let Some(user) = crate::hosting::sysuser::lookup("www-data") {
+        std::os::unix::fs::chown(&path, Some(user.uid), Some(user.gid))?;
+    }
+    Ok(())
+}
+
+/// Önbellek klasörünü ve içindekileri siler (önbellek kapanınca ya da site silinince).
+pub fn remove_cache_dir(site_id: i64) {
+    let path = cache_path(site_id);
+    // Sembolik bağ ise yalnızca bağın kendisi silinir; hedefine dokunulmaz.
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_dir() => {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+        Ok(_) => {
+            let _ = std::fs::remove_file(&path);
+        }
+        Err(_) => {}
+    }
+}
+
+/// Sitenin önbelleğinin içeriğini siler; klasörün kendisi ve nginx'in önbellek bölgesi yerinde kalır.
+/// Silinen dosyalar için nginx bir sonraki istekte yanıtı yeniden üretir. Klasör yoksa bir şey yapılmaz.
+pub async fn purge_cache(site_id: i64) -> AppResult<()> {
+    let path = cache_path(site_id);
+    tokio::task::spawn_blocking(move || -> AppResult<()> {
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) if meta.is_dir() => {}
+            _ => return Ok(()),
+        }
+        for entry in std::fs::read_dir(&path)?.flatten() {
+            let is_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
+            let result = if is_dir { std::fs::remove_dir_all(entry.path()) } else { std::fs::remove_file(entry.path()) };
+            if let Err(err) = result {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    return Err(err.into());
+                }
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|err| AppError::internal(err.to_string()))?
+}
+
+/// Cloudflare adres aralıkları dosyasını hazırlar (yoksa ya da üç günden eskiyse yeniler).
+/// Sunucu Cloudflare'e ulaşamazsa gömülü liste kullanılır; mevcut güncel liste bu listeyle ezilmez.
+pub async fn ensure_cloudflare_ranges() -> AppResult<()> {
+    use crate::dns::cloudflare;
+    let path = Path::new(CLOUDFLARE_RANGES_FILE);
+    let existing = std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
+    if existing.and_then(|time| time.elapsed().ok()).is_some_and(|age| age < CLOUDFLARE_RANGES_MAX_AGE) {
+        return Ok(());
+    }
+    let ranges: Vec<String> = cloudflare::fetch_ranges(CLOUDFLARE_API).await.into_iter().filter(|range| cloudflare::is_cidr(range)).collect();
+    let is_fallback = ranges.len() == cloudflare::FALLBACK_RANGES.len() && ranges.iter().all(|range| cloudflare::FALLBACK_RANGES.contains(&range.as_str()));
+    if existing.is_some() && is_fallback {
+        // İndirme başarısız: eski liste kalır, yeniden deneme süresi uzar.
+        if let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) {
+            let _ = file.set_modified(std::time::SystemTime::now());
+        }
+        return Ok(());
+    }
+    let mut content = String::from("# PixPanel tarafından üretildi. Cloudflare adres aralıkları.\n");
+    for range in &ranges {
+        let _ = writeln!(content, "{range} 1;");
+    }
+    atomic_write(path, content.as_bytes(), 0o644)
 }
 
 /// Parola dosyalarını yazar; artık kullanılmayanları siler. Yapılandırmadan önce çağrılır.
@@ -495,7 +742,7 @@ mod tests {
     }
 
     async fn check(rules: SiteRules) -> AppResult<SiteRules> {
-        normalize(rules, &SiteRules::default(), &names()).await
+        normalize(rules, &SiteRules::default(), &names(), "php").await
     }
 
     #[tokio::test]
@@ -543,7 +790,7 @@ mod tests {
     #[tokio::test]
     async fn www_needs_both_names() {
         let rules = SiteRules { www: "www".into(), ..SiteRules::default() };
-        assert!(normalize(rules.clone(), &SiteRules::default(), &["ornek.com".to_string()]).await.is_err());
+        assert!(normalize(rules.clone(), &SiteRules::default(), &["ornek.com".to_string()], "php").await.is_err());
         assert!(check(rules).await.is_ok());
         assert!(check(SiteRules { www: "x".into(), ..SiteRules::default() }).await.is_err());
     }
@@ -558,7 +805,7 @@ mod tests {
             protected: vec![Protected { path: "/yonetim/".into(), label: "Yönetim".into(), users: vec![ProtectedUser { name: "ali".into(), hash: "$6$sahte".into(), password: None }] }],
             ..SiteRules::default()
         };
-        let out = normalize(input, &previous, &names()).await.unwrap();
+        let out = normalize(input, &previous, &names(), "php").await.unwrap();
         // İstekle gelen özet yok sayılır; kayıtlı olan korunur.
         assert_eq!(out.protected[0].users[0].hash, "$6$eski");
         assert_eq!(out.protected[0].path, "/yonetim");
@@ -566,13 +813,13 @@ mod tests {
             protected: vec![Protected { path: "/yonetim".into(), label: "".into(), users: vec![ProtectedUser { name: "veli".into(), hash: "$6$sahte".into(), password: None }] }],
             ..SiteRules::default()
         };
-        assert!(normalize(new_user, &previous, &names()).await.is_err());
+        assert!(normalize(new_user, &previous, &names(), "php").await.is_err());
         for (path, label, name) in [("/a b", "x", "ali"), ("/yonetim", "a\"; }", "ali"), ("/yonetim", "x", "a:b"), ("/yonetim", "x", "")] {
             let input = SiteRules {
                 protected: vec![Protected { path: path.into(), label: label.into(), users: vec![ProtectedUser { name: name.into(), hash: String::new(), password: Some("parola-12345".into()) }] }],
                 ..SiteRules::default()
             };
-            assert!(normalize(input, &previous, &names()).await.is_err(), "{path} {label} {name}");
+            assert!(normalize(input, &previous, &names(), "php").await.is_err(), "{path} {label} {name}");
         }
     }
 
@@ -604,13 +851,14 @@ mod tests {
             maintenance_allowed: vec!["192.0.2.1".into()],
             hotlink_protection: true,
             error_pages: ErrorPages { not_found: "/404.html".into(), forbidden: String::new(), server_error: "/hata.html".into() },
+            ..SiteRules::default()
         };
-        let preamble = render_preamble(7, &rules);
+        let preamble = render_preamble(7, &rules, CacheKind::Off, None);
         assert!(preamble.contains("map $uri $pix_auth_7 {"));
         assert!(preamble.contains("~*^(?:/.*\\.php)?/yonetim(/|$) \"Yönetim\";"));
         assert!(preamble.contains("~*^(?:/.*\\.php)?/yonetim(/|$) /etc/nginx/pixpanel/htpasswd/7-0;"));
         assert!(preamble.contains("geo $pix_maint_ip_7 {\n    default 1;\n    192.0.2.1 0;"));
-        let server = render_server(7, &rules, "ornek.com", true);
+        let server = render_server(7, &rules, "ornek.com", true, CacheKind::Off);
         assert!(server.contains("if ($host = 'www.ornek.com') {\n        return 301 $scheme://ornek.com$request_uri;"));
         assert!(server.contains("deny 203.0.113.5;\n    allow 198.51.100.0/24;\n    deny all;"));
         assert!(server.contains("location = /eski {\n        return 301 /yeni;"));
@@ -621,8 +869,65 @@ mod tests {
         assert!(server.contains("auth_basic $pix_auth_7;"));
         assert!(render_hotlink(&rules).contains("valid_referers none blocked server_names;"));
         // Dosya sunmayan sitede hata sayfası yazılmaz.
-        assert!(!render_server(7, &rules, "ornek.com", false).contains("error_page 404"));
-        assert_eq!(render_preamble(7, &SiteRules::default()), "");
-        assert_eq!(render_server(7, &SiteRules::default(), "ornek.com", true), "");
+        assert!(!render_server(7, &rules, "ornek.com", false, CacheKind::Off).contains("error_page 404"));
+        assert_eq!(render_preamble(7, &SiteRules::default(), CacheKind::Off, None), "");
+        assert_eq!(render_server(7, &SiteRules::default(), "ornek.com", true, CacheKind::Off), "");
+    }
+
+    #[tokio::test]
+    async fn performance_settings_are_validated() {
+        let ok = SiteRules { browser_cache: "7d".into(), server_cache: ServerCache { enabled: true, ttl: String::new() }, cloudflare_only: true, ..SiteRules::default() };
+        let out = check(ok.clone()).await.unwrap();
+        assert_eq!(out.server_cache.ttl, "10m");
+        assert!(out.cloudflare_only);
+        for bad in ["7", "1w", "off; return 200", "$x", "1y "] {
+            let rules = SiteRules { browser_cache: bad.into(), ..SiteRules::default() };
+            assert!(check(rules).await.is_err(), "{bad}");
+        }
+        for bad in ["10", "2m", "1m; x", "1h\n"] {
+            let rules = SiteRules { server_cache: ServerCache { enabled: true, ttl: bad.into() }, ..SiteRules::default() };
+            assert!(check(rules).await.is_err(), "{bad}");
+        }
+        // Dosya sunan sitede (durağan) sunucu önbelleği açılamaz; vekil türlerde açılır.
+        assert!(normalize(ok.clone(), &SiteRules::default(), &names(), "static").await.is_err());
+        assert!(normalize(ok.clone(), &SiteRules::default(), &names(), "node").await.is_ok());
+        // Eski kayıtlar (yeni alanlar yok) okunabilir.
+        let old: SiteRules = serde_json::from_str(r#"{"www":"","maintenance":true}"#).unwrap();
+        assert_eq!(old.browser_cache, "");
+        assert!(!old.server_cache.enabled);
+    }
+
+    #[test]
+    fn cache_rendering() {
+        let rules = SiteRules { server_cache: ServerCache { enabled: true, ttl: "1h".into() }, browser_cache: "1y".into(), ..SiteRules::default() };
+        let preamble = render_preamble(9, &rules, CacheKind::Fastcgi, None);
+        assert!(preamble.contains("fastcgi_cache_path /var/cache/nginx/pixpanel/9 levels=1:2 keys_zone=pix_9:10m"));
+        assert!(preamble.contains("map $request_method $pix_cm_9 {\n    default 1;\n    GET 0;\n    HEAD 0;"));
+        assert!(preamble.contains("$pix_nocache_9 {\n    default 1;\n    \"0000\" 0;"));
+        assert!(preamble.contains("wp-admin|wp-login[.]php"));
+        assert!(render_preamble(9, &rules, CacheKind::Proxy, None).contains("proxy_cache_path /var/cache/nginx/pixpanel/9 "));
+        let location = render_cache_location(9, &rules, CacheKind::Fastcgi);
+        assert!(location.contains("fastcgi_cache pix_9;"));
+        assert!(location.contains("fastcgi_cache_valid 200 301 302 1h;"));
+        assert!(location.contains("fastcgi_cache_bypass $pix_nocache_9;"));
+        assert!(location.contains("fastcgi_no_cache $pix_nocache_9;"));
+        assert!(render_cache_location(9, &rules, CacheKind::Proxy).contains("proxy_cache_valid 200 301 302 1h;"));
+        assert_eq!(render_cache_location(9, &rules, CacheKind::Off), "");
+        assert!(render_server(9, &rules, "ornek.com", true, CacheKind::Fastcgi).contains("add_header X-Cache $upstream_cache_status always;"));
+        assert!(render_asset_location(&rules).contains("expires 365d;"));
+        assert!(render_asset_location(&SiteRules::default()).contains("expires 30d;"));
+        assert!(render_asset_location(&SiteRules { browser_cache: "off".into(), ..SiteRules::default() }).contains("expires off;"));
+        assert_eq!(proxy_asset_expires(&rules), Some("365d"));
+        assert_eq!(proxy_asset_expires(&SiteRules::default()), None);
+    }
+
+    #[test]
+    fn cloudflare_only_rendering() {
+        let rules = SiteRules { cloudflare_only: true, ..SiteRules::default() };
+        let preamble = render_preamble(4, &rules, CacheKind::Off, Some("192.0.2.10".parse().unwrap()));
+        assert!(preamble.contains("geo $realip_remote_addr $pix_cfip_4 {\n    default 0;\n    127.0.0.1 1;\n    ::1 1;\n    192.0.2.10 1;\n    include /etc/nginx/pixpanel/cloudflare-ranges.conf;"));
+        assert!(preamble.contains("\"~^0:/[.]well-known/acme-challenge/\" 0;"));
+        assert!(render_server(4, &rules, "ornek.com", true, CacheKind::Off).starts_with("    if ($pix_cfdeny_4) {\n        return 403;"));
+        assert_eq!(render_preamble(4, &SiteRules::default(), CacheKind::Off, None), "");
     }
 }

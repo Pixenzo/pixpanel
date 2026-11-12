@@ -64,8 +64,13 @@ export function SiteRulesSection({ site }: { site: Site }) {
   const [www, setWww] = useState(initial.www);
   const [hotlink, setHotlink] = useState(initial.hotlink_protection);
   const [errorPages, setErrorPages] = useState(initial.error_pages);
+  const [browserCache, setBrowserCache] = useState(initial.browser_cache ?? "");
+  const [serverCache, setServerCache] = useState(initial.server_cache ?? { enabled: false, ttl: "10m" });
+  const [cloudflareOnly, setCloudflareOnly] = useState(initial.cloudflare_only ?? false);
 
   const servesFiles = site.kind === "php" || site.kind === "static";
+  // Sunucu önbelleği yalnızca PHP (FastCGI) ve vekil (Node.js, Python dâhil) sitelerinde vardır.
+  const canServerCache = site.kind !== "static";
   const names = [site.domain, ...site.aliases];
   const hasWwwPair = names.some((name) => names.includes(`www.${name}`));
 
@@ -83,8 +88,20 @@ export function SiteRulesSection({ site }: { site: Site }) {
     maintenance_allowed: lines(maintenanceAllowed),
     hotlink_protection: hotlink,
     error_pages: errorPages,
+    browser_cache: browserCache,
+    server_cache: { enabled: canServerCache && serverCache.enabled, ttl: serverCache.ttl || "10m" },
+    cloudflare_only: cloudflareOnly,
   };
-  const dirty = stable(body) !== stable(initial);
+  // Eski kayıtlarda yeni alanlar yoktur; karşılaştırma için varsayılanlarla tamamlanır.
+  const dirty =
+    stable(body) !==
+    stable({ ...initial, browser_cache: initial.browser_cache ?? "", server_cache: { enabled: initial.server_cache?.enabled ?? false, ttl: initial.server_cache?.ttl || "10m" }, cloudflare_only: initial.cloudflare_only ?? false });
+
+  const purge = useMutation({
+    mutationFn: () => api.post(`/sites/${site.id}/cache/purge`),
+    onSuccess: () => feedback.success(t("Önbellek temizlendi")),
+    onError: (error) => feedback.error(error),
+  });
 
   const save = useMutation({
     mutationFn: () => api.patch<Site>(`/sites/${site.id}`, { rules: body }),
@@ -272,6 +289,86 @@ export function SiteRulesSection({ site }: { site: Site }) {
             className="min-h-24"
             spellCheck={false}
           />
+        </div>
+      </Panel>
+
+      <Panel title={t("Tarayıcı önbelleği")}>
+        <div className="flex max-w-md flex-col gap-3">
+          <Select
+            label={t("Durağan dosyalar tarayıcıda şu kadar saklansın")}
+            value={browserCache}
+            onChange={(event) => setBrowserCache(event.target.value)}
+            hint={
+              servesFiles
+                ? t("Resim, stil, betik ve yazı tipi dosyalarının ziyaretçinin tarayıcısında ne kadar saklanacağı. Uzun süre sayfaları hızlandırır; ama dosyayı değiştirdiğinizde ziyaretçiler eskisini görmeye devam edebilir.")
+                : t("Resim, stil, betik ve yazı tipi dosyaları için uygulamanın kendi önbellek başlıkları yerine bu süre yazılır. Seçmezseniz uygulamanın başlıklarına dokunulmaz.")
+            }
+          >
+            <option value="">{servesFiles ? t("Varsayılan (30 gün)") : t("Uygulamanın kendi başlıkları")}</option>
+            {servesFiles && <option value="off">{t("Kapalı (süre bildirilmez)")}</option>}
+            <option value="1h">{t("1 saat")}</option>
+            <option value="1d">{t("1 gün")}</option>
+            <option value="7d">{t("7 gün")}</option>
+            <option value="30d">{t("30 gün")}</option>
+            <option value="1y">{t("1 yıl")}</option>
+          </Select>
+        </div>
+      </Panel>
+
+      {canServerCache && (
+        <Panel
+          title={t("Sunucu önbelleği")}
+          actions={
+            initial.server_cache?.enabled ? (
+              <Button size="sm" loading={purge.isPending} onClick={() => purge.mutate()}>
+                {t("Önbelleği temizle")}
+              </Button>
+            ) : undefined
+          }
+        >
+          <div className="flex flex-col gap-5">
+            <LabeledSwitch
+              checked={serverCache.enabled}
+              onChange={(next) => setServerCache((current) => ({ ...current, enabled: next }))}
+              label={site.kind === "php" ? t("Sayfaları sunucuda önbelleğe al (FastCGI)") : t("Yanıtları sunucuda önbelleğe al")}
+            />
+            <p className="max-w-[70ch] text-ink-2">
+              {t("Ziyaretçilere aynı sayfa tekrar tekrar hazırlanmak yerine saklanan kopyadan verilir; site belirgin biçimde hızlanır ve sunucu daha az yorulur. Giriş yapmış ziyaretçilerin, yönetim sayfalarının, form gönderimlerinin ve çerez ayarlayan yanıtların kopyası saklanmaz.")}
+            </p>
+            {serverCache.enabled && (
+              <div className="max-w-xs">
+                <Select
+                  label={t("Kopya ne kadar geçerli sayılsın")}
+                  value={serverCache.ttl || "10m"}
+                  onChange={(event) => setServerCache((current) => ({ ...current, ttl: event.target.value }))}
+                  hint={t("Süre dolunca sayfa yeniden hazırlanır. Sitede değişiklik yaptıktan sonra hemen görünmesini istiyorsanız önbelleği temizleyin.")}
+                >
+                  <option value="1m">{t("1 dakika")}</option>
+                  <option value="5m">{t("5 dakika")}</option>
+                  <option value="10m">{t("10 dakika")}</option>
+                  <option value="30m">{t("30 dakika")}</option>
+                  <option value="1h">{t("1 saat")}</option>
+                  <option value="6h">{t("6 saat")}</option>
+                  <option value="1d">{t("1 gün")}</option>
+                </Select>
+              </div>
+            )}
+            {!initial.server_cache?.enabled && <p className="max-w-[70ch] text-[13px] text-ink-3">{t("Önbelleği temizleme düğmesi, ayarı kaydettikten sonra görünür.")}</p>}
+          </div>
+        </Panel>
+      )}
+
+      <Panel title={t("Yalnızca Cloudflare")}>
+        <div className="flex flex-col gap-3">
+          <LabeledSwitch checked={cloudflareOnly} onChange={setCloudflareOnly} label={t("Siteye yalnızca Cloudflare üzerinden erişilsin")} />
+          <p className="max-w-[70ch] text-ink-2">
+            {t("Açıkken sunucunun adresine doğrudan gelen bağlantılar reddedilir; yalnızca Cloudflare'in adres aralıklarından gelen istekler kabul edilir. Böylece Cloudflare'in güvenlik duvarını atlayarak saldırı yapılamaz.")}
+          </p>
+          {cloudflareOnly && (
+            <p role="alert" className="max-w-[70ch] rounded-md bg-warn-soft px-3 py-2 text-warn">
+              {t("Dikkat: alan adınızın DNS kaydı Cloudflare üzerinden vekillenmiyorsa (turuncu bulut) site herkese kapanır. Önce DNS sayfasından kaydı kontrol edin. Sertifika doğrulaması her durumda çalışır.")}
+            </p>
+          )}
         </div>
       </Panel>
 
