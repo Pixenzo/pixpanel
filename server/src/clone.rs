@@ -48,11 +48,14 @@ async fn copy_files(ctx: &JobCtx, source: &Site, target: &Site) -> AppResult<()>
 
 /// Kopyalama görevinin gövdesi. Hedef site kaydı ve boş klasörü önceden hazırlanmıştır.
 /// Başarısız olursa yarım kalan kopya (site, dosyaları, açılan veritabanı) geri alınır.
-pub async fn run(ctx: &JobCtx, state: &AppState, source: &Site, target: &Site, wordpress: bool) -> AppResult<()> {
+pub async fn run(ctx: &JobCtx, state: &AppState, source: &Site, target: &Site, wordpress: bool, staging: bool) -> AppResult<()> {
     let outcome = async {
         copy_files(ctx, source, target).await?;
         if wordpress {
             crate::wordpress::clone_database(ctx, state, source, target).await?;
+            if staging {
+                crate::wordpress::staging::mark(ctx, target).await?;
+            }
         }
         // Dosyalar yerine geldikten sonra servisler (PHP havuzu, Node.js uygulaması) yeniden kurulur.
         let _guard = state.sys_lock.lock().await;

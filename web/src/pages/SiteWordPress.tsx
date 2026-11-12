@@ -14,6 +14,7 @@ import { generatePassword } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { JobLog } from "./Jobs";
+import { StagingPanel } from "./SiteStaging";
 
 const LOCALES = [
   { value: "tr_TR", label: "Türkçe" },
@@ -344,6 +345,8 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
           </div>
         )}
       </Panel>
+
+      <StagingPanel site={site} />
 
       <Panel flush title={t("Bakım ve güncelleme")}>
         <ul className="divide-y divide-line">

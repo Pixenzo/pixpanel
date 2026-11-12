@@ -165,13 +165,23 @@ struct CloneBody {
 async fn clone_site(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<CloneBody>) -> AppResult<Json<serde_json::Value>> {
     user.require(AREA)?;
     let source = sites::get(&state.db, &user, id)?;
+    let (job_id, site_id) = start_clone(&state, &user, source, &body.domain, false).await?;
+    Ok(Json(json!({ "job_id": job_id, "site_id": site_id })))
+}
+
+/// Kopyalama görevini başlatır; (görev, yeni site) kimliklerini döner. `staging` verilirse kopya
+/// asıl sitenin WordPress hazırlık ortamı olarak işaretlenir.
+pub(crate) async fn start_clone(state: &AppState, user: &AuthUser, source: Site, domain_text: &str, staging: bool) -> AppResult<(i64, i64)> {
     if source.status != "active" {
         return Err(AppError::bad("Askıdaki site kopyalanamaz"));
     }
     crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Site)?;
-    let domain_name = domain::normalize(&body.domain)?;
-    sites::check_names_allowed(&state.db, &user, source.user_id, std::slice::from_ref(&domain_name))?;
+    let domain_name = domain::normalize(domain_text)?;
+    sites::check_names_allowed(&state.db, user, source.user_id, std::slice::from_ref(&domain_name))?;
     let wordpress = crate::wordpress::is_wordpress(&source).await;
+    if staging && !wordpress {
+        return Err(AppError::bad("Hazırlık ortamı yalnızca WordPress kurulu sitelerde açılır"));
+    }
     if wordpress {
         crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Database)?;
     }
@@ -203,15 +213,20 @@ async fn clone_site(State(state): State<AppState>, user: AuthUser, Path(id): Pat
             sites::delete_row(&state.db, new_id)?;
             return Err(err);
         }
+        if staging {
+            sites::set_staging_of(&state.db, new_id, Some(source.id))?;
+            target.staging_of = Some(source.id);
+        }
         target
     };
 
-    auth::audit(&state.db, &user, "site.clone", &source.domain, &domain_name);
+    auth::audit(&state.db, user, if staging { "wordpress.staging.create" } else { "site.clone" }, &source.domain, &domain_name);
     let job_state = state.clone();
-    let title = format!("Site kopyalama: {} → {}", source.domain, domain_name);
+    let title = if staging { format!("Hazırlık ortamı: {} → {}", source.domain, domain_name) } else { format!("Site kopyalama: {} → {}", source.domain, domain_name) };
     let target_id = target.id;
-    let job_id = state.jobs.start("site.clone", &title, Some(user.id), move |ctx| async move { crate::clone::run(&ctx, &job_state, &source, &target, wordpress).await })?;
-    Ok(Json(json!({ "job_id": job_id, "site_id": target_id })))
+    let job_id =
+        state.jobs.start("site.clone", &title, Some(user.id), move |ctx| async move { crate::clone::run(&ctx, &job_state, &source, &target, wordpress, staging).await })?;
+    Ok((job_id, target_id))
 }
 
 #[derive(Deserialize)]

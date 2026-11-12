@@ -522,6 +522,11 @@ const MIGRATIONS: &[&str] = &[
      WHERE type = 'table' AND name = 'sites';
     PRAGMA writable_schema = OFF;
     "#,
+    // 28: WordPress hazırlık ortamı: kopyanın hangi sitenin hazırlık ortamı olduğu. Asıl site
+    //     silinince bağ kopar, kopya sıradan bir site olarak kalır.
+    r#"
+    ALTER TABLE sites ADD COLUMN staging_of INTEGER REFERENCES sites(id) ON DELETE SET NULL;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

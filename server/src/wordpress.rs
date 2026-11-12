@@ -24,6 +24,8 @@ use crate::state::AppState;
 use crate::sys::exec::{self, CmdOutput};
 use crate::sys::runas;
 
+pub mod staging;
+
 /// Panelin kullandığı wp-cli sürümü. Dosya, gömülü özetle doğrulanmadan çalıştırılmaz.
 pub const WP_CLI_VERSION: &str = "2.12.0";
 const WP_CLI_SHA256: &str = "ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c";

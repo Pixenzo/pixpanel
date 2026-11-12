@@ -233,7 +233,10 @@
     "Uygulamayı durdurdu",
     "Uygulamayı yeniden başlattı",
     "Redis anahtarını değiştirdi",
-    "Başka sunucudan site taşıdı"
+    "Başka sunucudan site taşıdı",
+    "WordPress hazırlık ortamı açtı",
+    "Hazırlık ortamını canlıya aktardı",
+    "Hazırlık ortamını canlıdan yeniledi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",

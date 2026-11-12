@@ -49,6 +49,8 @@ pub struct Site {
     /// Yönlendirmeler, parola koruması, adres engelleme gibi kurallar. Arayüze parola özetleri gitmez.
     #[serde(serialize_with = "crate::hosting::rules::serialize_public")]
     pub rules: crate::hosting::rules::SiteRules,
+    /// Site bir WordPress hazırlık ortamıysa asıl sitenin kimliği.
+    pub staging_of: Option<i64>,
 }
 
 impl Site {
@@ -63,7 +65,7 @@ impl Site {
 
 const SITE_COLUMNS: &str = "s.id, s.user_id, u.username, s.domain, s.kind, s.public_dir, s.php_version,
      s.php_settings, s.proxy_target, s.proxy_websocket, s.ssl_mode, s.force_https, s.hsts,
-     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template, s.ip, s.rules";
+     s.nginx_custom, s.status, s.created_at, s.node_settings, s.proxy_rules, s.template, s.ip, s.rules, s.staging_of";
 
 fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
     let php_settings: String = row.get(7)?;
@@ -90,6 +92,7 @@ fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
         template: row.get(18)?,
         ip: row.get(19)?,
         rules: serde_json::from_str(&row.get::<_, String>(20)?).unwrap_or_default(),
+        staging_of: row.get(21)?,
     })
 }
 
@@ -438,6 +441,21 @@ pub fn save(db: &Db, site: &Site) -> AppResult<()> {
         Ok(Ok(()))
     })?;
     outcome.map_err(|taken| AppError::conflict(format!("{taken} başka bir sitede zaten kullanılıyor")))
+}
+
+/// Siteyi bir asıl sitenin hazırlık ortamı olarak işaretler (ya da bağı koparır).
+pub fn set_staging_of(db: &Db, id: i64, live: Option<i64>) -> AppResult<()> {
+    db.call(|conn| conn.execute("UPDATE sites SET staging_of = ?1 WHERE id = ?2", params![live, id]))?;
+    Ok(())
+}
+
+/// Sitenin hazırlık ortamları: (kimlik, alan adı).
+pub fn stagings_of(db: &Db, id: i64) -> AppResult<Vec<(i64, String)>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT id, domain FROM sites WHERE staging_of = ?1 ORDER BY domain")?;
+        let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    })
 }
 
 pub fn delete_row(db: &Db, id: i64) -> AppResult<()> {

@@ -315,6 +315,8 @@ export interface Site {
   /** Sitenin bağlandığı sunucu adresi; boşsa bütün adresler. */
   ip: string;
   rules: SiteRules;
+  /** Site bir WordPress hazırlık ortamıysa asıl sitenin kimliği. */
+  staging_of: number | null;
 }
 
 export type DbEngine = "mariadb" | "postgresql";
