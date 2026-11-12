@@ -278,7 +278,8 @@ pub fn validate_version(version: &str) -> AppResult<()> {
     if valid { Ok(()) } else { Err(AppError::bad("Geçersiz PHP sürümü")) }
 }
 
-/// Sunucuda FPM'i kurulu PHP sürümleri (yeniden eskiye).
+/// Sunucuda FPM'i kurulu PHP sürümleri (yeniden eskiye). Paket kaldırılınca `/etc/php/<sürüm>`
+/// yapılandırması kalır (`remove` onu silmez); bu yüzden FPM ikilisinin varlığına da bakılır.
 pub fn installed_versions() -> Vec<String> {
     let mut versions: Vec<String> = std::fs::read_dir("/etc/php")
         .map(|entries| {
@@ -287,6 +288,7 @@ pub fn installed_versions() -> Vec<String> {
                 .filter(|entry| entry.path().join("fpm/pool.d").is_dir())
                 .filter_map(|entry| entry.file_name().into_string().ok())
                 .filter(|name| validate_version(name).is_ok())
+                .filter(|name| std::path::Path::new(&format!("/usr/sbin/php-fpm{name}")).is_file())
                 .collect()
         })
         .unwrap_or_default();

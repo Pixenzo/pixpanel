@@ -33,6 +33,7 @@ import { RedisRoute } from "./pages/Redis";
 import { BackupsPage } from "./pages/Backups";
 import { ServicesPage } from "./pages/Services";
 import { SettingsPage } from "./pages/Settings";
+import { SystemUpdatesPage } from "./pages/SystemUpdates";
 import { SiteDetailPage } from "./pages/SiteDetail";
 import { SitesPage } from "./pages/Sites";
 import { TerminalPage } from "./pages/Terminal";
@@ -74,6 +75,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/services" element={<ServicesPage />} />
+            <Route path="/updates" element={<SystemUpdatesPage />} />
             <Route path="/processes" element={<ProcessesPage />} />
             <Route path="/terminal" element={<TerminalPage />} />
             <Route path="/audit" element={<AuditPage />} />
