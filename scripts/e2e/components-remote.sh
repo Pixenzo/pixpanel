@@ -157,6 +157,7 @@ suite twofactor
 suite events
 suite webhooks
 suite reseller-brand
+suite sys-updates
 suite health ftp
 suite wordpress php-8.3 mariadb restic
 suite packages mail ftp dns mariadb

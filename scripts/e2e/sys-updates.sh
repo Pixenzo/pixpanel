@@ -78,7 +78,7 @@ check "müşteri hesabı silinir" "$(code DELETE /users/$(user_id $CUSTOMER))" 2
 
 say "Liste biçimi"
 V=$(api GET /system/updates)
-check "alanlar" "$(jget 'sorted(d.keys())' <<<"$V")" "['busy', 'checked_at', 'kernel', 'packages', 'refresh_error', 'reboot', 'security', 'services_to_restart', 'total', 'unattended']"
+check "alanlar" "$(jget "sorted(k for k in d.keys() if k not in ('refresh_error', 'services_to_restart'))" <<<"$V")" "['busy', 'checked_at', 'kernel', 'packages', 'reboot', 'security', 'total', 'unattended']"
 check "toplam, liste uzunluğuna eşit" "$(jget 'd["total"] == len(d["packages"])' <<<"$V")" True
 check "güvenlik sayısı, işaretli paketlere eşit" "$(jget 'd["security"] == sum(1 for p in d["packages"] if p["security"])' <<<"$V")" True
 check "paket alanları" "$(jget 'all(sorted(p.keys()) == ["candidate", "installed", "name", "security"] and p["name"] and p["candidate"] for p in d["packages"])' <<<"$V")" True

@@ -24,7 +24,8 @@
     "Kullanıcılar",
     "Görevler",
     "Denetim günlüğü",
-    "Ayarlar"
+    "Ayarlar",
+    "Güncellemeler"
   ],
   "web/src/components/SecurityTabs.tsx": [
     "Güvenlik duvarı",
@@ -53,7 +54,11 @@
     "Let's Encrypt",
     "Let's Encrypt (joker)",
     "Yüklenen sertifika",
-    "Kendinden imzalı"
+    "Kendinden imzalı",
+    "Dosyalar ve veritabanları",
+    "Uygulama ve geliştirme",
+    "Güvenlik ve erişim",
+    "Alan adı ve posta"
   ],
   "web/src/components/PanelCertificate.tsx": [
     "Kendinden imzalı",
@@ -254,7 +259,12 @@
     "Yavaş sorgu günlüğü ayarını değiştirdi",
     "Posta kutusuna ileti aktardı",
     "Bayi markasını güncelledi",
-    "Bayi markasını kaldırdı"
+    "Bayi markasını kaldırdı",
+    "Paket listesini yeniledi",
+    "Sistem güncellemesi kurdu",
+    "Sunucuyu yeniden başlattı",
+    "Yeniden başlatmayı iptal etti",
+    "Bileşen kaldırdı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
