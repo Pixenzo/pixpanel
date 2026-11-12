@@ -25,7 +25,8 @@ Dosya adlarında sürüm numarası yoktur; böylece `…/releases/latest/downloa
 
 - Gizli anahtar: `.secrets/release-key.pem` (depoya girmez; yolu `.env` içinde `PIXPANEL_RELEASE_KEY`).
 - Açık anahtar iki yere gömülüdür: `server/src/update.rs` (`RELEASE_PUBLIC_KEY`) ve `install/install.sh` (`PUBLIC_KEY`).
-- **Bu anahtarın yedeği yalnızca bu bilgisayarda.** Kaybedilirse kurulu paneller yeni sürümleri kabul etmez; her sunucuda `update_public_key` ayarıyla yeni anahtarı tanıtmak ya da paneli betikle yeniden kurmak gerekir. Çalınırsa sahte sürüm imzalanabilir. Parola yöneticisine bir kopyasını koyun.
+- Yedeği: kapalı `Pixenzo/pixpanel-secrets` deposunda `release-key.pem.enc` (AES-256-CBC, PBKDF2 600000 tur; 13.11.2026). Parolası depoda durmaz; yerelde `.secrets/backup-passphrase.txt` dosyasındadır ve parola yöneticisine de konmalıdır (yalnızca bu bilgisayarda kalırsa disk kaybında yedek açılamaz). Geri açma komutu o deponun README dosyasında.
+- Anahtar kaybedilirse kurulu paneller yeni sürümleri kabul etmez; her sunucuda `update_public_key` ayarıyla yeni anahtarı tanıtmak ya da paneli betikle yeniden kurmak gerekir. Çalınırsa sahte sürüm imzalanabilir.
 
 ## Kurulum
 
@@ -48,15 +49,9 @@ update_url = "https://github.com/Pixenzo/pixpanel/releases/latest/download"   # 
 # update_public_key = "…"   # yalnızca kendi anahtarınızla imzalanan sürümler için
 ```
 
-## Depo kapalıyken
+## Dağıtım
 
-`Pixenzo/pixpanel` kapalı olduğu sürece yukarıdaki GitHub adresleri kimlik sormadan indirilemez: tek satırlık kurulum komutu ve paneldeki güncelleme denetimi çalışmaz ("sunucu 404 döndü"). Seçenekler:
-
-1. Depoyu açmak.
-2. Yalnızca sürüm dosyalarının durduğu açık bir depo (ör. `Pixenzo/pixpanel-releases`) açıp `update_url` varsayılanını ve `install.sh` içindeki adresi oraya çevirmek.
-3. Dosyaları kendi sunucunuzdan yayınlamak (`update_url` ve `--url`).
-
-O zamana kadar kurulum `--from-dir` ile yapılır.
+`Pixenzo/pixpanel` 13.11.2026'da açık depo yapıldı; yukarıdaki GitHub adresleri kimlik sormadan indirilebilir. Tek satırlık kurulum komutu ve paneldeki güncelleme denetimi ilk sürüm GitHub'da yayınlandığında çalışmaya başlar (henüz yayınlanmış sürüm yok; o zamana kadar kurulum `--from-dir` ile yapılır).
 
 ## Sınamalar
 
