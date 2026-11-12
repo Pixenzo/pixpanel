@@ -403,7 +403,7 @@ fn path_regex(path: &str) -> String {
 /// içeriyorsa nginx onu zaten saklamaz. Emin olunamayan her durumda istek önbelleği atlar.
 fn render_cache_preamble(out: &mut String, site_id: i64, cache: CacheKind) {
     let directive = if cache == CacheKind::Proxy { "proxy_cache_path" } else { "fastcgi_cache_path" };
-    let _ = writeln!(out, "{directive} {CACHE_DIR}/{site_id} levels=1:2 keys_zone=pix_{site_id}:10m max_size=256m inactive=1d use_temp_path=off;");
+    let _ = writeln!(out, "{directive} {CACHE_DIR}/{site_id} levels=1:2 keys_zone=pix_{site_id}:4m max_size=256m inactive=1d use_temp_path=off;");
     // 1: önbellek atlanır.
     let _ = writeln!(out, "map $request_method $pix_cm_{site_id} {{\n    default 1;\n    GET 0;\n    HEAD 0;\n}}");
     let _ = writeln!(
@@ -901,7 +901,7 @@ mod tests {
     fn cache_rendering() {
         let rules = SiteRules { server_cache: ServerCache { enabled: true, ttl: "1h".into() }, browser_cache: "1y".into(), ..SiteRules::default() };
         let preamble = render_preamble(9, &rules, CacheKind::Fastcgi, None);
-        assert!(preamble.contains("fastcgi_cache_path /var/cache/nginx/pixpanel/9 levels=1:2 keys_zone=pix_9:10m"));
+        assert!(preamble.contains("fastcgi_cache_path /var/cache/nginx/pixpanel/9 levels=1:2 keys_zone=pix_9:4m"));
         assert!(preamble.contains("map $request_method $pix_cm_9 {\n    default 1;\n    GET 0;\n    HEAD 0;"));
         assert!(preamble.contains("$pix_nocache_9 {\n    default 1;\n    \"0000\" 0;"));
         assert!(preamble.contains("wp-admin|wp-login[.]php"));

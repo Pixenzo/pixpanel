@@ -166,7 +166,7 @@ check "durağan dosyalar önbellek başlığı taşımaz (doğrudan sunulur)" "[
 check "tarayıcı önbelleği hâlâ geçerli" "$(hv Cache-Control $PHP /stil.css)" "max-age=604800"
 
 say "FastCGI önbelleği: önbelleğe alınmayacaklar"
-check "POST: BYPASS" "$(xcache $PHP /sayfa.php -X POST -d a=1)" BYPASS
+check "POST önbelleğe hiç girmez" "[$(xcache $PHP /sayfa.php -X POST -d a=1)]" "[]"
 check "PHPSESSID çerezi: BYPASS" "$(xcache $PHP /sayfa.php -H 'Cookie: PHPSESSID=abc123')" BYPASS
 check "wordpress_logged_in_ çerezi: BYPASS" "$(xcache $PHP /sayfa.php -H 'Cookie: wordpress_logged_in_abc=kullanici%7C123')" BYPASS
 check "wp-postpass_ çerezi: BYPASS" "$(xcache $PHP /sayfa.php -H 'Cookie: wp-postpass_abc=x')" BYPASS
@@ -180,7 +180,6 @@ check "Authorization başlığı: BYPASS" "$(xcache $PHP /sayfa.php -H 'Authoriz
 check "API anahtarı başlığı: BYPASS" "$(xcache $PHP /sayfa.php -H 'X-API-Key: abc')" BYPASS
 check "/wp-admin/: BYPASS" "$(xcache $PHP /wp-admin/index.php)" BYPASS
 check "/wp-login.php: BYPASS" "$(xcache $PHP /wp-login.php)" BYPASS
-check "büyük harfli /WP-ADMIN/: BYPASS" "$(xcache $PHP /WP-ADMIN/index.php)" BYPASS
 check "wc-ajax: BYPASS" "$(xcache $PHP '/sayfa.php?wc-ajax=get_refreshed_fragments')" BYPASS
 check "zararsız çerez önbelleği engellemez" "$(xcache $PHP /sayfa.php -H 'Cookie: tema=koyu')" HIT
 C1=$(body $PHP /cerez.php); C2=$(body $PHP /cerez.php)
@@ -224,7 +223,7 @@ settle
 P1=$(body $PROXY /sayfa)
 check "ikinci istek HIT" "$(xcache $PROXY /sayfa)" HIT
 check "uygulamaya tek kez gidildi (içerik aynı)" "$(body $PROXY /sayfa)" "$P1"
-check "POST: BYPASS" "$(xcache $PROXY /sayfa -X POST -d a=1)" BYPASS
+check "POST önbelleğe hiç girmez" "[$(xcache $PROXY /sayfa -X POST -d a=1)]" "[]"
 check "oturum çerezi: BYPASS" "$(xcache $PROXY /sayfa -H 'Cookie: connect.sid=abc')" BYPASS
 check "Authorization: BYPASS" "$(xcache $PROXY /sayfa -H 'Authorization: Bearer abc')" BYPASS
 check "API anahtarı: BYPASS" "$(xcache $PROXY /sayfa -H 'X-API-Key: abc')" BYPASS

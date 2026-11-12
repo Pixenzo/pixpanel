@@ -236,7 +236,8 @@
     "Başka sunucudan site taşıdı",
     "WordPress hazırlık ortamı açtı",
     "Hazırlık ortamını canlıya aktardı",
-    "Hazırlık ortamını canlıdan yeniledi"
+    "Hazırlık ortamını canlıdan yeniledi",
+    "Site önbelleğini temizledi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",

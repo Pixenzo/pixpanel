@@ -85,6 +85,7 @@ const actionLabels: Record<string, string> = {
   "package.delete": "Paketi sildi",
   "site.clone": "Siteyi kopyaladı",
   "site.migrate": "Başka sunucudan site taşıdı",
+  "site.cache.purge": "Site önbelleğini temizledi",
   "ftp.create": "FTP hesabı oluşturdu",
   "ftp.update": "FTP hesabını değiştirdi",
   "ftp.delete": "FTP hesabını sildi",
