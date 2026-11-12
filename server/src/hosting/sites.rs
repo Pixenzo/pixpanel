@@ -174,6 +174,14 @@ pub fn list_by_php(db: &Db, version: &str) -> AppResult<Vec<Site>> {
     })
 }
 
+/// Bir hesabın bütün siteleri (kaynak sınırları değişince servisleri ve havuzları yenilemek için).
+pub fn list_by_user(db: &Db, user_id: i64) -> AppResult<Vec<Site>> {
+    db.call(|conn| {
+        let mut stmt = conn.prepare(&format!("SELECT {SITE_COLUMNS} FROM sites s JOIN users u ON u.id = s.user_id WHERE s.user_id = ?1 ORDER BY s.domain"))?;
+        stmt.query_map(params![user_id], read_site)?.collect()
+    })
+}
+
 /// Verilen uv Python sürümünü seçmiş Python siteleri (sürüm kaldırılmadan önce denetlenir).
 pub fn list_by_python(db: &Db, version: &str) -> AppResult<Vec<Site>> {
     let sites: Vec<Site> = db.call(|conn| {

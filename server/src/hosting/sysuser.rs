@@ -129,6 +129,8 @@ pub async fn ensure(name: &str) -> AppResult<SysUser> {
     let user = lookup(name).ok_or_else(|| AppError::internal("kullanıcı oluşturuldu ama okunamadı"))?;
 
     harden_home(&user)?;
+    // Hesaba paket (işlemci/bellek sınırı) zaten atanmışsa sınırlar yeni kullanıcının dilimine yazılır.
+    crate::hosting::resource_limits::apply_stored(&user).await;
     Ok(user)
 }
 

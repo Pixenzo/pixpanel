@@ -159,14 +159,34 @@ pub fn render_unit(instance: &Instance) -> String {
          ProtectHome=yes\n\
          ReadWritePaths={data}\n\
          LimitNOFILE=10032\n\
-         {port_rule}\n\
+         {port_rule}{slice_line}\n\
          [Install]\n\
          WantedBy=multi-user.target\n",
         config = config_path(name).display(),
         port_rule = crate::hosting::portguard::deny_line(),
+        // Hesabın işlemci/bellek sınırı varsa Redis de hesabın diliminde çalışır.
+        slice_line = sysuser::lookup(name).map(|user| crate::hosting::resource_limits::redis_slice_line(user.uid)).unwrap_or_default(),
         memory = instance.memory_mb * 2 + 64,
         data = data_dir(name).display(),
     )
+}
+
+/// Var olan örneğin birim dosyasını güncel ayarlarla yeniden yazar; servisi yeniden başlatmaz ve
+/// `daemon-reload` çağırmaz (çağıran toplu yapar). Birim yoksa ya da içerik aynıysa `false` döner.
+/// Kaynak sınırı değişince dilim satırını eklemek/kaldırmak için kullanılır; değişiklik servisin
+/// bir sonraki başlatılışında geçerli olur.
+pub fn rewrite_unit(instance: &Instance) -> AppResult<bool> {
+    check_name(&instance.username)?;
+    let path = unit_path(&instance.username);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let wanted = render_unit(instance);
+    if std::fs::read_to_string(&path).is_ok_and(|current| current == wanted) {
+        return Ok(false);
+    }
+    atomic_write(&path, wanted.as_bytes(), 0o644)?;
+    Ok(true)
 }
 
 /// Kullanılmayan bir port seçer: kayıtlı örneklerin portları ve o an dinlenen portlar atlanır.

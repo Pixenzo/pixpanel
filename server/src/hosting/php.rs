@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::hosting::atomic_write;
+use crate::hosting::resource_limits::{self, Caps};
 use crate::hosting::sysuser::SysUser;
 use crate::sys::exec;
 
@@ -311,6 +312,33 @@ fn pool_path(version: &str, site_id: i64) -> PathBuf {
     PathBuf::from(format!("/etc/php/{version}/fpm/pool.d/pixpanel-{site_id}.conf"))
 }
 
+/// Havuzun gerçek `pm.max_children` değeri: site ayarı, paketin PHP işçisi sınırını aşamaz.
+fn effective_max_children(setting: u32, caps: &Caps) -> u32 {
+    caps.php_workers.and_then(|workers| u32::try_from(workers).ok()).map_or(setting, |workers| setting.min(workers.max(1)))
+}
+
+/// PHP boyut değerini (`256M`, `1G`, `512K`, bayt sayısı) bayta çevirir; anlaşılmazsa `None`.
+fn size_bytes(value: &str) -> Option<u64> {
+    let value = value.trim();
+    let (digits, multiplier) = match value.chars().last()? {
+        'K' | 'k' => (&value[..value.len() - 1], 1024),
+        'M' | 'm' => (&value[..value.len() - 1], 1024 * 1024),
+        'G' | 'g' => (&value[..value.len() - 1], 1024 * 1024 * 1024),
+        _ => (value, 1),
+    };
+    digits.parse::<u64>().ok()?.checked_mul(multiplier)
+}
+
+/// Paketin bellek sınırı (MB) varsa ve `memory_limit` onu aşıyorsa sınıra kırpar. Sınır yoksa değere dokunulmaz.
+fn clamp_memory_limit(value: &str, cap_mb: Option<i64>) -> String {
+    let Some(cap_mb) = cap_mb.and_then(|mb| u64::try_from(mb).ok()) else { return value.to_string() };
+    match size_bytes(value) {
+        Some(bytes) if bytes <= cap_mb * 1024 * 1024 => value.to_string(),
+        // Aşıyor ya da anlaşılamıyor (ör. `-1` sınırsız): sınıra çekilir.
+        _ => format!("{cap_mb}M"),
+    }
+}
+
 fn render_pool(
     site_id: i64,
     domain: &str,
@@ -319,6 +347,7 @@ fn render_pool(
     site_root: &Path,
     settings: &PhpSettings,
     global: &PhpGlobal,
+    caps: &Caps,
 ) -> String {
     let tmp = user.tmp_dir();
     let tmp = tmp.display();
@@ -353,10 +382,11 @@ fn render_pool(
          php_value[max_execution_time] = {time}\n\
          php_flag[display_errors] = {display}\n",
         socket = socket_path(site_id, version),
-        children = settings.max_children,
+        children = effective_max_children(settings.max_children, caps),
         // Devralınan değerler de havuza yazılır: `php_admin_value` olmadan
-        // site, genel sınırı `ini_set` ile aşabilirdi.
-        memory = settings.memory_limit.as_ref().unwrap_or(&global.memory_limit),
+        // site, genel sınırı `ini_set` ile aşabilirdi. Paketin bellek sınırı varsa
+        // tek bir PHP sürecinin bellek sınırı onu aşamaz (aşıyorsa kırpılır).
+        memory = clamp_memory_limit(settings.memory_limit.as_ref().unwrap_or(&global.memory_limit), caps.memory_mb),
         upload = settings.upload_max_filesize.as_ref().unwrap_or(&global.upload_max_filesize),
         post = settings.post_max_size.as_ref().unwrap_or(&global.post_max_size),
         vars = settings.max_input_vars.unwrap_or(global.max_input_vars),
@@ -446,7 +476,8 @@ pub async fn apply_pool(
     ensure_global_config(version).await?;
     let path = pool_path(version, site_id);
     let previous = std::fs::read(&path).ok();
-    atomic_write(&path, render_pool(site_id, domain, version, user, site_root, settings, &load_global(version)).as_bytes(), 0o644)?;
+    let caps = resource_limits::load_caps(&user.name);
+    atomic_write(&path, render_pool(site_id, domain, version, user, site_root, settings, &load_global(version), &caps).as_bytes(), 0o644)?;
 
     // Hatalı bir havuz bütün PHP sitelerini düşürebileceğinden önce sınanır.
     if let Err(detail) = test_config(version).await? {
@@ -458,6 +489,22 @@ pub async fn apply_pool(
     }
     reload(version).await?;
     wait_for_socket(&socket_path(site_id, version)).await
+}
+
+/// Havuz dosyası güncel sınırlarla yazılacak içerikten farklıysa havuzu yeniden uygular (sınama, geri alma
+/// ve yeniden yükleme `apply_pool` içindedir); aynıysa hiçbir şey yapmaz. Kaynak sınırları
+/// (paketin PHP işçisi ve bellek sınırı) değişince kullanılır. Kurulu olmayan sürüm sessizce atlanır.
+pub async fn sync_pool(site_id: i64, domain: &str, version: &str, user: &SysUser, site_root: &Path, settings: &PhpSettings) -> AppResult<()> {
+    validate_version(version)?;
+    if !installed_versions().iter().any(|v| v == version) {
+        return Ok(());
+    }
+    let caps = resource_limits::load_caps(&user.name);
+    let wanted = render_pool(site_id, domain, version, user, site_root, settings, &load_global(version), &caps);
+    if std::fs::read(pool_path(version, site_id)).ok().as_deref() == Some(wanted.as_bytes()) {
+        return Ok(());
+    }
+    apply_pool(site_id, domain, version, user, site_root, settings).await
 }
 
 /// `systemctl reload` PHP-FPM'e yalnızca sinyal gönderip döner; yeni havuzun
@@ -552,4 +599,34 @@ pub async fn set_extension(version: &str, name: &str, enabled: bool) -> AppResul
         return Err(AppError::bad(format!("Eklenti uygulanamadı: {detail}")));
     }
     reload(version).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn package_caps_limit_pool_workers() {
+        let none = Caps::default();
+        let capped = Caps { php_workers: Some(3), ..Caps::default() };
+        assert_eq!(effective_max_children(8, &none), 8);
+        assert_eq!(effective_max_children(8, &capped), 3);
+        assert_eq!(effective_max_children(2, &capped), 2, "sınır, site ayarını yükseltmez");
+    }
+
+    #[test]
+    fn memory_limit_is_clamped_to_package() {
+        assert_eq!(size_bytes("256M"), Some(256 * 1024 * 1024));
+        assert_eq!(size_bytes("1G"), Some(1024 * 1024 * 1024));
+        assert_eq!(size_bytes("512K"), Some(512 * 1024));
+        assert_eq!(size_bytes("1048576"), Some(1_048_576));
+        assert_eq!(size_bytes("-1"), None);
+        assert_eq!(size_bytes(""), None);
+        // Sınır yoksa dokunulmaz.
+        assert_eq!(clamp_memory_limit("2G", None), "2G");
+        assert_eq!(clamp_memory_limit("256M", Some(512)), "256M");
+        assert_eq!(clamp_memory_limit("1G", Some(512)), "512M");
+        assert_eq!(clamp_memory_limit("1G", Some(1024)), "1G");
+        assert_eq!(clamp_memory_limit("-1", Some(512)), "512M");
+    }
 }

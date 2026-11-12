@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use crate::auth::{self, AuthUser, Role};
 use crate::db::now;
 use crate::error::{AppError, AppResult};
+use crate::hosting::resource_limits;
 use crate::quota::{self, Limits, Package, Usage};
 use crate::state::AppState;
 
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list).post(create))
         .route("/usage", get(own_usage))
+        .route("/limits-support", get(limits_support))
         .route("/{id}", patch(update).delete(remove))
 }
 
@@ -53,7 +55,16 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
 
 /// Oturumdaki hesabın (alt hesapsa bağlı olduğu hesabın) paketi ve kullanımı.
 async fn own_usage(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Usage>> {
-    Ok(Json(quota::usage(&state.db, user.owner_id())?))
+    let mut usage = quota::usage(&state.db, user.owner_id())?;
+    usage.runtime = resource_limits::runtime(&state.db, user.owner_id()).await;
+    Ok(Json(usage))
+}
+
+/// Kaynak sınırlarının (işlemci, bellek, süreç) bu sunucuda uygulanıp uygulanamayacağı. Paket formu uyarı için kullanır.
+async fn limits_support(user: AuthUser) -> AppResult<Json<Value>> {
+    require_manager(&user)?;
+    let warning = resource_limits::enforcement_problem();
+    Ok(Json(json!({ "enforced": warning.is_none(), "warning": warning })))
 }
 
 #[derive(Deserialize)]
@@ -104,6 +115,8 @@ async fn update(State(state): State<AppState>, user: AuthUser, Path(id): Path<i6
     if !renamed {
         return Err(AppError::conflict(format!("“{name}” adında başka bir paket var")));
     }
+    // Paketi kullanan bütün hesapların işlemci/bellek sınırları yeni değerlere getirilir.
+    resource_limits::sync_package(&state, id).await;
     auth::audit(&state.db, &user, "package.update", &name, "");
     Ok(Json(json!({ "ok": true })))
 }

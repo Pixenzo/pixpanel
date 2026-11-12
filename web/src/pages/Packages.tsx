@@ -24,10 +24,58 @@ const LIMIT_FIELDS: { key: keyof PackageLimits; label: string; unit?: string }[]
   { key: "disk_mb", label: "Disk", unit: "MB" },
 ];
 
+/** İşlemci, bellek ve süreç sınırları; aralıklar sunucudaki doğrulamayla aynıdır. */
+const RESOURCE_FIELDS: { key: keyof PackageLimits; label: string; unit: string; min: number; max: number; hint: string }[] = [
+  {
+    key: "cpu_percent",
+    label: "İşlemci",
+    unit: "%",
+    min: 10,
+    max: 3200,
+    hint: "Bir çekirdeğin yüzdesi: 100 = bir tam çekirdek, 250 = iki buçuk çekirdek.",
+  },
+  {
+    key: "memory_mb",
+    label: "Bellek (RAM)",
+    unit: "MB",
+    min: 64,
+    max: 262144,
+    hint: "Hesabın bütün süreçlerinin (SSH, zamanlı görevler, Redis) toplam sınırı. PHP sitelerinde her sürecin memory_limit değeri bu sınıra kırpılır.",
+  },
+  {
+    key: "php_workers",
+    label: "PHP işçisi (site başına)",
+    unit: "",
+    min: 1,
+    max: 200,
+    hint: "Bir sitenin aynı anda çalıştırabileceği en çok PHP süreci (pm.max_children).",
+  },
+  {
+    key: "processes",
+    label: "Süreç sayısı",
+    unit: "",
+    min: 20,
+    max: 10000,
+    hint: "Hesabın en çok kaç süreç ve iş parçacığı çalıştırabileceği.",
+  },
+];
+
+const ALL_FIELDS: { key: keyof PackageLimits }[] = [...LIMIT_FIELDS, ...RESOURCE_FIELDS];
+
 function limitText(value: number | null, unit?: string): string {
   if (value === null) return t("Sınırsız");
   if (unit === "MB") return formatBytes(value * 1024 * 1024, 0);
   return String(value);
+}
+
+/** Paketin kaynak sınırlarını tek satırda özetler; hiçbiri yoksa "Sınırsız". */
+function resourceSummary(limits: PackageLimits): string {
+  const parts: string[] = [];
+  if (limits.cpu_percent !== null) parts.push(t("İşlemci %{n}", { n: limits.cpu_percent }));
+  if (limits.memory_mb !== null) parts.push(t("Bellek {size}", { size: formatBytes(limits.memory_mb * 1024 * 1024, 0) }));
+  if (limits.processes !== null) parts.push(t("{n} süreç", { n: limits.processes }));
+  if (limits.php_workers !== null) parts.push(t("{n} PHP işçisi", { n: limits.php_workers }));
+  return parts.length === 0 ? t("Sınırsız") : parts.join(" · ");
 }
 
 function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: () => void }) {
@@ -36,12 +84,13 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
   const [name, setName] = useState(pack?.name ?? "");
   // Boş kutu "sınırsız" demektir; bu yüzden değerler metin olarak tutulur.
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(LIMIT_FIELDS.map((field) => [field.key, pack?.limits[field.key]?.toString() ?? ""])),
+    Object.fromEntries(ALL_FIELDS.map((field) => [field.key, pack?.limits[field.key]?.toString() ?? ""])),
   );
+  const support = useQuery({ queryKey: ["packages", "limits-support"], queryFn: () => api.get<{ enforced: boolean; warning: string | null }>("/packages/limits-support") });
 
   const save = useMutation({
     mutationFn: () => {
-      const limits = Object.fromEntries(LIMIT_FIELDS.map((field) => [field.key, values[field.key].trim() === "" ? null : Number(values[field.key])]));
+      const limits = Object.fromEntries(ALL_FIELDS.map((field) => [field.key, values[field.key].trim() === "" ? null : Number(values[field.key])]));
       const body = { name, limits };
       return pack ? api.patch(`/packages/${pack.id}`, body) : api.post("/packages", body);
     },
@@ -91,6 +140,34 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
               />
             ))}
           </div>
+        </fieldset>
+        <fieldset>
+          <legend className="text-[13.5px] font-medium text-ink-2">{t("İşlemci ve bellek")}</legend>
+          <p className="mt-0.5 mb-3 text-[13px] text-ink-3">{t("Hesabın sunucuda kullanabileceği işlemci ve bellek. Boş bıraktığınız alan sınırsız olur.")}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {RESOURCE_FIELDS.map((field) => (
+              <Input
+                key={field.key}
+                label={field.unit ? `${t(field.label)} (${field.unit})` : t(field.label)}
+                type="number"
+                min={field.min}
+                max={field.max}
+                inputMode="numeric"
+                value={values[field.key]}
+                onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))}
+                placeholder={t("Sınırsız")}
+                hint={`${t(field.hint)} ${t("{min}–{max} arası.", { min: field.min, max: field.max })}`}
+              />
+            ))}
+          </div>
+          <p className="mt-3 text-[13px] text-ink-3">
+            {t("Node.js ve Python uygulamaları ile hesabın Redis'i, sınır değiştikten sonra bir sonraki yeniden başlatılmalarında hesabın toplam sınırına dahil olur.")}
+          </p>
+          {support.data && !support.data.enforced && (
+            <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-[13.5px] text-warn">
+              {t(support.data.warning ?? "Bu sunucuda işlemci ve bellek sınırları uygulanamıyor.")}
+            </p>
+          )}
         </fieldset>
         {pack && pack.accounts > 0 && (
           <p className="rounded-md bg-sunken px-3 py-2 text-[13.5px] text-ink-2">
@@ -159,6 +236,7 @@ export function PackagesPanel() {
                     {t(field.label)}
                   </Th>
                 ))}
+                <Th>{t("İşlemci ve bellek")}</Th>
                 <Th align="right">{t("Hesap")}</Th>
                 <Th align="right">{t("İşlemler")}</Th>
               </tr>
@@ -174,6 +252,7 @@ export function PackagesPanel() {
                       {limitText(pack.limits[field.key], field.unit)}
                     </Td>
                   ))}
+                  <Td className={resourceSummary(pack.limits) === t("Sınırsız") ? "text-ink-3" : undefined}>{resourceSummary(pack.limits)}</Td>
                   <Td align="right">{pack.accounts}</Td>
                   <Td align="right" className="py-0.5">
                     <div className="flex justify-end gap-0.5">
@@ -245,6 +324,55 @@ function UsageRow({ label, used, limit, text }: { label: string; used: number; l
   );
 }
 
+/** İşlemci, bellek ve süreç sınırları ile (varsa) anlık kullanım. Hiç kaynak sınırı yoksa hiçbir şey göstermez. */
+function ResourceUsage({ limits, runtime }: { limits: PackageLimits; runtime: AccountUsage["runtime"] }) {
+  if (limits.cpu_percent === null && limits.memory_mb === null && limits.processes === null && limits.php_workers === null) return null;
+  const memoryLimit = limits.memory_mb === null ? null : limits.memory_mb * 1024 * 1024;
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <h3 className="mb-3 text-[13.5px] font-medium text-ink-2">{t("İşlemci ve bellek")}</h3>
+      {runtime && !runtime.enforced && (
+        <p className="mb-3 rounded-md bg-warn-soft px-3 py-2 text-[13.5px] text-warn">{t(runtime.warning ?? "Bu sunucuda işlemci ve bellek sınırları uygulanamıyor.")}</p>
+      )}
+      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+        {limits.cpu_percent !== null && (
+          <UsageRow
+            label={t("İşlemci")}
+            used={runtime?.cpu_percent ?? 0}
+            limit={limits.cpu_percent}
+            text={
+              runtime?.cpu_percent != null
+                ? `%${runtime.cpu_percent.toFixed(0)} / %${limits.cpu_percent}`
+                : t("En çok %{n} (bir çekirdeğin yüzdesi)", { n: limits.cpu_percent })
+            }
+          />
+        )}
+        {memoryLimit !== null && (
+          <UsageRow
+            label={t("Bellek (RAM)")}
+            used={runtime?.memory_bytes ?? 0}
+            limit={memoryLimit}
+            text={runtime?.memory_bytes != null ? `${formatBytes(runtime.memory_bytes)} / ${formatBytes(memoryLimit, 0)}` : t("En çok {size}", { size: formatBytes(memoryLimit, 0) })}
+          />
+        )}
+        {limits.processes !== null && (
+          <UsageRow
+            label={t("Süreç sayısı")}
+            used={runtime?.tasks ?? 0}
+            limit={limits.processes}
+            text={runtime?.tasks != null ? `${runtime.tasks} / ${limits.processes}` : t("En çok {n}", { n: limits.processes })}
+          />
+        )}
+        {limits.php_workers !== null && (
+          <UsageRow label={t("PHP işçisi (site başına)")} used={0} limit={null} text={t("En çok {n}", { n: limits.php_workers })} />
+        )}
+      </dl>
+      {limits.memory_mb !== null && <p className="mt-3 text-[13px] text-ink-3">{t("PHP sitelerinde memory_limit değeri paketin bellek sınırını aşamaz; aşıyorsa sınıra düşürülür.")}</p>}
+      <p className="mt-2 text-[13px] text-ink-3">{t("Kullanım, hesabın SSH oturumları, zamanlı görevleri ve (sınır uygulandıysa) Redis ile uygulamalarının toplamıdır; hesap etkin bir süreç çalıştırmıyorsa boş görünür.")}</p>
+    </div>
+  );
+}
+
 /** Bir hesabın paketine göre kullanımı. `path`: kullanımın okunacağı uç. */
 export function UsagePanel({ path, title }: { path: string; title?: string }) {
   const usage = useQuery({ queryKey: ["usage", path], queryFn: () => api.get<AccountUsage>(path) });
@@ -284,6 +412,7 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
           }
         />
       </dl>
+      <ResourceUsage limits={data.limits} runtime={data.runtime} />
       {data.database_bytes !== null && (
         <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
           <span className="text-ink-2">{t("Disk kullanımının veritabanları payı")}</span>
