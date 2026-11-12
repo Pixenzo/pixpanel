@@ -591,6 +591,11 @@ const MIGRATIONS: &[&str] = &[
         updated_at    INTEGER NOT NULL
     );
     "#,
+    // 33: API anahtarı kapsamı. `scope` erişilebilen alanların JSON dizisidir (ör. ["sites","dns"]);
+    //     NULL kapsam yok demektir (hesabın bütün yetkileri; var olan anahtarlar böyle kalır).
+    r#"
+    ALTER TABLE api_tokens ADD COLUMN scope TEXT;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

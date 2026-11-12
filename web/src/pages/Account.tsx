@@ -31,6 +31,7 @@ import { formatDateTime, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { UsagePanel } from "./Packages";
+import { permissionAreas } from "./Users";
 
 function LanguagePanel() {
   const me = useMe();
@@ -183,7 +184,12 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [readOnly, setReadOnly] = useState(false);
   const [allowedIps, setAllowedIps] = useState("");
   const [expiry, setExpiry] = useState("0");
+  const [scopeMode, setScopeMode] = useState<"all" | "selected">("all");
+  const [scope, setScope] = useState<string[]>([]);
   const [created, setCreated] = useState<string | null>(null);
+  const me = useMe();
+  // Alt hesap yalnızca kendi yetkisi olan alanları kapsama alabilir.
+  const availableAreas = permissionAreas.filter(([key]) => me.role !== "member" || me.permissions.includes(key));
 
   const create = useMutation({
     mutationFn: () =>
@@ -192,6 +198,7 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
         read_only: readOnly,
         allowed_ips: allowedIps,
         expires_in_days: Number(expiry) || null,
+        scope: scopeMode === "selected" ? scope : [],
       }),
     onSuccess: (result) => {
       setCreated(result.token);
@@ -204,6 +211,8 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
     setReadOnly(false);
     setAllowedIps("");
     setExpiry("0");
+    setScopeMode("all");
+    setScope([]);
     setCreated(null);
     create.reset();
     onClose();
@@ -242,7 +251,7 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
       footer={
         <>
           <Button onClick={close}>{t("Vazgeç")}</Button>
-          <Button variant="primary" type="submit" form="create-token" loading={create.isPending}>
+          <Button variant="primary" type="submit" form="create-token" loading={create.isPending} disabled={scopeMode === "selected" && scope.length === 0}>
             {t("Anahtarı oluştur")}
           </Button>
         </>
@@ -277,10 +286,40 @@ function CreateTokenModal({ open, onClose }: { open: boolean; onClose: () => voi
           checked={readOnly}
           onChange={(e) => setReadOnly(e.target.checked)}
         />
+        <div className="flex flex-col gap-2">
+          <Select label={t("Erişim alanları")} value={scopeMode} onChange={(e) => setScopeMode(e.target.value === "selected" ? "selected" : "all")}>
+            <option value="all">{t("Hesabımın bütün yetkileri")}</option>
+            <option value="selected">{t("Yalnızca seçtiğim alanlar")}</option>
+          </Select>
+          {scopeMode === "selected" ? (
+            <>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                {availableAreas.map(([key, label]) => (
+                  <Checkbox
+                    key={key}
+                    label={t(label)}
+                    checked={scope.includes(key)}
+                    onChange={(event) => setScope(event.target.checked ? [...scope, key] : scope.filter((item) => item !== key))}
+                  />
+                ))}
+              </div>
+              <p className="text-[13px] text-ink-3">{t("Anahtar yalnızca seçilen alanlardaki işlemleri yapabilir; kullanıcı, sunucu ve güvenlik ayarlarına erişemez.")}</p>
+            </>
+          ) : (
+            <p className="text-[13px] text-ink-3">{t("Anahtar, hesabınızın yapabildiği her şeyi yapabilir.")}</p>
+          )}
+        </div>
         {create.isError && <ErrorBlock message={errorMessage(create.error)} />}
       </form>
     </Modal>
   );
+}
+
+/** Anahtar listesinde kapsamın kısa özeti: tüm alanlar adıyla, çoksa sayıyla. */
+function scopeSummary(scope: string[]): string {
+  if (scope.length === 0) return t("Alan yok");
+  const names = scope.map((key) => t(permissionAreas.find(([area]) => area === key)?.[1] ?? key));
+  return names.length <= 3 ? t("Alanlar: {areas}", { areas: names.join(", ") }) : t("{count} alan: {areas}", { count: names.length, areas: names.slice(0, 2).join(", ") + "…" });
 }
 
 function TokensPanel() {
@@ -343,7 +382,8 @@ function TokensPanel() {
                   <div className="flex flex-wrap gap-1">
                     {token.read_only && <Badge>{t("Salt okunur")}</Badge>}
                     {token.allowed_ips && <Badge>{token.allowed_ips}</Badge>}
-                    {!token.read_only && !token.allowed_ips && <span className="text-ink-3">{t("Yok")}</span>}
+                    {token.scope && <Badge>{scopeSummary(token.scope)}</Badge>}
+                    {!token.read_only && !token.allowed_ips && !token.scope && <span className="text-ink-3">{t("Yok")}</span>}
                   </div>
                 </Td>
                 <Td className="whitespace-nowrap text-ink-2">{formatRelative(token.last_used_at)}</Td>

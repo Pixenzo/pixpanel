@@ -87,6 +87,8 @@ pub fn actor(domain_owner_id: i64, address: &str, ip: &str) -> AuthUser {
         session_id: None,
         impersonator: None,
         impersonator_id: None,
+        token_scope: None,
+        scope_area: None,
     }
 }
 

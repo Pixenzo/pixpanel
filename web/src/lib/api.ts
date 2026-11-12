@@ -235,6 +235,8 @@ export interface TokenInfo {
   last_used_at: number | null;
   expires_at: number | null;
   created_at: number;
+  /** Anahtarın erişebildiği alanlar; null: kapsam yok (hesabın bütün yetkileri). */
+  scope: string[] | null;
 }
 
 export interface ComponentStatus {

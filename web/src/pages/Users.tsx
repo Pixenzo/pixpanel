@@ -43,7 +43,7 @@ export const roleLabels: Record<Role, string> = {
 };
 
 /** Alt hesaplara verilebilecek yetki alanları. */
-const permissionAreas: [string, string][] = [
+export const permissionAreas: [string, string][] = [
   ["sites", "Siteler"],
   ["files", "Dosyalar"],
   ["databases", "Veritabanları"],

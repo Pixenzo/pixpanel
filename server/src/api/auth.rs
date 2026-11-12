@@ -354,12 +354,14 @@ struct TokenInfo {
     last_used_at: Option<i64>,
     expires_at: Option<i64>,
     created_at: i64,
+    /// Anahtarın erişebildiği alanlar; `null`: kapsam yok (hesabın bütün yetkileri).
+    scope: Option<Vec<String>>,
 }
 
 async fn list_tokens(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<TokenInfo>>> {
     let tokens = state.db.call(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, prefix, read_only, allowed_ips, last_used_at, expires_at, created_at
+            "SELECT id, name, prefix, read_only, allowed_ips, last_used_at, expires_at, created_at, scope
              FROM api_tokens WHERE user_id = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![user.id], |row| {
@@ -372,6 +374,8 @@ async fn list_tokens(State(state): State<AppState>, user: AuthUser) -> AppResult
                 last_used_at: row.get(5)?,
                 expires_at: row.get(6)?,
                 created_at: row.get(7)?,
+                // Çözümlenemeyen kapsam "hiçbir alan" gösterilir; kimlik doğrulamadaki davranışla aynı.
+                scope: row.get::<_, Option<String>>(8)?.map(|raw| serde_json::from_str(&raw).unwrap_or_default()),
             })
         })?;
         rows.collect()
@@ -389,6 +393,10 @@ struct CreateTokenBody {
     allowed_ips: String,
     /// Kaç gün geçerli olacağı; verilmezse süresizdir.
     expires_in_days: Option<i64>,
+    /// Anahtarın erişebileceği alanlar (alt hesap yetki alanlarıyla aynı adlar); boş ya da verilmezse
+    /// hesabın bütün yetkileri. Kapsamlı anahtar yalnızca bu alanların uçlarını çağırabilir.
+    #[serde(default)]
+    scope: Vec<String>,
 }
 
 async fn create_token(
@@ -413,14 +421,15 @@ async fn create_token(
             return Err(AppError::bad(format!("Geçersiz IP adresi: {entry}")));
         }
     }
+    let scope = auth::normalize_scope(&body.scope, &user)?;
     let token = format!("{API_TOKEN_PREFIX}{}", auth::random_token(24));
     let prefix: String = token.chars().take(12).collect();
     let created = now();
     let expires_at = body.expires_in_days.filter(|days| *days > 0).map(|days| created + days * 86400);
     let id = state.db.call(|conn| {
         conn.execute(
-            "INSERT INTO api_tokens (user_id, name, token_hash, prefix, read_only, allowed_ips, expires_at, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO api_tokens (user_id, name, token_hash, prefix, read_only, allowed_ips, expires_at, created_at, scope)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 user.id,
                 name,
@@ -429,12 +438,13 @@ async fn create_token(
                 body.read_only,
                 body.allowed_ips.trim(),
                 expires_at,
-                created
+                created,
+                scope
             ],
         )?;
         Ok(conn.last_insert_rowid())
     })?;
-    auth::audit(&state.db, &user, "token.create", name, "");
+    auth::audit(&state.db, &user, "token.create", name, scope.as_deref().unwrap_or(""));
     // Ham anahtar yalnızca bu yanıtta gösterilir; sonradan geri alınamaz.
     Ok(Json(json!({ "id": id, "token": token })))
 }
