@@ -26,6 +26,7 @@ import { t } from "../lib/i18n";
 import { useJobs } from "../lib/live";
 import { useMe } from "../lib/session";
 import { siteToolGroups, siteTools } from "../lib/siteTools";
+import { BackupImportModal } from "./BackupImport";
 
 export const kindLabels: Record<SiteKind, string> = {
   php: "PHP",
@@ -577,6 +578,7 @@ export function SitesPage() {
   const me = useMe();
   const [searchParams, setSearchParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<number[] | null>(readExpanded);
   const sites = useQuery({ queryKey: ["sites"], queryFn: () => api.get<Site[]>("/sites") });
@@ -629,7 +631,12 @@ export function SitesPage() {
         <PageHeader
           title={t("Siteler")}
           description={t("Alan adlarınız ve her birinin araçları tek yerde. Bir aracı açmak için kutusuna tıklayın.")}
-          actions={createButton}
+          actions={
+            <>
+              {me.role === "admin" && <Button onClick={() => setImporting(true)}>{t("Yedek dosyasından içe aktar")}</Button>}
+              {createButton}
+            </>
+          }
         />
         {sites.isError && <ErrorBlock message={errorMessage(sites.error)} onRetry={() => void sites.refetch()} />}
         {(sites.isPending || options.isPending) && <LoadingBlock />}
@@ -701,6 +708,7 @@ export function SitesPage() {
         )}
       </div>
       <SideRail />
+      {importing && <BackupImportModal onClose={() => setImporting(false)} />}
       {options.data && (creating || proxyTarget !== null || parentSite) && (
         <CreateSiteModal
           key={parentSite?.domain ?? "new"}

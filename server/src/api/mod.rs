@@ -8,6 +8,7 @@ mod access;
 mod addresses;
 mod auth;
 mod backup;
+mod backup_import;
 mod backup_mine;
 mod branding;
 mod components;
@@ -31,7 +32,7 @@ mod packages;
 mod panelcert;
 mod php;
 mod redis;
-mod sites;
+pub(crate) mod sites;
 pub mod ssl;
 mod system;
 mod terminal;
@@ -65,6 +66,7 @@ pub fn router() -> Router<AppState> {
         .nest("/firewall", firewall::router())
         .nest("/fail2ban", fail2ban::router())
         .nest("/redis", redis::router())
+        .nest("/migrate", backup_import::router())
         .nest("/backup", backup::router().nest("/mine", backup_mine::router()))
         .nest("/docker", docker::router())
         .nest("/notifications", notify::router())

@@ -193,6 +193,7 @@ suite mail-owner mail roundcube
 suite migrate php-8.3 mariadb
 suite staging php-8.3 mariadb
 suite traffic php-8.3
+suite backup-import php-8.3 mariadb
 systemctl stop pxmocks 2>/dev/null
 
 say "Kaynak kullanımı"

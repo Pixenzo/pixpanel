@@ -278,7 +278,10 @@
     "DNS hazır kayıt şablonu uyguladı",
     "Trafik sınırı aşıldı, siteler askıya alındı",
     "Trafik askısı kaldırıldı",
-    "Node.js sürümünü güncelledi"
+    "Node.js sürümünü güncelledi",
+    "Yedek dosyasını inceledi",
+    "Yedek dosyasından içe aktardı",
+    "Yedek incelemesinin geçici dosyalarını sildi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",

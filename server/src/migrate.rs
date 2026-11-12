@@ -365,7 +365,7 @@ pub async fn probe(site: &Site, source: &Source) -> AppResult<Probe> {
 
 /// İki süreci birbirine bağlar: `producer`ın çıktısı `consumer`ın girdisine akar, ikisinin de
 /// hata satırları görev günlüğüne yazılır. Çıkış kodlarını döner.
-async fn pipe(ctx: &JobCtx, mut producer: Command, mut consumer: Command) -> AppResult<(i32, i32, String)> {
+pub(crate) async fn pipe(ctx: &JobCtx, mut producer: Command, mut consumer: Command) -> AppResult<(i32, i32, String)> {
     let mut first = producer.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|err| AppError::internal(format!("ssh başlatılamadı: {err}")))?;
     let stream: Stdio = first.stdout.take().expect("stdout borusu").try_into().map_err(|err: std::io::Error| AppError::internal(err.to_string()))?;
     let mut second = consumer.stdin(stream).stdout(Stdio::null()).stderr(Stdio::piped()).spawn().map_err(|err| AppError::internal(format!("komut başlatılamadı: {err}")))?;
@@ -533,14 +533,22 @@ async fn adopt_plain_database(ctx: &JobCtx, state: &AppState, site: &Site, works
         return Err(err);
     }
     ctx.log(format!("Veritabanı yüklendi: {database} (kullanıcı: {db_user})"));
+    finish_plain_database(ctx, user, site, &remote.name, &database, &db_user, &db_password).await;
+    Ok(())
+}
 
+/// Yüklenen veritabanının yeni bağlantı bilgilerini uygulamaya duyurur: yayın klasöründe eski
+/// veritabanını (`old_name`) gösteren bir `.env` varsa yeni bilgilerle güncellenir; bilgiler ayrıca
+/// hesabın `tmp` klasörüne (0600) yazılır. Hiçbiri başarısız olsa da taşıma başarısız sayılmaz.
+/// Yedekten içe aktarma da aynı adımı kullanır.
+pub(crate) async fn finish_plain_database(ctx: &JobCtx, user: &SysUser, site: &Site, old_name: &str, database: &str, db_user: &str, db_password: &str) {
     let docroot = site.docroot();
     let mut updated_env = false;
     let env = runas::output(runas::command(user, &docroot, "cat", &["--", ".env"]), QUICK).await;
     if let Ok(env) = env {
-        if env.success() && env_value(&env.stdout, "DB_DATABASE").as_deref() == Some(remote.name.as_str()) {
+        if env.success() && env_value(&env.stdout, "DB_DATABASE").as_deref() == Some(old_name) {
             let mut text = env.stdout.clone();
-            for (key, value) in [("DB_DATABASE", database.as_str()), ("DB_USERNAME", db_user.as_str()), ("DB_PASSWORD", db_password.as_str()), ("DB_HOST", "127.0.0.1"), ("DB_PORT", "3306")] {
+            for (key, value) in [("DB_DATABASE", database), ("DB_USERNAME", db_user), ("DB_PASSWORD", db_password), ("DB_HOST", "127.0.0.1"), ("DB_PORT", "3306")] {
                 text = replace_env(&text, key, value);
             }
             if write_file(user, &docroot, ".env", &text).await.is_ok() {
@@ -563,11 +571,10 @@ async fn adopt_plain_database(ctx: &JobCtx, state: &AppState, site: &Site, works
         }
         Err(_) => ctx.log("UYARI: bağlantı bilgileri dosyaya yazılamadı; Veritabanları sayfasından kullanıcıya yeni bir parola verin."),
     }
-    Ok(())
 }
 
 /// Dosyayı hesabın kullanıcısı olarak yazar (içerik `tee`nin girdisinden verilir).
-async fn write_file(user: &SysUser, dir: &Path, name: &str, content: &str) -> AppResult<()> {
+pub(crate) async fn write_file(user: &SysUser, dir: &Path, name: &str, content: &str) -> AppResult<()> {
     let mut cmd = runas::command(user, dir, "tee", &["--", name]);
     cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
     let mut child = cmd.spawn().map_err(|err| AppError::internal(format!("dosya yazılamadı: {err}")))?;

@@ -4,6 +4,7 @@ mod addresses;
 mod api;
 mod auth;
 mod backup;
+mod backup_import;
 mod cli;
 mod clone;
 mod components;
