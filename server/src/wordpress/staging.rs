@@ -56,7 +56,7 @@ async fn site_url(wp: &Wp) -> AppResult<(String, String)> {
 }
 
 /// Dosya eşitlemesi `rsync` ister; yoksa kurulur.
-async fn ensure_rsync(ctx: &JobCtx) -> AppResult<()> {
+pub(super) async fn ensure_rsync(ctx: &JobCtx) -> AppResult<()> {
     if Path::new("/usr/bin/rsync").is_file() {
         return Ok(());
     }
@@ -123,6 +123,8 @@ async fn transfer(ctx: &JobCtx, src: &Wp, dst: &Wp, src_host: &str, dst_url: &st
         // ortamı açıldıktan sonra yüklenenler kaybolmasın.
         let args = [
             "-a",
+            // Yayın klasörünün grubu (web sunucusu) hedefte olduğu gibi kalır.
+            "--no-g",
             "--delete",
             "--exclude=/wp-config.php",
             "--exclude=/.maintenance",

@@ -124,6 +124,39 @@ fi
 has "güncellemeden sonra site yoklandı" "$ULOG" "Site yanıt veriyor"
 check "güncellemeden sonra site yayında" "$(site / -o /dev/null -w '%{http_code}')" 200
 
+say "Siteyi bozan güncelleme geri alınır"
+# Eski sürümü kurulan eklenti güncellenince siteyi bozan bir "olmazsa olmaz" eklenti: güncelleme
+# sonrası site sunucu hatası verir, panel güncellemeden önceki hâle dönmelidir.
+WPR=/home/$PX_USER/sites/$DOMAIN/public
+wpc() { runuser -u "$PX_USER" -- php8.3 /usr/local/lib/pixpanel/wp-cli.phar --no-color --path=$WPR "$@" 2>/dev/null; }
+wpc plugin install hello-dolly --version=1.6 --force >/dev/null
+OLDVER=$(wpc plugin get hello-dolly --field=version)
+runuser -u "$PX_USER" -- mkdir -p $WPR/wp-content/mu-plugins
+cat > /tmp/pxwp-bozan.php <<'PHP'
+<?php
+// Sınama: hello-dolly 1.6'dan yeni bir sürüme geçince site bozulur (wp-cli etkilenmez).
+if (defined('WP_CLI') && WP_CLI) { return; }
+$file = WP_CONTENT_DIR . '/plugins/hello-dolly/hello.php';
+if (is_file($file) && preg_match('/^\s*\*?\s*Version:\s*(\S+)/mi', file_get_contents($file), $m) && version_compare($m[1], '1.6', '>')) {
+    http_response_code(500);
+    die('guncelleme bozdu');
+}
+PHP
+install -o "$PX_USER" -g "$PX_USER" -m 644 /tmp/pxwp-bozan.php $WPR/wp-content/mu-plugins/pxwp-bozan.php; rm -f /tmp/pxwp-bozan.php
+wpc option update pix_geri_donus "onceki-deger" >/dev/null
+check "güncellemeden önce site sağlam, eklenti eski sürümde" "$(site / -o /dev/null -w '%{http_code}') $OLDVER" "200 1.6"
+RJOB=$(api POST /sites/$S/wordpress/update -d '{"what":"plugins"}' | jget 'd["job_id"]')
+check "bozan güncelleme görevi başarısız sayılır" "$(wait_job "$RJOB")" failed
+RLOG=$(api GET "/jobs/$RJOB" | jget 'd["log"]')
+has "geri dönüş noktası alındı" "$RLOG" "Geri dönüş noktası alınıyor"
+has "site eski hâline döndürüldü" "$RLOG" "güncellemeden önceki hâline döndürülüyor"
+check "eklenti eski sürümüne döndü" "$(wpc plugin get hello-dolly --field=version)" "1.6"
+check "site yeniden yayında" "$(site / -o /dev/null -w '%{http_code}')" 200
+check "veritabanı güncelleme öncesindeki gibi" "$(wpc option get pix_geri_donus)" "onceki-deger"
+check "geri dönüş noktası silindi" "$(ls /home/$PX_USER/tmp/ 2>/dev/null | grep -c pixpanel-guncelleme)" 0
+check "dosyalar hesabın kullanıcısına ait" "$(find $WPR -not -user $PX_USER | wc -l)" 0
+rm -f $WPR/wp-content/mu-plugins/pxwp-bozan.php
+
 say "wp-cli bütünlüğü"
 echo "bozuk" >> /usr/local/lib/pixpanel/wp-cli.phar
 check "değiştirilmiş wp-cli çalıştırılmaz, yeniden indirilir" "$(api GET /sites/$S/wordpress | jget 'd["installed"]') $(sha256sum /usr/local/lib/pixpanel/wp-cli.phar | cut -c1-16)" "True ce34ddd838f7351d"

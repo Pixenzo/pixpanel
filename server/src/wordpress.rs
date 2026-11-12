@@ -24,6 +24,7 @@ use crate::state::AppState;
 use crate::sys::exec::{self, CmdOutput};
 use crate::sys::runas;
 
+mod rollback;
 pub mod staging;
 
 /// Panelin kullandığı wp-cli sürümü. Dosya, gömülü özetle doğrulanmadan çalıştırılmaz.
@@ -753,8 +754,27 @@ pub fn start_update_job(state: &AppState, user_id: Option<i64>, site: Site, what
     state.jobs.start("wordpress.update", &title, user_id, move |ctx| async move {
         let _lock = lock;
         backup_before_update(&ctx, &job_state, &site).await?;
-        update(&ctx, &site, &what).await?;
-        let outcome = verify_after_update(&ctx, &site).await;
+        // Site güncellemeden önce de bozuksa geri dönmenin anlamı yoktur; sorun güncellemeden gelmemiştir.
+        let healthy_before = !matches!(probe_status(&site).await, Some(status) if status >= 500);
+        let snapshot = if healthy_before { rollback::take(&ctx, &site).await } else { None };
+        let updated = update(&ctx, &site, &what).await;
+        let mut outcome = match updated {
+            Ok(()) => verify_after_update(&ctx, &site).await,
+            Err(err) => Err(err),
+        };
+        // Güncelleme siteyi bozduysa (sunucu hatası dönüyorsa) güncellemeden önceki hâl geri konur.
+        let broken = healthy_before && matches!(probe_status(&site).await, Some(status) if status >= 500);
+        if let (true, Some(snapshot)) = (broken, &snapshot) {
+            outcome = match rollback::restore(&ctx, &site, snapshot).await {
+                Ok(()) => Err(AppError::internal(
+                    "Güncelleme siteyi bozdu (sunucu hatası veriyordu); site güncellemeden önceki hâline döndürüldü. Güncellemeleri tek tek kurarak soruna yol açanı bulabilirsiniz.",
+                )),
+                Err(err) => Err(AppError::internal(format!("Güncelleme siteyi bozdu ve eski hâline döndürülemedi: {err}. Yedekler sayfasından güncelleme öncesi yedeğe dönün."))),
+            };
+        }
+        if let Some(snapshot) = snapshot {
+            rollback::discard(&site, snapshot).await;
+        }
         // Genel bakıştaki "güncelleme bekliyor" bulgusu bir sonraki taramayı beklemeden kalksın.
         crate::health::rescan_wordpress_site(&job_state, &site).await;
         outcome
@@ -782,6 +802,11 @@ async fn backup_before_update(ctx: &JobCtx, state: &AppState, site: &Site) -> Ap
         .map_err(|err| AppError::internal(format!("Yedek alınamadığı için güncelleme yapılmadı: {err}")))?;
     ctx.log(String::new());
     Ok(())
+}
+
+/// Sitenin sunucunun içinden yoklanınca döndürdüğü durum kodu; yoklanamıyorsa `None`.
+async fn probe_status(site: &Site) -> Option<u16> {
+    crate::uptime::probe(&site.domain, &site.ip, site.force_https && site.ssl_mode != "none", Duration::from_secs(20)).await.ok()
 }
 
 /// Güncellemeden sonra siteyi sunucunun içinden yoklar; sunucu hatası dönüyorsa görev
