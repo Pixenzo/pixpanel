@@ -118,6 +118,20 @@ pub fn catalog() -> Vec<Component> {
             repo: Repo::Distro,
         });
     }
+    for version in hosting::pyenv::PYTHON_VERSIONS {
+        // Python sürümleri uv ile (bağımsız python-build-standalone derlemeleri) kurulur;
+        // dağıtımın Python'undan ayrı, yan yana durur ve siteler sürümü tek tek seçer.
+        list.push(Component {
+            id: format!("python-{version}"),
+            name: format!("Python {version}"),
+            description: "uv ile kurulan bağımsız Python sürümü. Python siteleri sürümü tek tek seçebilir.",
+            category: "node",
+            packages: Vec::new(),
+            optional_packages: Vec::new(),
+            service: None,
+            repo: Repo::Distro,
+        });
+    }
     list.extend([
         component(
             "mariadb",
@@ -265,6 +279,19 @@ async fn node_version(major: &str) -> Option<String> {
 }
 
 pub async fn status(component: &Component) -> ComponentStatus {
+    if let Some(minor) = hosting::pyenv::version_of_component(&component.id) {
+        let version = hosting::pyenv::full_version(minor).await;
+        return ComponentStatus {
+            id: component.id.clone(),
+            name: component.name.clone(),
+            description: component.description,
+            category: component.category,
+            installed: version.is_some(),
+            running: version.is_some(),
+            version,
+            service: None,
+        };
+    }
     if let Some(major) = component.id.strip_prefix("node-") {
         let version = node_version(major).await;
         return ComponentStatus {
@@ -455,6 +482,10 @@ async fn install_node(ctx: &JobCtx, major: &str) -> AppResult<()> {
 }
 
 pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
+    if let Some(minor) = hosting::pyenv::version_of_component(&component.id) {
+        ctx.log(format!("{} kuruluyor", component.name));
+        return hosting::pyenv::install(ctx, minor).await;
+    }
     if let Some(major) = component.id.strip_prefix("node-") {
         ctx.log(format!("{} kuruluyor", component.name));
         return install_node(ctx, major).await;

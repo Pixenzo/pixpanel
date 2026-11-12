@@ -40,8 +40,21 @@ export function ComponentsPage() {
   });
 
   const remove = useMutation({
-    mutationFn: (component: ComponentRow) => api.post<{ job_id: number }>(`/components/${component.id}/remove`),
+    // uv ile kurulan Python sürümleri paket değildir; doğrudan silinir, görev başlamaz.
+    mutationFn: async (component: ComponentRow) => {
+      if (component.id.startsWith("python-")) {
+        await api.delete(`/components/${component.id}`);
+        return { job_id: null };
+      }
+      return api.post<{ job_id: number | null }>(`/components/${component.id}/remove`);
+    },
     onSuccess: (result, component) => {
+      if (result.job_id === null) {
+        feedback.success(t("{name} kaldırıldı", { name: component.name }));
+        void queryClient.invalidateQueries({ queryKey: ["components"] });
+        void queryClient.invalidateQueries({ queryKey: ["site-options"] });
+        return;
+      }
       setWatching({ jobId: result.job_id, title: t("{name} kaldırma", { name: component.name }) });
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
@@ -51,7 +64,9 @@ export function ComponentsPage() {
   async function confirmRemove(component: ComponentRow) {
     const confirmed = await feedback.confirm({
       title: t("{name} kaldırılsın mı?", { name: component.name }),
-      description: t("Paketler kaldırılır, yapılandırma dosyaları ve veriler silinmez; yeniden kurarsanız yerinde bulunur."),
+      description: component.id.startsWith("python-")
+        ? t("Bu sürümü kullanan site varsa kaldırılamaz; önce sitelerin Python sürümünü değiştirin.")
+        : t("Paketler kaldırılır, yapılandırma dosyaları ve veriler silinmez; yeniden kurarsanız yerinde bulunur."),
       confirmLabel: t("Kaldır"),
       danger: true,
     });
@@ -99,7 +114,7 @@ export function ComponentsPage() {
                               <Status tone="ok">{t("Kurulu")}</Status>
                             )}
                           </div>
-                          {component.removable && (
+                          {(component.removable || (component.id.startsWith("python-") && component.installed)) && (
                             <Button
                               size="sm"
                               variant="ghost"

@@ -7,6 +7,7 @@ pub mod nginx;
 pub mod node;
 pub mod php;
 pub mod portguard;
+pub mod pyenv;
 pub mod redis_account;
 pub mod rules;
 pub mod sites;

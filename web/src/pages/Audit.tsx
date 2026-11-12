@@ -85,6 +85,7 @@ const actionLabels: Record<string, string> = {
   "package.delete": "Paketi sildi",
   "site.clone": "Siteyi kopyaladı",
   "site.migrate": "Başka sunucudan site taşıdı",
+  "component.uninstall": "Bileşen kaldırdı",
   "system.updates.refresh": "Paket listesini yeniledi",
   "system.updates.install": "Sistem güncellemesi kurdu",
   "system.reboot": "Sunucuyu yeniden başlattı",

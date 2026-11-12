@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::hosting::atomic_write;
+use crate::hosting::pyenv;
 use crate::hosting::sysuser::SysUser;
 use crate::sys::{exec, runas};
 
@@ -40,12 +41,20 @@ pub fn runtime_name(kind: &str) -> &'static str {
     if kind == "python" { "Python" } else { "Node.js" }
 }
 
+/// Python sitelerinde `python` alanının "dağıtımın kendi Python'u" anlamına gelen değeri (boş da aynı anlama gelir).
+pub const SYSTEM_PYTHON: &str = "system";
+
 /// Sistemdeki Python sürümü (ör. `3.13`); sanal ortam desteği (python3-venv) kurulu değilse boş.
 pub fn python_versions() -> Vec<String> {
     let Ok(target) = std::fs::canonicalize("/usr/bin/python3") else { return Vec::new() };
     let Some(version) = target.file_name().and_then(|name| name.to_str()).and_then(|name| name.strip_prefix("python")).map(str::to_string) else { return Vec::new() };
     let valid = !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit() || byte == b'.');
     if valid && Path::new(&format!("/usr/lib/python{version}/ensurepip")).is_dir() { vec![version] } else { Vec::new() }
+}
+
+/// Python sitelerinin bağımlılık dosyası: `requirements.txt` önceliklidir, yoksa `pyproject.toml`.
+pub fn dependency_file(root: &Path) -> Option<&'static str> {
+    ["requirements.txt", "pyproject.toml"].into_iter().find(|name| root.join(name).is_file())
 }
 
 /// Yeni bir Python sitesinin başlangıç ayarları.
@@ -70,11 +79,14 @@ pub struct NodeSettings {
     pub env: Vec<EnvVar>,
     /// Bellek sınırı (MB); 0 sınırsız.
     pub memory_mb: u32,
+    /// Yalnız Python siteleri: boş ya da `system` dağıtımın Python'u (eski kayıtlarda alan yoktur,
+    /// o da aynı anlama gelir), aksi hâlde yöneticinin uv ile kurduğu `X.Y` sürümü.
+    pub python: String,
 }
 
 impl Default for NodeSettings {
     fn default() -> Self {
-        Self { version: String::new(), command: "npm start".into(), env: Vec::new(), memory_mb: 0 }
+        Self { version: String::new(), command: "npm start".into(), env: Vec::new(), memory_mb: 0, python: String::new() }
     }
 }
 
@@ -105,11 +117,49 @@ pub fn bin_dir(version: &str) -> PathBuf {
 }
 
 impl NodeSettings {
+    /// Seçilen uv Python sürümü; dağıtımın Python'u seçiliyse `None`.
+    pub fn python_choice(&self) -> Option<&str> {
+        match self.python.trim() {
+            "" | SYSTEM_PYTHON => None,
+            version => Some(version),
+        }
+    }
+
+    /// Python ayarlarını çalışma ortamıyla tutarlı kılar: `system` boş metne çevrilir; uv sürümü seçiliyse
+    /// `version` alanı onu yansıtır, değilse sistemin Python sürümünü gösterir. `was_python`: site zaten
+    /// Python sitesiydi (tür yeni değiştiyse öteki çalışma ortamından kalan ayarlar başlangıç değerlerine döner).
+    pub fn reconcile_python(&mut self, was_python: bool) -> AppResult<()> {
+        if self.python.trim() == SYSTEM_PYTHON {
+            self.python.clear();
+        }
+        if let Some(choice) = self.python_choice() {
+            self.version = choice.to_string();
+            return Ok(());
+        }
+        let system = python_versions();
+        if system.contains(&self.version) {
+            return Ok(());
+        }
+        if was_python {
+            // Dağıtımın Python'u yükseldi ya da seçim uv sürümünden sisteme döndü: yalnız sürüm bilgisi düzelir.
+            self.version = system.into_iter().next().ok_or_else(|| AppError::bad("Python kurulu değil; önce Bileşenler sayfasından kurun"))?;
+        } else {
+            *self = NodeSettings { env: self.env.clone(), memory_mb: self.memory_mb, ..python_defaults()? };
+        }
+        Ok(())
+    }
+
     /// `kind`: sitenin türü (`node` ya da `python`); sürüm ona göre denetlenir.
     pub fn validate(&self, kind: &str) -> AppResult<()> {
         if kind == "python" {
-            // Python sürümü sistemden gelir; ayardaki değer bilgi içindir ve kurulu olanla eşleşmelidir.
-            if !python_versions().contains(&self.version) {
+            if let Some(choice) = self.python_choice() {
+                // Yönetici uv ile kurduğu sürümlerden biri.
+                pyenv::validate_version(choice)?;
+                if !pyenv::installed_versions().iter().any(|installed| installed == choice) {
+                    return Err(AppError::bad(format!("Python {choice} kurulu değil; önce Bileşenler sayfasından kurun")));
+                }
+            } else if !python_versions().contains(&self.version) {
+                // Dağıtımın Python'u: ayardaki değer bilgi içindir ve kurulu olanla eşleşmelidir.
                 return Err(AppError::bad("Python kurulu değil; önce Bileşenler sayfasından kurun"));
             }
         } else {
@@ -219,16 +269,52 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
     unit
 }
 
-/// Klasörde henüz bir uygulama yoksa, hemen çalışan küçük bir örnek bırakır.
-async fn write_starter(user: &SysUser, root: &Path, domain: &str, kind: &str) -> AppResult<()> {
-    let files: Vec<(&str, String)> = if kind == "python" {
-        // Sanal ortam yoksa kurulur; uygulamanın bağımlılıkları sistemin Python'una karışmaz.
-        if !root.join(VENV_DIR).join("bin/python").exists() {
-            let output = runas::output(runas::command(user, root, "python3", &["-m", "venv", VENV_DIR]), Duration::from_secs(180)).await?;
-            if !output.success() {
-                return Err(AppError::internal(format!("Python sanal ortamı kurulamadı: {}", output.stderr.trim())));
-            }
+/// Sitenin sanal ortamının hangi yorumlayıcıyla kurulduğunu (`system` ya da `X.Y`) tutan, yalnız root'un yazdığı dosya.
+fn venv_marker(site_id: i64) -> PathBuf {
+    config_file(site_id, "python")
+}
+
+/// Site silinirken sanal ortamın yorumlayıcı kaydı da silinir (tür değişiminde korunur:
+/// klasördeki `.venv` kalır ve sitenin sonradan Python'a dönmesi halinde yorumlayıcı eşleşmesi denetlenir).
+pub fn forget_interpreter(site_id: i64) {
+    let _ = std::fs::remove_file(venv_marker(site_id));
+}
+
+/// Python sitesinin sanal ortamını seçili yorumlayıcıyla hazırlar. Ortam yoksa kurulur; yorumlayıcı
+/// değişmişse (eski ortamın içindeki yollar ve kitaplıklar yeni sürüme uymaz) uygulama durdurulup
+/// ortam sıfırdan kurulur. Her şey sitenin kendi kullanıcısıyla yapılır; uygulamanın bağımlılıkları
+/// sistemin Python'una karışmaz. Kayıt dosyası olmayan (eski) siteler `system` sayılır.
+async fn ensure_venv(site_id: i64, user: &SysUser, root: &Path, settings: &NodeSettings) -> AppResult<()> {
+    let wanted = settings.python_choice().unwrap_or(SYSTEM_PYTHON);
+    let built = std::fs::read_to_string(venv_marker(site_id)).map(|text| text.trim().to_string()).unwrap_or_else(|_| SYSTEM_PYTHON.to_string());
+    let present = root.join(VENV_DIR).join("bin/python").exists();
+    if present && built == wanted {
+        return Ok(());
+    }
+    if present {
+        let _ = exec::run("systemctl", &["stop", "--", &unit_name(site_id)]).await;
+    }
+    let program = match settings.python_choice() {
+        Some(choice) => {
+            pyenv::validate_version(choice)?;
+            pyenv::interpreter(choice).to_string_lossy().into_owned()
         }
+        None => "python3".to_string(),
+    };
+    // `--clear`: yarım ya da eski ortamın bütün içeriği silinip yeniden kurulur.
+    let output = runas::output(runas::command(user, root, &program, &["-m", "venv", "--clear", VENV_DIR]), Duration::from_secs(180)).await?;
+    if !output.success() {
+        return Err(AppError::internal(format!("Python sanal ortamı kurulamadı: {}", output.stderr.trim())));
+    }
+    std::fs::create_dir_all(CONFIG_DIR)?;
+    atomic_write(&venv_marker(site_id), wanted.as_bytes(), 0o644)?;
+    Ok(())
+}
+
+/// Klasörde henüz bir uygulama yoksa, hemen çalışan küçük bir örnek bırakır.
+async fn write_starter(site_id: i64, user: &SysUser, root: &Path, domain: &str, kind: &str, settings: &NodeSettings) -> AppResult<()> {
+    let files: Vec<(&str, String)> = if kind == "python" {
+        ensure_venv(site_id, user, root, settings).await?;
         let has_app = ["app.py", "main.py", "manage.py", "wsgi.py", "asgi.py", "requirements.txt", "pyproject.toml"].iter().any(|name| root.join(name).exists());
         if has_app { Vec::new() } else { vec![("app.py", STARTER_PYTHON.replace("{{domain}}", domain))] }
     } else if root.join("package.json").exists() || root.join("server.js").exists() {
@@ -254,7 +340,7 @@ async fn write_starter(user: &SysUser, root: &Path, domain: &str, kind: &str) ->
 /// Sitenin servisini yazar ve (yeniden) başlatır.
 pub async fn apply(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings: &NodeSettings, kind: &str) -> AppResult<()> {
     settings.validate(kind)?;
-    write_starter(user, root, domain, kind).await?;
+    write_starter(site_id, user, root, domain, kind, settings).await?;
     std::fs::create_dir_all(CONFIG_DIR)?;
     // Ortam değişkenleri parola içerebildiğinden dosyayı yalnızca root okur (systemd root olarak okur).
     let env: String = settings.env.iter().map(env_line).collect();
@@ -294,6 +380,8 @@ pub struct Status {
     /// Kendiliğinden yeniden başlatma sayısı; yüksekse uygulama sürekli çöküyordur.
     pub restarts: u32,
     pub port: i64,
+    /// Yalnız Python siteleri: bağımlılıkların kurulabileceği dosya (`requirements.txt` ya da `pyproject.toml`); yoksa `None`.
+    pub dependencies: Option<&'static str>,
 }
 
 pub async fn status(site_id: i64) -> AppResult<Status> {
@@ -307,6 +395,7 @@ pub async fn status(site_id: i64) -> AppResult<Status> {
         memory_bytes: field("MemoryCurrent").parse().ok(),
         restarts: field("NRestarts").parse().unwrap_or(0),
         port: port(site_id),
+        dependencies: None,
     })
 }
 
@@ -320,4 +409,20 @@ pub async fn action(site_id: i64, action: &str) -> AppResult<()> {
     exec::run_with_timeout("systemctl", &[action, "--", &unit_name(site_id)], Duration::from_secs(60)).await.and_then(|output| {
         if output.success() { Ok(()) } else { Err(AppError::bad(format!("Servis {action} işlemi başarısız: {}", output.stderr.trim()))) }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_python_settings_mean_system() {
+        // Eski kayıtlarda `python` alanı yoktur; dağıtımın Python'u sayılır.
+        let legacy: NodeSettings = serde_json::from_str(r#"{"version":"3.13","command":"python app.py","env":[],"memory_mb":0}"#).unwrap();
+        assert_eq!(legacy.python_choice(), None);
+        let system = NodeSettings { python: "system".into(), ..NodeSettings::default() };
+        assert_eq!(system.python_choice(), None);
+        let chosen = NodeSettings { python: "3.12".into(), ..NodeSettings::default() };
+        assert_eq!(chosen.python_choice(), Some("3.12"));
+    }
 }

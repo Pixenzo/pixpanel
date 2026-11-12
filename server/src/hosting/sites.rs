@@ -174,6 +174,17 @@ pub fn list_by_php(db: &Db, version: &str) -> AppResult<Vec<Site>> {
     })
 }
 
+/// Verilen uv Python sürümünü seçmiş Python siteleri (sürüm kaldırılmadan önce denetlenir).
+pub fn list_by_python(db: &Db, version: &str) -> AppResult<Vec<Site>> {
+    let sites: Vec<Site> = db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SITE_COLUMNS} FROM sites s JOIN users u ON u.id = s.user_id WHERE s.kind = 'python' ORDER BY s.domain"
+        ))?;
+        stmt.query_map([], read_site)?.collect()
+    })?;
+    Ok(sites.into_iter().filter(|site| site.node.python_choice() == Some(version)).collect())
+}
+
 /// Siteyi okur ve isteği yapanın ona erişimi olduğunu doğrular.
 pub fn get(db: &Db, user: &AuthUser, id: i64) -> AppResult<Site> {
     let (site, owner_parent) = load_with_parent(db, id)?.ok_or(AppError::NotFound)?;
@@ -548,6 +559,7 @@ pub async fn deprovision(site: &Site, delete_files: bool) -> AppResult<()> {
     crate::hosting::rules::remove_password_files(site.id, 0);
     crate::hosting::rules::remove_cache_dir(site.id);
     node::remove(site.id).await?;
+    node::forget_interpreter(site.id);
     php::remove_pool_except(site.id, None).await?;
     let ssl_dir = Path::new(nginx::SSL_DIR).join(&site.domain);
     if ssl_dir.exists() {
