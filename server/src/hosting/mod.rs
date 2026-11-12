@@ -5,6 +5,7 @@ pub mod domain;
 pub mod ftp;
 pub mod nginx;
 pub mod node;
+pub mod node_update;
 pub mod php;
 pub mod portguard;
 pub mod pyenv;

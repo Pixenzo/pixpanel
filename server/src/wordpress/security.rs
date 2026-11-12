@@ -358,9 +358,9 @@ fn count(output: AppResult<CmdOutput>) -> Option<usize> {
 }
 
 /// Sitenin sıkılaştırma denetimini yapar. Sitede WordPress yoksa hata döner.
-pub async fn audit(site: &Site) -> AppResult<Audit> {
+pub async fn audit(site: &Site, rel: &str) -> AppResult<Audit> {
     ensure_cli().await?;
-    let wp = Wp::for_site(site)?;
+    let wp = Wp::for_install(site, rel)?;
     if !wp.has_files().await {
         return Err(AppError::bad("Bu sitede WordPress kurulu değil"));
     }
@@ -392,9 +392,9 @@ pub async fn audit(site: &Site) -> AppResult<Audit> {
 
 /// Seçilen maddeleri düzeltir. Çağıran, sitenin `SiteLock`unu tutar. Zaten tamam olan maddelere
 /// dokunulmaz; bir maddenin düzeltilememesi ötekileri durdurmaz.
-pub async fn fix(state: &AppState, site: &Site, ids: &[&'static str]) -> AppResult<FixResult> {
-    let wp = Wp::for_site(site)?;
-    let before = audit(site).await?;
+pub async fn fix(state: &AppState, site: &Site, rel: &str, ids: &[&'static str]) -> AppResult<FixResult> {
+    let wp = Wp::for_install(site, rel)?;
+    let before = audit(site, rel).await?;
     let (mut fixed, mut skipped, mut failed) = (Vec::new(), Vec::new(), Vec::new());
     // Dosya izni en sona kalır: ayar dosyasını yeniden yazan öteki düzeltmeler izni bozmasın.
     let mut ordered = ids.to_vec();
@@ -425,7 +425,7 @@ pub async fn fix(state: &AppState, site: &Site, ids: &[&'static str]) -> AppResu
     }
     // Şablon düzeltmesi sitenin kaydını değiştirdiği için denetim güncel kayıtla yinelenir.
     let fresh = sites::load(&state.db, site.id)?.unwrap_or_else(|| site.clone());
-    Ok(FixResult { fixed, skipped, failed, audit: audit(&fresh).await? })
+    Ok(FixResult { fixed, skipped, failed, audit: audit(&fresh, rel).await? })
 }
 
 /// Veritabanı parolasını içeren dosyayı yalnızca site kullanıcısına açar (PHP-FPM havuzu o kullanıcıyla çalışır).

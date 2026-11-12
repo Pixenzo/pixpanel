@@ -18,6 +18,7 @@ const actionLabels: Record<string, string> = {
   "user.delete": "Hesabı sildi",
   "service.action": "Servis işlemi yaptı",
   "component.install": "Bileşen kurdu",
+  "node.update": "Node.js sürümünü güncelledi",
   "site.create": "Site oluşturdu",
   "site.update": "Site ayarlarını değiştirdi",
   "site.delete": "Siteyi sildi",

@@ -187,7 +187,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 ## P2 — Plesk'le aradaki fark
 
-### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; 12.11.2026: hazırlık ortamı ve güncellemede kendiliğinden geri dönüş; güvenlik denetimi; kalan: alt klasördeki kurulumları bulma)
+### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; 12.11.2026: hazırlık ortamı ve güncellemede kendiliğinden geri dönüş; güvenlik denetimi; alt klasördeki kurulumları bulma 12.11.2026; kalan: alt klasör kurulumları için gece güncellemesi ve sağlık merkezi taraması)
 
 - **Kapsam:** wp-cli ile tek tıkla kurulum (veritabanını da açar), var olan kurulumları bulma, çekirdek/eklenti/tema güncelleme (toplu ve kendiliğinden), parolasız yönetici girişi, klonlama ve hazırlık ortamı (alt alan adına kopya, geri aktarma), sıkılaştırma (dosya izinleri, `xmlrpc`, dosya düzenleyici, `wp-config` koruması), bakım kipi.
 - **Örnek al:** `deploy.rs` (kullanıcı adına komut, canlı günlük).
@@ -252,7 +252,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 
 ## Teknik borç (araya sıkıştırılacak)
 
-- ~~Bileşen kaldırma~~ (12.11.2026: güvenli olanlar kaldırılabiliyor); sürüm güncelleme (Node.js dahil) kaldı.
+- ~~Bileşen kaldırma~~ (12.11.2026: güvenli olanlar kaldırılabiliyor); ~~Node.js yama güncellemesi~~ (12.11.2026: Bileşenler sayfasından, geri dönüşlü); kalan: PHP/Python sürüm güncellemesi ve Node.js ana sürüm yükseltme.
 - ~~Git web kancasında imza doğrulaması (`X-Hub-Signature-256`).~~ Tamamlandı (12.11.2026).
 - ~~Arşiv açmada boyut sınırı (zip bombası).~~ Tamamlandı (12.11.2026).
 - Redis için hesap başına yalıtım (ACL) ya da kullanımı yöneticiye bırakma kararı.

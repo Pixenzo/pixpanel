@@ -87,7 +87,7 @@ pub async fn sync(ctx: &JobCtx, state: &AppState, from: &Site, to: &Site, direct
     let visibility = if visibility.trim() == "0" { "0" } else { "1" };
 
     if direction == Direction::Push {
-        backup_before_update(ctx, state, to).await?;
+        backup_before_update(ctx, state, to, "").await?;
     }
     if options.files {
         ensure_rsync(ctx).await?;

@@ -269,7 +269,7 @@ async fn installed_version(package: &str) -> Option<String> {
 }
 
 /// Kurulu Node.js sürümünün tam numarası (ör. `22.11.0`).
-async fn node_version(major: &str) -> Option<String> {
+pub async fn node_version(major: &str) -> Option<String> {
     let binary = hosting::node::bin_dir(major).join("node");
     if !binary.is_file() {
         return None;
@@ -428,9 +428,10 @@ async fn package_available(package: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Bileşeni kurar; görev günlüğüne ilerleme yazar.
-/// Node.js'in resmî derlemesini indirir, sağlama toplamını doğrular ve kurar.
-async fn install_node(ctx: &JobCtx, major: &str) -> AppResult<()> {
+/// Node.js ana sürümünün en son derlemesini indirir, sağlama toplamını doğrular ve
+/// `<NODE_ROOT>/<ana sürüm>.new` klasörüne açar; klasör yolunu döner. Kurulu sürüme dokunmaz.
+/// Hem ilk kurulum hem de yerinde güncelleme (`hosting::node_update`) bunu kullanır.
+pub async fn fetch_node_build(ctx: &JobCtx, major: &str) -> AppResult<std::path::PathBuf> {
     use sha2::{Digest, Sha256};
     hosting::node::validate_version(major)?;
     apt_install(ctx, &["curl".into(), "ca-certificates".into(), "xz-utils".into()]).await?;
@@ -463,11 +464,23 @@ async fn install_node(ctx: &JobCtx, major: &str) -> AppResult<()> {
     }
     ctx.log("Sağlama toplamı doğrulandı");
 
-    let target = std::path::Path::new(hosting::node::NODE_ROOT).join(major);
     let staging = std::path::Path::new(hosting::node::NODE_ROOT).join(format!("{major}.new"));
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging)?;
-    ctx.exec("tar", &["-xJf", &archive, "-C", &staging.to_string_lossy(), "--strip-components=1", "--no-same-owner"]).await?;
+    let extracted = ctx.exec("tar", &["-xJf", &archive, "-C", &staging.to_string_lossy(), "--strip-components=1", "--no-same-owner"]).await;
+    let _ = std::fs::remove_file(&archive);
+    if let Err(err) = extracted {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(err);
+    }
+    Ok(staging)
+}
+
+/// Bileşeni kurar; görev günlüğüne ilerleme yazar.
+/// Node.js'in resmî derlemesini indirir, sağlama toplamını doğrular ve kurar.
+async fn install_node(ctx: &JobCtx, major: &str) -> AppResult<()> {
+    let staging = fetch_node_build(ctx, major).await?;
+    let target = std::path::Path::new(hosting::node::NODE_ROOT).join(major);
     // Yeni sürüm hazır olduktan sonra eskisinin yerine geçer; çalışan uygulamalar yeniden başlatılana kadar eski dosyalarla sürer.
     let previous = std::path::Path::new(hosting::node::NODE_ROOT).join(format!("{major}.old"));
     let _ = std::fs::remove_dir_all(&previous);
@@ -476,7 +489,6 @@ async fn install_node(ctx: &JobCtx, major: &str) -> AppResult<()> {
     }
     std::fs::rename(&staging, &target)?;
     let _ = std::fs::remove_dir_all(&previous);
-    let _ = std::fs::remove_file(&archive);
     ctx.log(format!("Node.js {} kuruldu", node_version(major).await.unwrap_or_default()));
     Ok(())
 }

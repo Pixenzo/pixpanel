@@ -193,6 +193,17 @@ pub fn list_by_python(db: &Db, version: &str) -> AppResult<Vec<Site>> {
     Ok(sites.into_iter().filter(|site| site.node.python_choice() == Some(version)).collect())
 }
 
+/// Verilen Node.js ana sürümünü seçmiş Node.js siteleri (sürüm güncellenirken servisleri yeniden başlatılır).
+pub fn list_by_node(db: &Db, major: &str) -> AppResult<Vec<Site>> {
+    let sites: Vec<Site> = db.call(|conn| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SITE_COLUMNS} FROM sites s JOIN users u ON u.id = s.user_id WHERE s.kind = 'node' ORDER BY s.domain"
+        ))?;
+        stmt.query_map([], read_site)?.collect()
+    })?;
+    Ok(sites.into_iter().filter(|site| site.node.version == major).collect())
+}
+
 /// Siteyi okur ve isteği yapanın ona erişimi olduğunu doğrular.
 pub fn get(db: &Db, user: &AuthUser, id: i64) -> AppResult<Site> {
     let (site, owner_parent) = load_with_parent(db, id)?.ok_or(AppError::NotFound)?;

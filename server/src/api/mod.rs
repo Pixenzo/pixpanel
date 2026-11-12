@@ -25,6 +25,7 @@ mod health;
 mod jobs;
 mod logs;
 mod mail;
+mod node_versions;
 mod notify;
 mod packages;
 mod panelcert;
@@ -46,7 +47,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
         .nest("/users", users::router().merge(access::router()))
-        .nest("/system", system::router().nest("/ips", addresses::router()).nest("/certificate", panelcert::router()).nest("/update", update::router()))
+        .nest("/system", system::router().nest("/node", node_versions::router()).nest("/ips", addresses::router()).nest("/certificate", panelcert::router()).nest("/update", update::router()))
         .nest("/branding", branding::router())
         .nest("/jobs", jobs::router())
         .nest("/events", events::router())

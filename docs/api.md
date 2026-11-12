@@ -160,7 +160,8 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | POST | `/sites/{id}/git/deploy` | Şimdi dağıtır (görev). | `sites` |
 | POST | `/sites/{id}/git/webhook-token` | Dağıtım web kancası anahtarını yeniler. | `sites` |
 | GET | `/sites/{id}/git/deployments/{deployment}` | Bir dağıtımın günlüğü. | `sites` |
-| GET | `/sites/{id}/wordpress` | WordPress durumu. | `sites` |
+| GET | `/sites/{id}/wordpress` | WordPress durumu. İsteğe bağlı `?path=<klasör>` ile alt klasördeki kurulum seçilir (aynı parametre bu bölümdeki öteki uçlarda da geçerlidir; hazırlık ortamı hariç). | `sites` |
+| GET | `/sites/{id}/wordpress/installs` | Belge kökü altındaki WordPress kurulumları (`path`, `version`, `url`, `is_root`). | `sites` |
 | POST | `/sites/{id}/wordpress/install` | WordPress kurar (görev). | `sites` |
 | POST | `/sites/{id}/wordpress/update` | WordPress çekirdeğini günceller (görev). | `sites` |
 | POST | `/sites/{id}/wordpress/login` | Tek tıkla yönetici girişi bağlantısı üretir. | `sites` |
@@ -468,6 +469,8 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | GET | `/system/audit` | Denetim günlüğü. | Yönetici |
 | GET | `/system/updates` | Bekleyen paket güncellemeleri. | Yönetici |
 | POST | `/system/updates/refresh` | Güncelleme listesini yeniler. | Yönetici |
+| GET | `/system/node/versions` | Kurulu Node.js ana sürümleri: kurulu ve en son yama sürümü, güncelleme/güvenlik durumu, kullanan site sayısı (nodejs.org listesi saatlik önbelleğe alınır). | Yönetici |
+| POST | `/system/node/versions/{major}/update` | Ana sürümü en son yama sürümüne günceller (görev); kullanan servisler sırayla yeniden başlatılır, ayağa kalkmazsa eski sürüme dönülür. | Yönetici |
 | GET | `/system/http3` | HTTP/3 (QUIC) durumu: nginx destekliyor mu, açık mı. | Yönetici |
 | PUT | `/system/http3` | HTTP/3'ü sunucu genelinde açar ya da kapatır. | Yönetici |
 | POST | `/system/updates/install` | Güncellemeleri kurar (görev). | Yönetici |

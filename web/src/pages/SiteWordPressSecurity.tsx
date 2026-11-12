@@ -6,7 +6,7 @@ import { RefreshCw, ShieldCheck } from "lucide-react";
 import { useFeedback } from "../components/feedback";
 import { Badge, Button, ErrorBlock, LoadingBlock, Panel, Status } from "../components/ui";
 import type { Site } from "../lib/api";
-import { api, errorMessage } from "../lib/api";
+import { api, errorMessage, wordpressUrl } from "../lib/api";
 import { t } from "../lib/i18n";
 
 interface SecurityItem {
@@ -38,15 +38,15 @@ function sorted(items: SecurityItem[]): SecurityItem[] {
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
-export function SecurityPanel({ site }: { site: Site }) {
+export function SecurityPanel({ site, path }: { site: Site; path: string }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
-  const queryKey = ["wordpress-security", site.id];
+  const queryKey = ["wordpress-security", site.id, path];
   // Denetim çekirdek dosyalarını okuduğu için birkaç saniye sürebilir; sık yinelenmesin.
-  const audit = useQuery({ queryKey, queryFn: () => api.get<SecurityAudit>(`/sites/${site.id}/wordpress/security`), staleTime: 60000 });
+  const audit = useQuery({ queryKey, queryFn: () => api.get<SecurityAudit>(wordpressUrl(site.id, "/security", path)), staleTime: 60000 });
 
   const fix = useMutation({
-    mutationFn: (ids: string[]) => api.post<FixResult>(`/sites/${site.id}/wordpress/security/fix`, { ids }),
+    mutationFn: (ids: string[]) => api.post<FixResult>(wordpressUrl(site.id, "/security/fix", path), { ids }),
     onSuccess: (result) => {
       queryClient.setQueryData(queryKey, result.audit);
       // Şablon değiştiyse sitenin kaydı da değişmiştir.

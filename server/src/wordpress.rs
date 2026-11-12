@@ -24,9 +24,12 @@ use crate::state::AppState;
 use crate::sys::exec::{self, CmdOutput};
 use crate::sys::runas;
 
+pub mod installs;
 mod rollback;
 pub mod security;
 pub mod staging;
+
+pub use installs::{resolve_install, scan_installs, validate_install_path, Install};
 
 /// Panelin kullandığı wp-cli sürümü. Dosya, gömülü özetle doğrulanmadan çalıştırılmaz.
 pub const WP_CLI_VERSION: &str = "2.12.0";
@@ -73,12 +76,21 @@ pub async fn ensure_cli() -> AppResult<()> {
 /// Bir sitede wp-cli çalıştırmak için gerekenler.
 pub struct Wp {
     user: SysUser,
+    /// WordPress kurulumunun klasörü: kök kurulumda sitenin belge kökü, alt klasör kurulumunda onun içindeki klasör.
     docroot: PathBuf,
     php: String,
 }
 
 impl Wp {
+    /// Sitenin kök kurulumu.
     pub fn for_site(site: &Site) -> AppResult<Self> {
+        Self::for_install(site, "")
+    }
+
+    /// Sitenin belge kökü altındaki bir kurulum. `rel` boşsa kök kurulumdur; doluysa
+    /// `validate_install_path` kuralına uymalıdır (çağıran taramayla da doğrulamış olmalı: `resolve_install`).
+    pub fn for_install(site: &Site, rel: &str) -> AppResult<Self> {
+        let rel = validate_install_path(rel)?;
         let version = site.php_version.as_deref().filter(|_| site.kind == "php").ok_or_else(|| AppError::bad("WordPress yalnızca PHP sitelerinde çalışır"))?;
         crate::hosting::php::validate_version(version)?;
         let php = format!("/usr/bin/php{version}");
@@ -86,7 +98,8 @@ impl Wp {
             return Err(AppError::bad(format!("PHP {version} kurulu değil")));
         }
         let user = sysuser::lookup(&site.owner).ok_or_else(|| AppError::internal("Hesabın Linux kullanıcısı bulunamadı"))?;
-        Ok(Self { user, docroot: site.docroot(), php })
+        let docroot = if rel.is_empty() { site.docroot() } else { site.docroot().join(&rel) };
+        Ok(Self { user, docroot, php })
     }
 
     /// wp-cli komutunu sitenin kullanıcısı adına, site klasöründe çalışacak biçimde hazırlar.
@@ -223,6 +236,8 @@ fn parse_extensions(json: &str) -> Vec<Extension> {
 
 #[derive(Debug, Serialize)]
 pub struct Status {
+    /// Kurulumun belge köküne göre klasörü; kök kurulumda boş.
+    pub path: String,
     /// Site klasöründe WordPress var.
     pub installed: bool,
     /// Kurulu değilse: klasör boş olduğu için tek tıkla kurulabilir.
@@ -250,11 +265,12 @@ struct CoreUpdate {
 
 const EXTENSION_FIELDS: &str = "--fields=name,title,status,update,version,update_version,auto_update";
 
-pub async fn status(site: &Site) -> AppResult<Status> {
+pub async fn status(site: &Site, rel: &str) -> AppResult<Status> {
     ensure_cli().await?;
-    let wp = Wp::for_site(site)?;
+    let wp = Wp::for_install(site, rel)?;
     let database_ready = Engine::Mariadb.is_installed();
     let mut status = Status {
+        path: rel.to_string(),
         installed: false,
         can_install: false,
         database_ready,
@@ -270,7 +286,8 @@ pub async fn status(site: &Site) -> AppResult<Status> {
     };
     let version = wp.run(&["core", "version"]).await?;
     if !version.success() {
-        status.can_install = wp.docroot_is_empty().await;
+        // Tek tıkla kurulum yalnızca kök klasöre yapılır.
+        status.can_install = rel.is_empty() && wp.docroot_is_empty().await;
         return Ok(status);
     }
     status.installed = true;
@@ -748,19 +765,26 @@ async fn install_files(ctx: &JobCtx, site: &Site, wp: &Wp, request: &InstallRequ
 
 /// Güncelleme görevini başlatır: önce (yedek yeri varsa) sitenin ve veritabanının yedeği
 /// alınır, sonra güncelleme yapılır, en son sitenin hâlâ yanıt verdiği denetlenir.
-pub fn start_update_job(state: &AppState, user_id: Option<i64>, site: Site, what: String) -> AppResult<i64> {
-    let title = format!("WordPress güncellemesi: {}", site.domain);
+/// `rel` kurulumun klasörüdür (kök için boş). Geri dönüş noktası ve site yoklaması yalnızca kök kurulumda çalışır.
+pub fn start_update_job(state: &AppState, user_id: Option<i64>, site: Site, rel: String, what: String) -> AppResult<i64> {
+    let title = if rel.is_empty() { format!("WordPress güncellemesi: {}", site.domain) } else { format!("WordPress güncellemesi: {}/{rel}", site.domain) };
     let job_state = state.clone();
     let lock = SiteLock::acquire(&site)?;
     state.jobs.start("wordpress.update", &title, user_id, move |ctx| async move {
         let _lock = lock;
-        backup_before_update(&ctx, &job_state, &site).await?;
+        backup_before_update(&ctx, &job_state, &site, &rel).await?;
+        let is_root = rel.is_empty();
         // Site güncellemeden önce de bozuksa geri dönmenin anlamı yoktur; sorun güncellemeden gelmemiştir.
-        let healthy_before = !matches!(probe_status(&site).await, Some(status) if status >= 500);
+        // Alt klasördeki kurulumda sitenin kök sayfası o kurulumu yansıtmaz; geri dönüş yalnızca kökte çalışır.
+        let healthy_before = is_root && !matches!(probe_status(&site).await, Some(status) if status >= 500);
+        if !is_root {
+            ctx.log("Not: Alt klasördeki kurulumlarda otomatik geri dönüş noktası alınmaz; yedek yukarıda alındı.");
+        }
         let snapshot = if healthy_before { rollback::take(&ctx, &site).await } else { None };
-        let updated = update(&ctx, &site, &what).await;
+        let updated = update(&ctx, &site, &rel, &what).await;
         let mut outcome = match updated {
-            Ok(()) => verify_after_update(&ctx, &site).await,
+            Ok(()) if is_root => verify_after_update(&ctx, &site).await,
+            Ok(()) => Ok(()),
             Err(err) => Err(err),
         };
         // Güncelleme siteyi bozduysa (sunucu hatası dönüyorsa) güncellemeden önceki hâl geri konur.
@@ -784,13 +808,13 @@ pub fn start_update_job(state: &AppState, user_id: Option<i64>, site: Site, what
 
 /// Güncellemeden önce sitenin dosyalarını ve WordPress veritabanını yedekler. Yedek
 /// yeri yoksa uyarıp sürer; yedek alınamazsa güncelleme yapılmaz.
-async fn backup_before_update(ctx: &JobCtx, state: &AppState, site: &Site) -> AppResult<()> {
+async fn backup_before_update(ctx: &JobCtx, state: &AppState, site: &Site, rel: &str) -> AppResult<()> {
     let target = if crate::backup::is_installed() { crate::backup::list_targets(&state.db)?.into_iter().next() } else { None };
     let Some(target) = target else {
         ctx.log("UYARI: Yedek yeri tanımlı olmadığı için güncellemeden önce yedek alınamadı. Yedekler sayfasından bir yedek yeri ekleyin.");
         return Ok(());
     };
-    let wp = Wp::for_site(site)?;
+    let wp = Wp::for_install(site, rel)?;
     let database = wp.run_ok(&["config", "get", "DB_NAME", "--skip-plugins", "--skip-themes"]).await.unwrap_or_default();
     let database_id: Option<i64> = state.db.call(|conn| {
         use rusqlite::OptionalExtension;
@@ -862,8 +886,8 @@ pub async fn pending_updates(site: &Site) -> Option<Pending> {
     Some(Pending { core, plugins: count(plugins), themes: count(themes) })
 }
 
-pub async fn update(ctx: &JobCtx, site: &Site, what: &str) -> AppResult<()> {
-    let wp = Wp::for_site(site)?;
+pub async fn update(ctx: &JobCtx, site: &Site, rel: &str, what: &str) -> AppResult<()> {
+    let wp = Wp::for_install(site, rel)?;
     if matches!(what, "all" | "core") {
         wp.stream(ctx, &["core", "update"], None).await?;
         wp.stream(ctx, &["core", "update-db"], None).await?;
@@ -891,9 +915,9 @@ pub fn validate_slug(value: &str) -> AppResult<()> {
 }
 
 /// Tek bir eklenti ya da tema üzerinde işlem yapar. `kind`: `plugin` ya da `theme`.
-pub async fn extension_action(site: &Site, kind: &str, slug: &str, action: &str) -> AppResult<String> {
+pub async fn extension_action(site: &Site, rel: &str, kind: &str, slug: &str, action: &str) -> AppResult<String> {
     validate_slug(slug)?;
-    let wp = Wp::for_site(site)?;
+    let wp = Wp::for_install(site, rel)?;
     let args: Vec<&str> = match (kind, action) {
         ("plugin", "activate" | "deactivate" | "update" | "delete") | ("theme", "activate" | "update" | "delete") => vec![kind, action, slug],
         (_, "auto-on") => vec![kind, "auto-updates", "enable", slug],
@@ -913,8 +937,8 @@ pub struct Settings {
     pub auto_themes: Option<bool>,
 }
 
-pub async fn apply_settings(site: &Site, settings: &Settings) -> AppResult<()> {
-    let wp = Wp::for_site(site)?;
+pub async fn apply_settings(site: &Site, rel: &str, settings: &Settings) -> AppResult<()> {
+    let wp = Wp::for_install(site, rel)?;
     if let Some(maintenance) = settings.maintenance {
         let active = wp.run(&["maintenance-mode", "is-active"]).await?.success();
         if active != maintenance {
@@ -945,8 +969,8 @@ pub async fn apply_settings(site: &Site, settings: &Settings) -> AppResult<()> {
 ///
 /// Siteye küçük bir "olmazsa olmaz eklenti" bırakılır; eklenti adresteki anahtarın
 /// özetini veritabanındaki kayıtla karşılaştırır ve kaydı ilk kullanımda siler.
-pub async fn login_url(site: &Site) -> AppResult<String> {
-    let wp = Wp::for_site(site)?;
+pub async fn login_url(site: &Site, rel: &str) -> AppResult<String> {
+    let wp = Wp::for_install(site, rel)?;
     let admin = wp.run_ok(&["user", "list", "--role=administrator", "--field=ID", "--number=1", "--orderby=ID", "--order=ASC", "--skip-plugins", "--skip-themes"]).await?;
     let admin_id: i64 = admin.lines().next().and_then(|line| line.trim().parse().ok()).ok_or_else(|| AppError::bad("Bu sitede yönetici hesabı bulunamadı"))?;
 
@@ -962,7 +986,7 @@ pub async fn login_url(site: &Site) -> AppResult<String> {
     });
     wp.run_with_input(&["option", "update", LOGIN_OPTION, "--format=json", "--autoload=no", "--skip-plugins", "--skip-themes"], &record.to_string()).await?;
     let stored = wp.run_ok(&["option", "get", "siteurl", "--skip-plugins", "--skip-themes"]).await.unwrap_or_default();
-    Ok(format!("{}/?pixpanel_login={token}", login_base(&site.domain, &site.aliases, site.ssl_mode != "none", &stored)))
+    Ok(format!("{}/?pixpanel_login={token}", login_base(&site.domain, &site.aliases, site.ssl_mode != "none", &stored, rel)))
 }
 
 /// Giriş adresinin kökü. `siteurl` sitenin veritabanından gelir ve site sahibi onu
@@ -970,7 +994,7 @@ pub async fn login_url(site: &Site) -> AppResult<String> {
 /// adlarından birini gösteren http(s) adresi kabul edilir (yoksa `javascript:` gibi bir
 /// değer, düğmeye basan yöneticinin oturumunda betik çalıştırırdı). Uymuyorsa adres
 /// panelin bildiği alan adından kurulur.
-fn login_base(domain: &str, aliases: &[String], secure: bool, stored: &str) -> String {
+fn login_base(domain: &str, aliases: &[String], secure: bool, stored: &str, rel: &str) -> String {
     let stored = stored.trim().trim_end_matches('/');
     let host_and_path = stored.strip_prefix("https://").or_else(|| stored.strip_prefix("http://"));
     let trusted = host_and_path.is_some_and(|rest| {
@@ -981,7 +1005,8 @@ fn login_base(domain: &str, aliases: &[String], secure: bool, stored: &str) -> S
     if trusted {
         return stored.to_string();
     }
-    format!("{}://{domain}", if secure { "https" } else { "http" })
+    let scheme = if secure { "https" } else { "http" };
+    if rel.is_empty() { format!("{scheme}://{domain}") } else { format!("{scheme}://{domain}/{rel}") }
 }
 
 /// Dosyayı sitenin kullanıcısı olarak yazar (içerik `tee`nin girdisinden verilir).
@@ -1107,7 +1132,7 @@ define( 'DB_HOST', 'localhost:3307' );
     #[test]
     fn login_address_never_trusts_foreign_or_script_urls() {
         let aliases = vec!["www.ornek.com".to_string()];
-        let base = |stored: &str| login_base("ornek.com", &aliases, true, stored);
+        let base = |stored: &str| login_base("ornek.com", &aliases, true, stored, "");
         assert_eq!(base("https://ornek.com"), "https://ornek.com");
         assert_eq!(base("https://www.ornek.com/"), "https://www.ornek.com");
         assert_eq!(base("http://ornek.com/blog"), "http://ornek.com/blog", "alt klasöre kurulu site");
@@ -1115,7 +1140,9 @@ define( 'DB_HOST', 'localhost:3307' );
         for stored in ["javascript:alert(1)//", "https://kotu.example", "https://ornek.com.kotu.example", "data:text/html,x", "https://ornek.com/\"><script>", "https://ornek.com@kotu.example", ""] {
             assert_eq!(base(stored), "https://ornek.com", "{stored}");
         }
-        assert_eq!(login_base("ornek.com", &[], false, "ftp://ornek.com"), "http://ornek.com");
+        assert_eq!(login_base("ornek.com", &[], false, "ftp://ornek.com", ""), "http://ornek.com");
+        // Alt klasördeki kurulumda güvenilmeyen adres, kurulumun klasörüne düşer.
+        assert_eq!(login_base("ornek.com", &[], true, "javascript:x", "blog"), "https://ornek.com/blog");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! WordPress araçları. `/sites/{id}/wordpress` altında yayınlanır.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -10,13 +10,14 @@ use crate::auth::{self, AuthUser};
 use crate::error::{AppError, AppResult};
 use crate::hosting::sites;
 use crate::state::AppState;
-use crate::wordpress::{self, security, staging, InstallRequest, Settings, Status};
+use crate::wordpress::{self, security, staging, Install, InstallRequest, Settings, Status};
 
 const AREA: &str = "sites";
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/{id}/wordpress", get(show))
+        .route("/{id}/wordpress/installs", get(installs))
         .route("/{id}/wordpress/install", post(install))
         .route("/{id}/wordpress/update", post(update))
         .route("/{id}/wordpress/login", post(login))
@@ -28,10 +29,24 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/wordpress/{kind}/{slug}", post(extension))
 }
 
-async fn show(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Status>> {
+/// Alt klasördeki kurulumu seçen isteğe bağlı sorgu parametresi (`?path=blog`); yoksa kök kurulum.
+#[derive(Deserialize, Default)]
+struct InstallQuery {
+    path: Option<String>,
+}
+
+/// Sitenin belge kökü altındaki WordPress kurulumları (kök dahil).
+async fn installs(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Vec<Install>>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
-    Ok(Json(wordpress::status(&site).await?))
+    Ok(Json(wordpress::scan_installs(&site).await?))
+}
+
+async fn show(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Query(query): Query<InstallQuery>) -> AppResult<Json<Status>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
+    Ok(Json(wordpress::status(&site, &rel).await?))
 }
 
 async fn install(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<InstallRequest>) -> AppResult<Json<Value>> {
@@ -59,31 +74,34 @@ struct UpdateBody {
     what: String,
 }
 
-async fn update(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<UpdateBody>) -> AppResult<Json<Value>> {
+async fn update(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Query(query): Query<InstallQuery>, Json(body): Json<UpdateBody>) -> AppResult<Json<Value>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
     if !matches!(body.what.as_str(), "all" | "core" | "plugins" | "themes") {
         return Err(AppError::bad("Geçersiz güncelleme kapsamı"));
     }
-    auth::audit(&state.db, &user, "wordpress.update", &site.domain, &body.what);
-    let job_id = wordpress::start_update_job(&state, Some(user.id), site, body.what)?;
+    auth::audit(&state.db, &user, "wordpress.update", &site.domain, &detail_with_path(&rel, &body.what));
+    let job_id = wordpress::start_update_job(&state, Some(user.id), site, rel, body.what)?;
     Ok(Json(json!({ "job_id": job_id })))
 }
 
-async fn login(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Value>> {
+async fn login(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Query(query): Query<InstallQuery>) -> AppResult<Json<Value>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
-    let url = wordpress::login_url(&site).await?;
-    auth::audit(&state.db, &user, "wordpress.login", &site.domain, "");
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
+    let url = wordpress::login_url(&site, &rel).await?;
+    auth::audit(&state.db, &user, "wordpress.login", &site.domain, &detail_with_path(&rel, ""));
     Ok(Json(json!({ "url": url })))
 }
 
-async fn save_settings(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<Settings>) -> AppResult<Json<Status>> {
+async fn save_settings(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Query(query): Query<InstallQuery>, Json(body): Json<Settings>) -> AppResult<Json<Status>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
-    wordpress::apply_settings(&site, &body).await?;
-    auth::audit(&state.db, &user, "wordpress.settings", &site.domain, "");
-    Ok(Json(wordpress::status(&site).await?))
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
+    wordpress::apply_settings(&site, &rel, &body).await?;
+    auth::audit(&state.db, &user, "wordpress.settings", &site.domain, &detail_with_path(&rel, ""));
+    Ok(Json(wordpress::status(&site, &rel).await?))
 }
 
 #[derive(Deserialize)]
@@ -96,26 +114,38 @@ async fn extension(
     State(state): State<AppState>,
     user: AuthUser,
     Path((id, kind, slug)): Path<(i64, String, String)>,
+    Query(query): Query<InstallQuery>,
     Json(body): Json<ExtensionBody>,
 ) -> AppResult<Json<Status>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
     let kind = match kind.as_str() {
         "plugins" => "plugin",
         "themes" => "theme",
         _ => return Err(AppError::NotFound),
     };
-    wordpress::extension_action(&site, kind, &slug, &body.action).await?;
-    auth::audit(&state.db, &user, "wordpress.extension", &site.domain, &format!("{kind} {slug} {}", body.action));
-    Ok(Json(wordpress::status(&site).await?))
+    wordpress::extension_action(&site, &rel, kind, &slug, &body.action).await?;
+    auth::audit(&state.db, &user, "wordpress.extension", &site.domain, &detail_with_path(&rel, &format!("{kind} {slug} {}", body.action)));
+    Ok(Json(wordpress::status(&site, &rel).await?))
+}
+
+/// Denetim günlüğü ayrıntısı: alt klasördeki kurulumlarda başına `path=<klasör>` eklenir.
+fn detail_with_path(rel: &str, detail: &str) -> String {
+    match (rel.is_empty(), detail.is_empty()) {
+        (true, _) => detail.to_string(),
+        (false, true) => format!("path={rel}"),
+        (false, false) => format!("path={rel} {detail}"),
+    }
 }
 
 // ---- Sıkılaştırma denetimi ----
 
-async fn security_show(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<security::Audit>> {
+async fn security_show(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Query(query): Query<InstallQuery>) -> AppResult<Json<security::Audit>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
-    Ok(Json(security::audit(&site).await?))
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
+    Ok(Json(security::audit(&site, &rel).await?))
 }
 
 #[derive(Deserialize)]
@@ -125,14 +155,21 @@ struct SecurityFixBody {
 
 /// Seçilen sıkılaştırma maddelerini düzeltir. Komutlar kısadır; görev açılmaz ama site kilidi alınır
 /// (güncelleme ya da kurulumla aynı dosyalara aynı anda dokunulmasın).
-async fn security_fix(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<SecurityFixBody>) -> AppResult<Json<security::FixResult>> {
+async fn security_fix(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Query(query): Query<InstallQuery>,
+    Json(body): Json<SecurityFixBody>,
+) -> AppResult<Json<security::FixResult>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
+    let rel = wordpress::resolve_install(&site, query.path.as_deref()).await?;
     let ids = security::validate_ids(&body.ids)?;
     let _lock = wordpress::SiteLock::acquire(&site)?;
-    let result = security::fix(&state, &site, &ids).await?;
+    let result = security::fix(&state, &site, &rel, &ids).await?;
     let detail = format!("fixed={} failed={}", result.fixed.join(","), result.failed.iter().map(|failure| failure.id).collect::<Vec<_>>().join(","));
-    auth::audit(&state.db, &user, "wordpress.security.fix", &site.domain, &detail);
+    auth::audit(&state.db, &user, "wordpress.security.fix", &site.domain, &detail_with_path(&rel, &detail));
     Ok(Json(result))
 }
 
