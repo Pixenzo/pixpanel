@@ -596,6 +596,59 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE api_tokens ADD COLUMN scope TEXT;
     "#,
+    // 38: işletim geçmişi paketi. Servis ölçüm geçmişi (dakikalık 48 saat, saatlik 30 gün), haftalık
+    //     özet için denetim sayaçları ve disk doluluğu, silinen veritabanlarının 7 günlük çöp kutusu.
+    r#"
+    CREATE TABLE service_minutes (
+        unit       TEXT NOT NULL,
+        ts         INTEGER NOT NULL,
+        memory     INTEGER,
+        cpu        REAL,
+        tasks      INTEGER,
+        state      INTEGER NOT NULL,
+        n_restarts INTEGER NOT NULL DEFAULT 0,
+        entered    INTEGER NOT NULL DEFAULT 0,
+        restarts   INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (unit, ts)
+    ) WITHOUT ROWID;
+    CREATE TABLE service_hours (
+        unit           TEXT NOT NULL,
+        ts             INTEGER NOT NULL,
+        memory         REAL,
+        memory_max     INTEGER,
+        cpu            REAL,
+        tasks          REAL,
+        failed_minutes INTEGER NOT NULL DEFAULT 0,
+        samples        INTEGER NOT NULL DEFAULT 0,
+        restarts       INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (unit, ts)
+    ) WITHOUT ROWID;
+    CREATE TABLE health_runs (
+        day    INTEGER PRIMARY KEY,
+        runs   INTEGER NOT NULL DEFAULT 0,
+        checks INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE health_disk (
+        day   INTEGER NOT NULL,
+        mount TEXT NOT NULL,
+        used  INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        PRIMARY KEY (day, mount)
+    ) WITHOUT ROWID;
+    CREATE TABLE database_trash (
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL,
+        engine      TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        file        TEXT NOT NULL,
+        size        INTEGER NOT NULL DEFAULT 0,
+        grants      TEXT NOT NULL DEFAULT '[]',
+        deleted_at  INTEGER NOT NULL,
+        expires_at  INTEGER NOT NULL,
+        restored_at INTEGER
+    );
+    CREATE INDEX database_trash_user ON database_trash(user_id);
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

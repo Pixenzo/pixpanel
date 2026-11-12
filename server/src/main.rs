@@ -4,6 +4,7 @@ mod addresses;
 mod api;
 mod auth;
 mod backup;
+mod blacklist;
 mod cli;
 mod clone;
 mod components;
@@ -11,6 +12,7 @@ mod config;
 mod db;
 mod dbms;
 mod dbtools;
+mod dbtrash;
 mod deploy;
 mod dns;
 mod error;
@@ -28,6 +30,7 @@ mod panelcert;
 mod quota;
 mod state;
 mod stats;
+mod svchist;
 mod sys;
 mod tasks;
 mod totp;
@@ -35,6 +38,7 @@ mod update;
 mod uptime;
 mod web;
 mod webhooks;
+mod weekly;
 mod wordpress;
 
 use std::net::SocketAddr;
@@ -187,6 +191,7 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_stats_collector(state.clone());
     tasks::spawn_metrics_archive(state.clone());
     tasks::spawn_dns_cluster_sync(state.clone());
+    tasks::spawn_ops_history(state.clone());
     webhooks::spawn(state.clone());
     // Uygulama portlarının korunması arka planda kurulur; panelin açılışını bekletmez.
     // Sıra önemli: uygulama servislerinin hesap dilimine alınması port korumasının sonucuna bağlıdır.

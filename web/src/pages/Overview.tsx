@@ -7,9 +7,11 @@ import { ArrowRight, Bot, CircleAlert, CircleCheck, Info, RefreshCw, TriangleAle
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { BlacklistPanel } from "../components/BlacklistPanel";
 import { useFeedback } from "../components/feedback";
 import type { Tone } from "../components/ui";
 import { Button, ErrorBlock, LoadingBlock, Panel, Switch } from "../components/ui";
+import { WeeklyReportPanel } from "../components/WeeklyReportPanel";
 import type { HealthAction, HealthFinding, HealthSettings, HealthSeverity, HealthView } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatRelative } from "../lib/format";
@@ -245,6 +247,9 @@ export function OverviewPage() {
               ))}
             </ul>
           </Panel>
+
+          <WeeklyReportPanel />
+          <BlacklistPanel />
 
           <Panel flush title={t("Son yapılanlar")}>
             {actions.length === 0 ? (

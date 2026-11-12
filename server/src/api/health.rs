@@ -18,6 +18,10 @@ pub fn router() -> Router<AppState> {
         .route("/check", post(check))
         .route("/fix", post(fix))
         .route("/settings", axum::routing::put(save_settings))
+        .route("/weekly-report", get(show_weekly).put(save_weekly))
+        .route("/weekly-report/send", post(send_weekly))
+        .route("/blacklist", get(show_blacklist))
+        .route("/blacklist/check", post(check_blacklist))
 }
 
 #[derive(Serialize)]
@@ -78,4 +82,95 @@ async fn save_settings(State(state): State<AppState>, user: AuthUser, Json(setti
     tokio::spawn(async move { health::apply_security_updates(&apply, security_updates).await });
     auth::audit(&state.db, &user, "health.settings", "", "");
     Ok(Json(view(&state)?))
+}
+
+// ---- Haftalık özet ----
+
+#[derive(Serialize)]
+struct WeeklyView {
+    settings: crate::weekly::Settings,
+    /// Bir sonraki otomatik gönderim (Unix saniyesi); özet kapalıysa yok.
+    next_run_at: Option<i64>,
+    last: crate::weekly::Last,
+    smtp_configured: bool,
+}
+
+async fn weekly_view(state: &AppState) -> WeeklyView {
+    let settings = crate::weekly::load_settings(&state.db);
+    let next_run_at = if settings.enabled {
+        Some(crate::weekly::next_run(settings.weekday, settings.at_minute, crate::db::now(), crate::backup::local_offset().await))
+    } else {
+        None
+    };
+    WeeklyView {
+        next_run_at,
+        last: crate::weekly::load_last(&state.db),
+        smtp_configured: crate::notify::load_smtp(&state.db).map(|smtp| smtp.configured()).unwrap_or(false),
+        settings,
+    }
+}
+
+async fn show_weekly(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<WeeklyView>> {
+    user.require_admin()?;
+    Ok(Json(weekly_view(&state).await))
+}
+
+async fn save_weekly(State(state): State<AppState>, user: AuthUser, Json(settings): Json<crate::weekly::Settings>) -> AppResult<Json<WeeklyView>> {
+    user.require_admin()?;
+    crate::weekly::save_settings(&state.db, &settings)?;
+    auth::audit(&state.db, &user, "health.weekly_report.settings", "", if settings.enabled { "açık" } else { "kapalı" });
+    Ok(Json(weekly_view(&state).await))
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct SendBody {
+    /// Doğruysa hiçbir yere gönderilmez; yalnızca özetin metni döner.
+    preview: bool,
+}
+
+/// Haftalık özeti şimdi üretir ve (önizleme değilse) bildirim kanallarına gönderir.
+async fn send_weekly(State(state): State<AppState>, user: AuthUser, body: Option<Json<SendBody>>) -> AppResult<Json<crate::weekly::Delivery>> {
+    user.require_admin()?;
+    let preview = body.map(|Json(body)| body.preview).unwrap_or(false);
+    let delivery = crate::weekly::build(&state, !preview).await?;
+    if !preview {
+        auth::audit(&state.db, &user, "health.weekly_report.send", "", &format!("{} e-posta, {} Telegram", delivery.emailed.len(), delivery.telegram));
+    }
+    Ok(Json(delivery))
+}
+
+// ---- Kara liste ----
+
+#[derive(Serialize)]
+struct BlacklistView {
+    mail_installed: bool,
+    lists: Vec<&'static str>,
+    #[serde(flatten)]
+    outcome: crate::blacklist::Outcome,
+}
+
+fn blacklist_view(state: &AppState, outcome: Option<crate::blacklist::Outcome>) -> BlacklistView {
+    BlacklistView {
+        mail_installed: crate::mail::is_installed(),
+        lists: crate::blacklist::LISTS.iter().map(|(name, _)| *name).collect(),
+        outcome: outcome.unwrap_or_else(|| crate::blacklist::load(&state.db)),
+    }
+}
+
+async fn show_blacklist(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<BlacklistView>> {
+    user.require_admin()?;
+    Ok(Json(blacklist_view(&state, None)))
+}
+
+/// Kara liste sorgusunu şimdi çalıştırır (posta bileşeni kurulu değilse atlanır).
+async fn check_blacklist(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<BlacklistView>> {
+    user.require_admin()?;
+    if !crate::mail::is_installed() {
+        return Ok(Json(blacklist_view(&state, None)));
+    }
+    let outcome = crate::blacklist::run(&state.db).await?;
+    auth::audit(&state.db, &user, "health.blacklist.check", "", &format!("{} listelenmiş", outcome.listed().len()));
+    health::run_checks(&state).await;
+    Ok(Json(blacklist_view(&state, Some(outcome))))
 }

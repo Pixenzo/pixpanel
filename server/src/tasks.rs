@@ -217,6 +217,15 @@ pub fn spawn_metrics_archive(state: AppState) {
     });
 }
 
+/// İşletim geçmişi paketi: servis ölçümleri, haftalık özet, kara liste denetimi ve veritabanı
+/// çöp kutusunun temizliği.
+pub fn spawn_ops_history(state: AppState) {
+    crate::svchist::spawn(state.clone());
+    crate::weekly::spawn(state.clone());
+    crate::blacklist::spawn(state.clone());
+    crate::dbtrash::spawn_cleanup(state);
+}
+
 /// Zamanı gelen yedekleme planlarını başlatır.
 pub fn spawn_backup_scheduler(state: AppState) {
     tokio::spawn(async move {

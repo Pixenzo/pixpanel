@@ -29,6 +29,23 @@ pub fn router() -> Router<AppState> {
         .route("/plans", post(create_plan))
         .route("/plans/{id}", put(update_plan).delete(delete_plan))
         .route("/plans/{id}/run", post(run_plan))
+        .route("/default-plan", get(show_default_plan).put(save_default_plan))
+}
+
+// ---- Yeni siteler için varsayılan plan ----
+
+async fn show_default_plan(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<backup::defaults::Settings>> {
+    user.require_admin()?;
+    Ok(Json(backup::defaults::load(&state)))
+}
+
+/// Varsayılan planı açar/kapatır ve ayarlarını kaydeder. Açıksa yeni oluşturulan her site plana eklenir.
+async fn save_default_plan(State(state): State<AppState>, user: AuthUser, Json(body): Json<backup::defaults::Settings>) -> AppResult<Json<backup::defaults::Settings>> {
+    user.require_admin()?;
+    ensure_installed()?;
+    let saved = backup::defaults::update(&state, body).await?;
+    auth::audit(&state.db, &user, "backup.default_plan.update", "", if saved.enabled { "açık" } else { "kapalı" });
+    Ok(Json(saved))
 }
 
 fn ensure_installed() -> AppResult<()> {

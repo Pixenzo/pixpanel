@@ -791,3 +791,105 @@ export interface ArchivePoint {
   net_rx: number;
   net_tx: number;
 }
+
+// ---- İşletim geçmişi: servis ölçümleri, haftalık özet, kara liste, varsayılan yedek planı, veritabanı çöp kutusu ----
+
+export type ServiceRange = "day" | "week" | "month";
+
+/** Servis ölçüm geçmişindeki bir nokta (aralığa göre seyreltilmiş ortalama). */
+export interface ServicePoint {
+  ts: number;
+  /** Bellek (bayt). */
+  memory: number | null;
+  /** İşlemci (tek çekirdeğe göre yüzde). */
+  cpu: number | null;
+  tasks: number | null;
+  /** Aralıkta servis hata durumunda görüldü mü? */
+  failed: boolean;
+  restarts: number;
+}
+
+export interface ServiceTrend {
+  growth_bytes: number;
+  growth_ratio: number;
+  r2: number;
+  span_days: number;
+}
+
+export interface ServiceSummary {
+  restarts_24h: number;
+  restarts_7d: number;
+  trend: ServiceTrend | null;
+  leak_suspect: boolean;
+  latest: ServicePoint | null;
+}
+
+export interface ServiceHistory {
+  unit: string;
+  /** Bu servisin ölçüm geçmişi tutuluyor mu? */
+  monitored: boolean;
+  range: ServiceRange;
+  points: ServicePoint[];
+  summary: ServiceSummary | null;
+}
+
+export interface WeeklyReportSettings {
+  enabled: boolean;
+  /** 1 = Pazartesi … 7 = Pazar. */
+  weekday: number;
+  /** Gece yarısından itibaren dakika (sunucu saati). */
+  at_minute: number;
+  email_to: string;
+}
+
+export interface WeeklyReportView {
+  settings: WeeklyReportSettings;
+  next_run_at: number | null;
+  last: { at: number; delivered: number; errors: string[] };
+  smtp_configured: boolean;
+}
+
+export interface WeeklyReportDelivery {
+  subject: string;
+  text: string;
+  html: string;
+  emailed: string[];
+  telegram: number;
+  errors: string[];
+}
+
+export type BlacklistVerdict = { kind: "listed"; codes: string[] } | { kind: "clean" } | { kind: "refused" } | { kind: "unknown" };
+
+export interface BlacklistView {
+  mail_installed: boolean;
+  lists: string[];
+  checked_at: number;
+  entries: { ip: string; list: string; label: string; verdict: BlacklistVerdict }[];
+  /** Genel adres olmadığı için sorgulanmayan adresler. */
+  skipped: string[];
+}
+
+export interface BackupDefaultPlan {
+  enabled: boolean;
+  target_id: number | null;
+  frequency: "daily" | "weekly" | "monthly";
+  at_minute: number;
+  weekday: number;
+  month_day: number;
+  keep_daily: number;
+  keep_weekly: number;
+  keep_monthly: number;
+  plan_id: number | null;
+}
+
+/** Silinirken dökümü alınmış, 7 gün boyunca geri getirilebilen veritabanı. */
+export interface DatabaseTrashItem {
+  id: number;
+  user_id: number;
+  owner: string;
+  engine: string;
+  name: string;
+  size: number;
+  deleted_at: number;
+  expires_at: number;
+}

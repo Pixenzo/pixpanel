@@ -239,6 +239,9 @@ pub(crate) async fn start_clone(state: &AppState, user: &AuthUser, source: Site,
     };
 
     auth::audit(&state.db, user, if staging { "wordpress.staging.create" } else { "site.clone" }, &source.domain, &domain_name);
+    if !staging {
+        attach_default_backup(&state, user, target.id, &domain_name).await;
+    }
     let job_state = state.clone();
     let title = if staging { format!("Hazırlık ortamı: {} → {}", source.domain, domain_name) } else { format!("Site kopyalama: {} → {}", source.domain, domain_name) };
     let target_id = target.id;
@@ -478,7 +481,17 @@ async fn create(
         tracing::info!(domain = %site.domain, "DNS: {line}");
     }
     auth::audit(&state.db, &user, "site.create", &domain_name, &site.kind);
+    attach_default_backup(&state, &user, site.id, &domain_name).await;
     Ok(Json(site))
+}
+
+/// Varsayılan yedek planı açıksa yeni siteyi o plana ekler (hata siteyi oluşturmayı bozmaz).
+async fn attach_default_backup(state: &AppState, user: &AuthUser, site_id: i64, domain: &str) {
+    match crate::backup::defaults::attach_site(state, site_id).await {
+        Ok(Some(plan)) => auth::audit(&state.db, user, "backup.default_plan.attach", domain, &plan),
+        Ok(None) => {}
+        Err(err) => tracing::warn!(error = %err, domain, "yeni site varsayılan yedek planına eklenemedi"),
+    }
 }
 
 #[derive(Deserialize)]

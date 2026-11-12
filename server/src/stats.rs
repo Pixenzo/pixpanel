@@ -275,7 +275,7 @@ pub fn collect_site(db: &Db, site: &Site) -> AppResult<()> {
 }
 
 /// Unix anını `YYYYMMDD` gün anahtarına çevirir (UTC); saklama sınırları için yeterli kesinlikte.
-fn day_key(unix: i64) -> i64 {
+pub(crate) fn day_key(unix: i64) -> i64 {
     let days = unix.div_euclid(86400);
     // Howard Hinnant'ın takvim algoritması (civil_from_days).
     let z = days + 719_468;

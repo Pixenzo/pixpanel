@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/processes", get(list_processes))
         .route("/processes/{pid}/signal", post(signal_process))
         .route("/services", get(list_services))
+        .route("/services/{name}/history", get(service_history))
         .route("/services/{name}/{action}", post(service_action))
         .route("/audit", get(audit_log))
         .route("/updates", get(updates_view))
@@ -104,6 +105,33 @@ async fn signal_process(
 async fn list_services(user: AuthUser) -> AppResult<Json<Vec<services::Service>>> {
     user.require_admin()?;
     Ok(Json(services::list().await?))
+}
+
+#[derive(Deserialize)]
+struct ServiceHistoryQuery {
+    /// `day`, `week` ya da `month`.
+    range: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ServiceHistory {
+    unit: String,
+    /// Bu servisin ölçüm geçmişi tutuluyor mu? (Yalnızca sağlık merkezinin izlediği servisler.)
+    monitored: bool,
+    range: String,
+    points: Vec<crate::svchist::Point>,
+    summary: Option<crate::svchist::Summary>,
+}
+
+/// Servisin bellek, işlemci, görev sayısı ve durum geçmişi; yeniden başlama özeti.
+async fn service_history(State(state): State<AppState>, user: AuthUser, Path(name): Path<String>, Query(query): Query<ServiceHistoryQuery>) -> AppResult<Json<ServiceHistory>> {
+    user.require_admin()?;
+    services::validate_unit_name(&name)?;
+    let range = query.range.unwrap_or_else(|| "day".to_string());
+    let points = crate::svchist::history(&state.db, &name, &range)?.ok_or_else(|| AppError::bad("Geçersiz aralık"))?;
+    let monitored = crate::svchist::is_monitored(&name);
+    let summary = if monitored { Some(crate::svchist::summary(&state.db, &name)?) } else { None };
+    Ok(Json(ServiceHistory { unit: name, monitored, range, points, summary }))
 }
 
 async fn service_action(
