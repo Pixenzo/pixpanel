@@ -304,7 +304,7 @@ async fn ensure_venv(site_id: i64, user: &SysUser, root: &Path, settings: &NodeS
         None => "python3".to_string(),
     };
     // `--clear`: yarım ya da eski ortamın bütün içeriği silinip yeniden kurulur.
-    let output = runas::output(runas::command(user, root, &program, &["-m", "venv", "--clear", VENV_DIR]), Duration::from_secs(180)).await?;
+    let output = runas::output(runas::heavy_command(user, root, &program, &["-m", "venv", "--clear", VENV_DIR]), Duration::from_secs(180)).await?;
     if !output.success() {
         return Err(AppError::internal(format!("Python sanal ortamı kurulamadı: {}", output.stderr.trim())));
     }

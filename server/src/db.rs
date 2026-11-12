@@ -596,7 +596,6 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE api_tokens ADD COLUMN scope TEXT;
     "#,
-<<<<<<< HEAD
     // 34: aylık trafik sınırı. `traffic_state` hesabın o ay en son hangi düzeyde (1: %80, 2: doldu)
     //     bildirildiğini tutar; bildirim ayda bir kez gitsin diye. `traffic_suspensions` sınır
     //     yüzünden askıya alınan siteleri işaretler: yalnız bunlar kendiliğinden geri açılır,
@@ -614,7 +613,8 @@ const MIGRATIONS: &[&str] = &[
         created_at INTEGER NOT NULL
     );
     CREATE INDEX traffic_suspensions_user ON traffic_suspensions(user_id);
-    "#,\n    // 37: posta ekleri. `mail_domain_certs`: posta alanının kendi adıyla (`mail.<alan>`) bağlanması;
+    "#,
+    // 35 (dalında 37): posta ekleri. `mail_domain_certs`: posta alanının kendi adıyla (`mail.<alan>`) bağlanması;
     //     satırın varlığı özelliğin açık olduğunu gösterir (`webmail`: `webmail.<alan>` de sunulur,
     //     `dns`: sertifika DNS doğrulamasıyla alınır/yenilenir). `mail_lists` + `mail_list_members`:
     //     basit dağıtım listeleri (`mode`: kimler gönderebilir).
@@ -645,8 +645,8 @@ const MIGRATIONS: &[&str] = &[
         created_at INTEGER NOT NULL,
         UNIQUE (list_id, address)
     );
-=======
-    // 38: işletim geçmişi paketi. Servis ölçüm geçmişi (dakikalık 48 saat, saatlik 30 gün), haftalık
+    "#,
+    // 36 (dalında 38): işletim geçmişi paketi. Servis ölçüm geçmişi (dakikalık 48 saat, saatlik 30 gün), haftalık
     //     özet için denetim sayaçları ve disk doluluğu, silinen veritabanlarının 7 günlük çöp kutusu.
     r#"
     CREATE TABLE service_minutes (
@@ -698,7 +698,6 @@ const MIGRATIONS: &[&str] = &[
         restored_at INTEGER
     );
     CREATE INDEX database_trash_user ON database_trash(user_id);
->>>>>>> agent/ops-history
     "#,
 ];
 

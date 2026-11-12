@@ -107,6 +107,66 @@ check "bayi yöneticinin paketini atayamaz" "$(status $JR POST /users -d "{\"use
 check "bayi başkasının paketini değiştiremez" "$(status $JR PATCH /packages/$MINI -d '{"name":"e2e-mini","limits":{}}')" 404
 check "yönetici bayinin paketini görür" "$(api GET /packages | jget "any(p['id']==$RP for p in d)")" True
 
+say "Yeni paket alanları: Redis belleği ve izinli PHP sürümleri (doğrulama)"
+for body in '{"redis_memory_mb":8}' '{"redis_memory_mb":15}' '{"redis_memory_mb":4097}' '{"redis_memory_mb":-1}' \
+  '{"allowed_php_versions":["8.3.1"]}' '{"allowed_php_versions":["abc"]}' '{"allowed_php_versions":["8"]}' '{"allowed_php_versions":["../8"]}' '{"allowed_php_versions":[""]}'; do
+  check "geçersiz $body" "$(code POST /packages -d "{\"name\":\"e2e-yeni-bozuk\",\"limits\":$body}")" 400
+done
+check "21 sürüm reddedilir" "$(code POST /packages -d "{\"name\":\"e2e-yeni-bozuk\",\"limits\":{\"allowed_php_versions\":[$(python3 -c 'print(",".join("\"8.%d\"" % n for n in range(21)))')]}}")" 400
+for value in null 0 16 4096; do
+  check "redis_memory_mb=$value geçerli" "$(code POST /packages -d "{\"name\":\"e2e-yeni-$value\",\"limits\":{\"redis_memory_mb\":$value}}")" 200
+done
+NP=$(api POST /packages -d '{"name":"e2e-yeni-liste","limits":{"redis_memory_mb":64,"allowed_php_versions":["8.3","7.4","8.3"]}}' | jget 'd["id"]')
+check "sürüm listesi tekrarsız ve sıralı kaydedilir, Redis belleği korunur" "$(api GET /packages | jget "next((p['limits']['allowed_php_versions'], p['limits']['redis_memory_mb']) for p in d if p['id']==$NP)")" "(['7.4', '8.3'], 64)"
+check "eski biçimli paket (yeni alanlar yok) okunur" "$(api GET /packages | jget "next((p['limits']['allowed_php_versions'], p['limits']['redis_memory_mb']) for p in d if p['id']==$MINI)")" "([], None)"
+
+say "Bayi: Redis belleği ve PHP sürümleri kendi paketini aşamaz"
+RID=$(api GET /users | jget "next(u['id'] for u in d if u['username']=='$RESELLER')")
+RB=$(api POST /packages -d '{"name":"e2e-yeni-bayi","limits":{"sites":5,"databases":5,"disk_mb":5000,"redis_memory_mb":128,"allowed_php_versions":["8.2","8.3"]}}' | jget 'd["id"]')
+check "bayiye sınırlı paket atanır" "$(code PATCH /users/$RID -d "{\"package_id\":$RB}")" 200
+has "Redis belleği tavanı aşan paket" "$(call $JR POST /packages -d '{"name":"e2e-yeni-asan","limits":{"sites":1,"databases":1,"disk_mb":100,"redis_memory_mb":512,"allowed_php_versions":["8.3"]}}')" "Redis belleği"
+has "Redis belleğini boş bırakmak tavanı aşar" "$(call $JR POST /packages -d '{"name":"e2e-yeni-asan","limits":{"sites":1,"databases":1,"disk_mb":100,"allowed_php_versions":["8.3"]}}')" "Redis belleği"
+has "tavandaki listede olmayan PHP sürümü" "$(call $JR POST /packages -d '{"name":"e2e-yeni-asan","limits":{"sites":1,"databases":1,"disk_mb":100,"redis_memory_mb":64,"allowed_php_versions":["8.1"]}}')" "PHP sürümü"
+has "boş sürüm listesi (hepsi) tavandan geniştir" "$(call $JR POST /packages -d '{"name":"e2e-yeni-asan","limits":{"sites":1,"databases":1,"disk_mb":100,"redis_memory_mb":64}}')" "PHP sürümü"
+check "alt kümesi olan paket tanımlanır" "$(status $JR POST /packages -d '{"name":"e2e-yeni-alt","limits":{"sites":1,"databases":1,"disk_mb":100,"redis_memory_mb":64,"allowed_php_versions":["8.3"]}}')" 200
+# Bayinin paketi sonraki bölümler için sıfırlanır.
+check "bayinin paketi kaldırılır" "$(code PATCH /users/$RID -d '{"package_id":0}')" 200
+
+say "İzinli PHP sürümleri: site oluşturma ve sürüm değiştirme"
+PHPV=$(api GET /sites/options | jget '" ".join(d["php_versions"])')
+V0=$(awk '{print $1}' <<<"$PHPV"); V1=$(awk '{print $2}' <<<"$PHPV")
+if [ -n "$V0" ]; then
+  PHPK=$(api POST /packages -d "{\"name\":\"e2e-yeni-php\",\"limits\":{\"sites\":10,\"allowed_php_versions\":[\"$V0\"]}}" | jget 'd["id"]')
+  check "müşteriye PHP kısıtlı paket" "$(code PATCH /users/$CID -d "{\"package_id\":$PHPK}")" 200
+  check "seçenekler izinli sürümü bildirir" "$(call $JC GET /sites/options | jget 'd["php_allowed"]')" "['$V0']"
+  check "yönetici için kısıt yok" "$(api GET /sites/options | jget 'd["php_allowed"]')" "[]"
+  has "izinsiz sürümle site açılamaz (kurulu olmayan sürüm)" "$(call $JC POST /sites -d '{"domain":"paket-php0.test","kind":"php","php_version":"9.9"}')" "paketinde PHP 9.9 yok"
+  SP=$(call $JC POST /sites -d "{\"domain\":\"paket-php1.test\",\"kind\":\"php\",\"php_version\":\"$V0\"}" | jget 'd["id"]')
+  check "izinli sürümle site açılır" "$([[ "$SP" =~ ^[0-9]+$ ]] && echo evet)" evet
+  check "izinli sürümde paket dışı rozeti yok" "$(call $JC GET /sites/$SP | jget 'd["php_out_of_package"]')" False
+  if [ -n "$V1" ]; then
+    has "izinsiz sürümle site açılamaz" "$(call $JC POST /sites -d "{\"domain\":\"paket-php2.test\",\"kind\":\"php\",\"php_version\":\"$V1\"}")" "paketinde PHP $V1 yok"
+    has "izinli sürümler iletide yazar" "$(call $JC PATCH /sites/$SP -d "{\"php_version\":\"$V1\"}")" "İzinli sürümler: $V0"
+    check "müşteri sürümü izinsize çeviremez (değişmedi)" "$(call $JC GET /sites/$SP | jget 'd["php_version"]')" "$V0"
+    check "yönetici kısıttan muaf: sürümü değiştirir" "$(code PATCH /sites/$SP -d "{\"php_version\":\"$V1\"}")" 200
+    check "paket dışı sürüm rozeti (site ayrıntısı)" "$(call $JC GET /sites/$SP | jget 'd["php_out_of_package"]')" True
+    check "paket dışı sürüm rozeti (site listesi)" "$(call $JC GET /sites | jget "next(s['php_out_of_package'] for s in d if s['id']==$SP)")" True
+    check "paket dışı sürümdeki site ayarı kaydedilebilir (sürüm aynı)" "$(status $JC PATCH /sites/$SP -d "{\"php_version\":\"$V1\",\"php_settings\":{\"memory_limit\":\"256M\"}}")" 200
+    check "kopyalama paket dışı sürümle engellenir" "$(status $JC POST /sites/$SP/clone -d '{"domain":"paket-php3.test"}')" 400
+    check "izinli sürüme dönülür" "$(status $JC PATCH /sites/$SP -d "{\"php_version\":\"$V0\"}")" 200
+    check "dönünce rozet kalkar" "$(call $JC GET /sites/$SP | jget 'd["php_out_of_package"]')" False
+  else
+    echo "  atlandı: ikinci bir PHP sürümü kurulu değil; sürüm değiştirme denetimleri atlandı"
+  fi
+  check "paket daraltılınca sahibin mevcut sitesine dokunulmaz" "$(code PATCH /packages/$PHPK -d "{\"name\":\"e2e-yeni-php\",\"limits\":{\"sites\":10,\"allowed_php_versions\":[\"9.9\"]}}")" 200
+  check "site hâlâ var ve çalışır durumda" "$(call $JC GET /sites/$SP | jget '(d["status"], d["php_version"])')" "('active', '$V0')"
+  check "daraltılan pakette rozet çıkar" "$(call $JC GET /sites/$SP | jget 'd["php_out_of_package"]')" True
+  check "kısıt kaldırılınca rozet kalkar" "$(code PATCH /packages/$PHPK -d '{"name":"e2e-yeni-php","limits":{"sites":10}}') $(call $JC GET /sites/$SP | jget 'd["php_out_of_package"]')" "200 False"
+  check "paketsiz hesapta kısıt yok" "$(code PATCH /users/$CID -d '{"package_id":0}') $(call $JC GET /sites/options | jget 'd["php_allowed"]')" "200 []"
+else
+  echo "  atlandı: PHP kurulu değil; site/sürüm denetimleri atlandı"
+fi
+
 say "Temizlik"
 cleanup
 check "hesaplar ve paketler silindi" "$(api GET /users | jget "[u['username'] for u in d if u['username'] in ('$CUSTOMER', '$RESELLER')]") $(api GET /packages | jget "[p['name'] for p in d if p['name'].startswith('e2e-')]")" "[] []"

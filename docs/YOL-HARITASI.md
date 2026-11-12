@@ -153,20 +153,20 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 ## P1 — Müşteriye açmak için gerekli
 
-### 8. Paketler ve kotalar — TAMAMLANDI (11.11.2026; trafik sınırı ve bayinin toplam kullanımı 12.11.2026'da tamamlandı; kalan: izinli PHP sürümleri/özellikler, bayinin toplam kullanımının bayinin kendi sınırına sayılması)
+### 8. Paketler ve kotalar — TAMAMLANDI (11.11.2026; trafik sınırı ve bayinin toplam kullanımı 12.11.2026'da tamamlandı; izinli PHP sürümleri 12.11.2026'da yapıldı; kalan: izinli Node.js sürümleri ve özellikler, bayinin toplam kullanımının bayinin kendi sınırına sayılması)
 
 - **Kapsam:** hizmet paketi (site, alt alan adı, veritabanı, posta kutusu, FTP hesabı, DNS bölgesi sayısı; disk ve aylık trafik sınırı; izinli PHP/Node.js sürümleri; izinli özellikler); hesaba paket atama; sınır aşımında oluşturmayı reddetme; kullanım görünümü (hesap ve bayi için).
 - **Disk kotası kararı:** dosya sistemi kotası LXC'de güvenilir değil; panel `du` ile düzenli ölçer, sınır aşılınca uyarır ve yüklemeyi/yeni kaynak açmayı engeller ("yumuşak kota"). Gerçek kota ayrı bir iş.
 - **Kabul:** sınırdaki hesap yeni site açamaz; bayi kendi müşterilerine kendi sınırını aşan paket veremez.
 
-### 8a. Hesap başına Redis — TAMAMLANDI (11.11.2026; kalan: bellek sınırının pakete bağlanması)
+### 8a. Hesap başına Redis — TAMAMLANDI (11.11.2026; bellek sınırının pakete bağlanması 12.11.2026'da yapıldı: pakette `redis_memory_mb`, 0 = Redis yok)
 
 - **Karar (10.11.2026):** ACL/önek yerine hesap başına ayrı Redis örneği. Site başına değil hesap başına; siteler veritabanı numarasıyla ayrılır.
 - **Kapsam:** isteğe bağlı açılır ("Redis'i aç"); `pixpanel-redis-<hesap>.service` hesabın kendi kullanıcısıyla çalışır (Node.js birimleriyle aynı düzen); varsayılan bağlantı hesaba özel port + panelin ürettiği uzun parola (`127.0.0.1:<port>`; uygulamaların çoğu adres+port beklediği için; parola zorunlu çünkü yerel port bütün hesaplara açık, müşteri parola seçemez, yenileyebilir). Yanında unix soketi (`/run/pixpanel-redis/<hesap>/redis.sock`, dosya izniyle yalnız o hesap, parolasız). **Uzaktan erişim yok (kullanıcı kararı, 10.11.2026):** örnek yalnız `127.0.0.1`'i dinler, panelde bunu değiştiren ayar bulunmaz, müşteri istese de açamaz; dışarıdan erişim yalnız SSH tüneliyle (paket 9'daki hesap SSH erişimine bağlı). Yalnız yerel adresi dinlediği için güvenlik duvarında port açılsa bile ulaşılamaz. Bellek sınırı paketten gelir, dolunca en eski önbellek atılır.
 - **Arayüz:** hazır bağlantı bilgisi (Laravel `.env`, WordPress `wp-config.php`, soket yolu), kullanım çubuğu; mevcut tarayıcı ve konsol hesabın kendi örneğine bağlanır. Ortak Redis yöneticiye kalır.
 - **Kabul:** bir hesap diğerinin anahtarlarını göremez; bellek sınırını dolduran hesap başkasını etkilemez; kapatınca süreç ve veri kalkar.
 
-### 9. Hesaplara SFTP ve SSH — TAMAMLANDI (11.11.2026; kalan: panelde hesap terminali)
+### 9. Hesaplara SFTP ve SSH — TAMAMLANDI (11.11.2026; panelde hesap terminali 12.11.2026'da yapıldı: yalnız SSH düzeyi "Kabuk" olan hesabın kendi kabuğu)
 
 - **Kapsam:** hesap başına SFTP (hapisli; ev klasörü düzeni buna hazır) ve isteğe bağlı kabuk erişimi; açık anahtar yönetimi; `sshd_config.d` altında panelin kendi dosyası; panelde hesap terminali (bugün yalnızca yönetici).
 - **Kabul:** hesap SFTP ile yalnızca kendi klasörünü görür; kabuk izni olmayan hesap komut çalıştıramaz; bozuk sshd yapılandırması uygulanmaz (`sshd -t`).
@@ -230,7 +230,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 
 - DNSSEC (anahtar üretimi, DS kaydının gösterimi), ikincil ad sunucusu (AXFR, bildirim), bölge şablonları, BIND bölge dosyası içe/dışa aktarma, Cloudflare'de SRV ve CAA yazma.
 
-### 19. Veritabanı derinliği — İLK SÜRÜM TAMAMLANDI (12.11.2026: boyutlar, kopyalama, denetim/onarım, yavaş sorgu günlüğü; uzaktan erişim (iki motor); kalan: uzak veritabanı sunucusu)
+### 19. Veritabanı derinliği — İLK SÜRÜM TAMAMLANDI (12.11.2026: boyutlar, kopyalama, denetim/onarım, yavaş sorgu günlüğü; uzaktan erişim (iki motor, MariaDB'de TLS zorunlu); kalan: uzak veritabanı sunucusu)
 
 - PostgreSQL uzaktan erişim (`pg_hba`), veritabanı kopyalama, denetim ve onarım, zamanlı döküm (5 ile birlikte), yavaş sorgu günlüğü görünümü, uzak veritabanı sunucusu (düşük öncelik).
 
@@ -245,7 +245,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 | 22 | Komut satırı aracı (`pixpanel site add …`; API'nin ince sarmalayıcısı) | O | Uygun |
 | 23 | Olay kancaları (site açıldı, yayın bitti gibi olaylarda webhook) — **tamamlandı (12.11.2026)** | K | Uygun |
 | 24 | Çoklu IP ve IPv6 (siteye adres atama, DNS'te AAAA) | O | Sistem katmanı |
-| 25 | Kaynak sınırı (hesap başına işlemci ve bellek; systemd dilimleri) — **tamamlandı (12.11.2026; `runas` komutları ve BPF'li sunucuda uygulama servisleri dilim dışında)** | O | Sistem katmanı |
+| 25 | Kaynak sınırı (hesap başına işlemci ve bellek; systemd dilimleri) — **tamamlandı (12.11.2026; `runas` ağır komutları ve dosya yöneticisinin ağır işlemleri artık hesabın diliminde; kalan: BPF'li sunucuda uygulama servisleri dilim dışında, veritabanı döküm yükleme ve posta içe aktarma kapsam dışı)** | O | Sistem katmanı |
 | 26 | Eklenti sistemi | B | Tasarım önce |
 | 27 | Mobil görünüm ve erişilebilirlik denetimi | O | Uygun |
 

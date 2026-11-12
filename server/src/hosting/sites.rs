@@ -51,6 +51,9 @@ pub struct Site {
     pub rules: crate::hosting::rules::SiteRules,
     /// Site bir WordPress hazırlık ortamıysa asıl sitenin kimliği.
     pub staging_of: Option<i64>,
+    /// PHP sitesinin sürümü sahibinin paketindeki izinli sürümlerin dışında mı (paket sonradan daraltıldığında)?
+    /// Veritabanında tutulmaz; uçlar doldurur (`api::sites::mark_package_versions`).
+    pub php_out_of_package: bool,
 }
 
 impl Site {
@@ -93,6 +96,7 @@ fn read_site(row: &rusqlite::Row<'_>) -> rusqlite::Result<Site> {
         ip: row.get(19)?,
         rules: serde_json::from_str(&row.get::<_, String>(20)?).unwrap_or_default(),
         staging_of: row.get(21)?,
+        php_out_of_package: false,
     })
 }
 

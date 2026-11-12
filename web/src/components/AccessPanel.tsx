@@ -3,9 +3,10 @@
 // sayfasında hesabı yöneten kullanır.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Copy, KeyRound, Plus, SquareTerminal, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
+import { Link } from "react-router";
 import type { AccountAccess } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatRelative, generatePassword } from "../lib/format";
@@ -183,6 +184,15 @@ export function AccessPanel({ accountId }: { accountId: number }) {
                   <Copy className="size-4" />
                 </IconButton>
               </div>
+              {data.mode === "shell" && (data.can_grant_shell || !data.can_change_mode) && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Link to={`/terminal?kapsam=${encodeURIComponent(`user:${accountId}`)}`} className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-accent hover:underline">
+                    <SquareTerminal aria-hidden className="size-4" />
+                    {t("Web terminalini aç")}
+                  </Link>
+                  <span className="text-[13px] text-ink-3">{t("Kabuk hesabınızın kaynak diliminde ve kullanıcısıyla açılır; en çok 3 oturum.")}</span>
+                </div>
+              )}
               {data.mode === "sftp" && (
                 <p className="mt-1.5 text-[13px] text-ink-3">
                   {t("FileZilla gibi programlarda: protokol SFTP, sunucu {host}, port {port}, kullanıcı {user}.", { host, port: data.port, user: data.username })}

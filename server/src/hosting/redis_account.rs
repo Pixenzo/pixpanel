@@ -48,6 +48,43 @@ impl Instance {
     }
 }
 
+/// Paketin hesabın Redis'ine getirdiği kural (`quota::Limits::redis_memory_mb`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackagePlan {
+    /// Pakette sınır yok: örnek varsayılan belleğiyle açılır, yönetici örnek başına değiştirebilir.
+    Unrestricted,
+    /// Bellek sınırı paketten gelir (MB).
+    Fixed(u32),
+    /// Paket Redis içermiyor (0): örnek açılamaz, açıksa durdurulur.
+    Denied,
+}
+
+/// Paketteki `redis_memory_mb` değerinden kural.
+pub fn package_plan(limit: Option<i64>) -> PackagePlan {
+    match limit {
+        None => PackagePlan::Unrestricted,
+        Some(0) => PackagePlan::Denied,
+        Some(mb) => PackagePlan::Fixed(u32::try_from(mb).unwrap_or(MAX_MEMORY_MB).clamp(16, MAX_MEMORY_MB)),
+    }
+}
+
+/// Hesabın paketinin adı ve Redis kuralı; paketsiz hesap ve yönetici için kural koymayan `Unrestricted`.
+pub fn plan_for(db: &Db, user_id: i64) -> AppResult<(Option<String>, PackagePlan)> {
+    Ok(match crate::quota::limits_for(db, user_id)? {
+        Some((name, limits)) => (Some(name), package_plan(limits.redis_memory_mb)),
+        None => (None, PackagePlan::Unrestricted),
+    })
+}
+
+/// Paket Redis'e izin vermiyorsa nedenini söyleyen hata.
+pub fn require_allowed(db: &Db, user_id: i64) -> AppResult<PackagePlan> {
+    let (package, plan) = plan_for(db, user_id)?;
+    if plan == PackagePlan::Denied {
+        return Err(AppError::bad(format!("“{}” paketi Redis içermiyor.", package.unwrap_or_default())));
+    }
+    Ok(plan)
+}
+
 pub fn is_available() -> bool {
     exec::binary_exists("redis-server")
 }
@@ -240,12 +277,14 @@ pub async fn enable(db: &Db, user_id: i64) -> AppResult<Instance> {
     if !is_available() {
         return Err(AppError::bad("Redis bu sunucuda kurulu değil; yöneticinin Bileşenler sayfasından kurması gerekiyor"));
     }
+    // Paket Redis içermiyorsa (ya da hesabın örneği paket yüzünden durdurulmuşsa) açılamaz.
+    let plan = require_allowed(db, user_id)?;
     if let Some(existing) = get(db, user_id)? {
         return Ok(existing);
     }
     let username: String = db.call(|conn| conn.query_row("SELECT username FROM users WHERE id = ?1", params![user_id], |row| row.get(0)))?;
     check_name(&username)?;
-    let instance = Instance { user_id, username, port: pick_port(db)?, password: auth::random_token(24), memory_mb: DEFAULT_MEMORY_MB, created_at: now() };
+    let instance = Instance { user_id, username, port: pick_port(db)?, password: auth::random_token(24), memory_mb: match plan { PackagePlan::Fixed(memory) => memory, _ => DEFAULT_MEMORY_MB }, created_at: now() };
     db.call(|conn| {
         conn.execute(
             "INSERT INTO redis_instances (user_id, port, password, memory_mb, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -307,12 +346,49 @@ pub async fn rotate_password(db: &Db, user_id: i64) -> AppResult<Instance> {
 
 /// Bellek sınırını değiştirir (yönetici).
 pub async fn set_memory(db: &Db, user_id: i64, memory_mb: u32) -> AppResult<Instance> {
+    // Sınır pakette tanımlıysa hesap başına elle değiştirilemez; paket değişince eşitlenir.
+    if let (Some(package), PackagePlan::Fixed(_) | PackagePlan::Denied) = plan_for(db, user_id)? {
+        return Err(AppError::bad(format!("Bu hesabın Redis bellek sınırı “{package}” paketinden geliyor; paketi değiştirin")));
+    }
     let memory_mb = validate_memory(memory_mb)?;
     let mut instance = get(db, user_id)?.ok_or_else(|| AppError::bad("Bu hesap için Redis açık değil"))?;
     instance.memory_mb = memory_mb;
     db.call(|conn| conn.execute("UPDATE redis_instances SET memory_mb = ?1 WHERE user_id = ?2", params![memory_mb, user_id]))?;
     apply(&instance).await?;
     Ok(instance)
+}
+
+/// Hesabın paketindeki Redis kuralını var olan örneğe uygular (paket atanınca/değişince ve panel
+/// açılışında; `resource_limits::sync` çağırır, `sys_lock` çağıranda tutulur):
+/// - `Fixed`: `maxmemory` paketin değerine çekilir (değişmişse yapılandırma yazılıp örnek yeniden başlar);
+/// - `Denied`: servis durdurulur ve açılışta başlamaz; veri ve kayıt kalır (paket yeniden izin verirse örnek
+///   kendiliğinden yeniden başlar), hesap Redis'i kullanamaz;
+/// - `Unrestricted`: bellek olduğu gibi kalır; paket yüzünden durdurulmuşsa yeniden başlatılır.
+pub async fn sync_package_limit(db: &Db, user_id: i64) -> AppResult<()> {
+    let Some(mut instance) = get(db, user_id)? else { return Ok(()) };
+    check_name(&instance.username)?;
+    let (_, plan) = plan_for(db, user_id)?;
+    let unit = unit_name(&instance.username);
+    let enabled = exec::run("systemctl", &["is-enabled", "--quiet", "--", &unit]).await.map(|out| out.success()).unwrap_or(false);
+    match plan {
+        PackagePlan::Denied => {
+            if enabled || services::is_active(&unit).await {
+                let _ = exec::run("systemctl", &["disable", "--now", "--quiet", "--", &unit]).await;
+            }
+        }
+        PackagePlan::Fixed(_) | PackagePlan::Unrestricted => {
+            let target = match plan {
+                PackagePlan::Fixed(memory) => memory,
+                _ => instance.memory_mb,
+            };
+            if target != instance.memory_mb || !enabled {
+                instance.memory_mb = target;
+                db.call(|conn| conn.execute("UPDATE redis_instances SET memory_mb = ?1 WHERE user_id = ?2", params![target, user_id]))?;
+                apply(&instance).await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Örneğe bağlanır ve kimlik doğrular.
@@ -360,6 +436,16 @@ mod tests {
             assert!(check_name(bad).is_err(), "{bad}");
         }
         assert!(check_name("musteri-1_a").is_ok());
+    }
+
+    #[test]
+    fn package_memory_decides_the_redis_plan() {
+        assert_eq!(package_plan(None), PackagePlan::Unrestricted);
+        assert_eq!(package_plan(Some(0)), PackagePlan::Denied, "0: Redis pakette yok");
+        assert_eq!(package_plan(Some(256)), PackagePlan::Fixed(256));
+        // Doğrulamadan kaçan değerler uç sınırlara çekilir.
+        assert_eq!(package_plan(Some(5)), PackagePlan::Fixed(16));
+        assert_eq!(package_plan(Some(1_000_000)), PackagePlan::Fixed(MAX_MEMORY_MB));
     }
 
     #[test]

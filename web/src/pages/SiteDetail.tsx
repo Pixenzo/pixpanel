@@ -31,7 +31,7 @@ import { ProxyRulesSection } from "./SiteProxyRules";
 import { CloneRow } from "./SiteClone";
 import { MigrateRow } from "./SiteMigrate";
 import { SiteRulesSection } from "./SiteRules";
-import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
+import { selectablePhpVersions, siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { UptimePanel } from "../components/UptimePanel";
 import { StatsSection } from "./SiteStats";
 import { WordPressSection } from "./SiteWordPress";
@@ -237,7 +237,8 @@ const numberOrNull = (value: string) => (value.trim() === "" ? null : Number(val
 
 function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
   const me = useMe();
-  const [version, setVersion] = useState(site.php_version ?? options.php_versions[0] ?? "");
+  const selectable = selectablePhpVersions(options);
+  const [version, setVersion] = useState(site.php_version ?? selectable[0] ?? "");
   const [settings, setSettings] = useState<PhpSettings>(site.php_settings);
   const save = useSaveSite(site, t("PHP ayarları kaydedildi"));
 
@@ -248,7 +249,9 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
       settings.custom.map((directive, i) => (i === index ? { ...directive, [field]: value } : directive)),
     );
 
-  const versions = options.php_versions.includes(version) || !version ? options.php_versions : [version, ...options.php_versions];
+  // Sitenin mevcut sürümü paketin izinli listesinde olmasa da seçenekler arasında kalır (rozetle); başka bir paket dışı sürüm seçilemez.
+  const current = site.php_version;
+  const versions = current && !selectable.includes(current) ? [current, ...selectable] : selectable.length === 0 && version ? [version] : selectable;
   // Seçili sürümün genel ayarları: boş bırakılan alanların alacağı değerler.
   const defaults: PhpGlobal | undefined = options.php_defaults[version];
   const inherited = (directive: string, value: string | number | undefined) =>
@@ -273,9 +276,15 @@ function PhpTab({ site, options }: { site: Site; options: SiteOptions }) {
         {versions.map((item) => (
           <option key={item} value={item}>
             PHP {item}
+            {item === current && site.php_out_of_package ? ` (${t("paket dışı")})` : ""}
           </option>
         ))}
       </Select>
+      {site.php_out_of_package && (
+        <p className="rounded-md bg-warn-soft px-3 py-2 text-[13.5px] text-warn">
+          {t("PHP {version} hesabın paketindeki izinli sürümlerin dışında kaldı. Site çalışmaya devam eder; sürümü yalnızca paketin izin verdiği bir sürüme değiştirebilirsiniz.", { version: current ?? "" })}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-sunken/70 px-3 py-2 text-[13.5px] text-ink-2">
         <span>
@@ -569,6 +578,7 @@ export function SiteDetailPage() {
         <h1 className="font-mono text-[22px] leading-tight font-medium tracking-[-0.01em] break-all">{data.domain}</h1>
         {data.status === "active" ? <Status tone="ok">{t("Yayında")}</Status> : <Status tone="warn">{t("Askıda")}</Status>}
         <Badge>{siteKindLabel(data)}</Badge>
+        {data.php_out_of_package && <Badge tone="warn">{t("paket dışı sürüm")}</Badge>}
         <a
           href={`${scheme}://${data.domain}`}
           target="_blank"

@@ -420,17 +420,17 @@ async fn restore_site_tree(
                 relative.iter().map(|path| format!("{destination_text}{path}")).collect()
             };
             let mut cmd = if targets.is_empty() {
-                runas::command(owner, destination, "find", &[".", "-mindepth", "1", "-maxdepth", "1", "-not", "-name", "logs", "-exec", "rm", "-rf", "--", "{}", "+"])
+                runas::heavy_command(owner, destination, "find", &[".", "-mindepth", "1", "-maxdepth", "1", "-not", "-name", "logs", "-exec", "rm", "-rf", "--", "{}", "+"])
             } else {
                 let mut args: Vec<&str> = vec!["-rf", "--"];
                 args.extend(targets.iter().map(String::as_str));
-                runas::command(owner, destination, "rm", &args)
+                runas::heavy_command(owner, destination, "rm", &args)
             };
             ctx.run_streaming(&mut cmd, "rm", None).await?;
         }
         // Kopyalama hesabın kendi kimliğiyle yapılır. Hedef klasörün kendi izinlerine dokunulmaz;
         // yalnızca içindekiler taşınır.
-        let mut copy = runas::command(owner, &data, "find", &[".", "-mindepth", "1", "-maxdepth", "1", "-exec", "cp", "-a", "-t", &destination_text, "--", "{}", "+"]);
+        let mut copy = runas::heavy_command(owner, &data, "find", &[".", "-mindepth", "1", "-maxdepth", "1", "-exec", "cp", "-a", "-t", &destination_text, "--", "{}", "+"]);
         ctx.run_streaming(&mut copy, "cp", None).await
     }
     .await;

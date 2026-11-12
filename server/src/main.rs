@@ -4,11 +4,8 @@ mod addresses;
 mod api;
 mod auth;
 mod backup;
-<<<<<<< HEAD
 mod backup_import;
-=======
 mod blacklist;
->>>>>>> agent/ops-history
 mod cli;
 mod clone;
 mod components;
@@ -197,6 +194,8 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
     tasks::spawn_dns_cluster_sync(state.clone());
     tasks::spawn_ops_history(state.clone());
     webhooks::spawn(state.clone());
+    // Hesap diliminde komut çalıştırma (systemd-run --scope) bir kez sınanır; sonuç önbelleğe alınır.
+    sys::runas::probe_slice_support().await;
     // Uygulama portlarının korunması arka planda kurulur; panelin açılışını bekletmez.
     // Sıra önemli: uygulama servislerinin hesap dilimine alınması port korumasının sonucuna bağlıdır.
     tokio::spawn({
@@ -204,6 +203,9 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
         async move {
             hosting::portguard::apply().await;
             hosting::resource_limits::sync(&state, None).await;
+            // MariaDB'nin uzaktan erişim sertifikası kopyası ve uzak kullanıcıların TLS şartı güncel tutulur.
+            let _guard = state.sys_lock.lock().await;
+            dbms::remote::refresh_mariadb_tls(&state.db, &state.cfg).await;
         }
     });
     // Kayıtlı güvenlik duvarı kuralları panel açılırken yeniden yüklenir.

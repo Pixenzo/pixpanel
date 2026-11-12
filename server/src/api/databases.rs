@@ -1131,7 +1131,7 @@ async fn set_remote(
     let engine = Engine::parse(&engine)?;
     engine.require_installed()?;
     let _guard = state.sys_lock.lock().await;
-    let outcome = dbms::remote::set_enabled(&state.db, engine, body.enabled).await?;
+    let outcome = dbms::remote::set_enabled(&state.db, &state.cfg, engine, body.enabled).await?;
     if outcome.changed {
         let action = if body.enabled { "database.remote.enable" } else { "database.remote.disable" };
         auth::audit(&state.db, &user, action, engine.as_str(), "");

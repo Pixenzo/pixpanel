@@ -182,6 +182,10 @@ export interface PackageLimits {
   traffic_gb: number | null;
   /** Sınır dolunca: `notify` (yalnız bildirim) ya da `suspend` (hesabın siteleri askıya alınır); boş = `notify`. */
   traffic_action: "notify" | "suspend" | null;
+  /** Hesabın Redis örneğinin bellek sınırı (MB). `null`: pakette sınır yok; 0: pakette Redis yok. */
+  redis_memory_mb: number | null;
+  /** Hesabın seçebileceği PHP sürümleri; boş: kurulu bütün sürümler. */
+  allowed_php_versions: string[];
 }
 
 /** Bayinin müşterilerinin toplam kullanımı. */
@@ -382,6 +386,8 @@ export interface Site {
   rules: SiteRules;
   /** Site bir WordPress hazırlık ortamıysa asıl sitenin kimliği. */
   staging_of: number | null;
+  /** PHP sürümü sahibinin paketindeki izinli sürümlerin dışında mı (paket sonradan daraltıldıysa)? */
+  php_out_of_package: boolean;
 }
 
 export type DbEngine = "mariadb" | "postgresql";
@@ -495,6 +501,8 @@ export interface PhpGlobal {
 export interface SiteOptions {
   nginx_installed: boolean;
   php_versions: string[];
+  /** Hesabın paketinin izin verdiği PHP sürümleri; boş: kısıt yok (yönetici her zaman boş görür). */
+  php_allowed: string[];
   owners: { id: number; username: string }[];
   php_defaults: Record<string, PhpGlobal>;
   node_versions: string[];
@@ -556,11 +564,23 @@ export interface RedisAccountInstance {
   keys: number | null;
   version: string;
   password?: string;
+  /** Yönetici listesinde: bellek sınırı paketten geliyorsa örnek başına değiştirilemez. */
+  memory_from_package?: boolean;
+  /** Yönetici listesinde: hesabın paketi. */
+  package?: string | null;
+  /** Yönetici listesinde: paket Redis'e izin veriyor mu? */
+  allowed?: boolean;
 }
 
 export interface RedisAccountView {
   /** Redis bu sunucuda kurulu mu? */
   available: boolean;
+  /** Paket Redis'e izin veriyor mu (`redis_memory_mb` 0 değilse)? Değilse örnek açılamaz, açık örnek durdurulmuştur. */
+  allowed: boolean;
+  /** Hesabın paketinin adı. */
+  package: string | null;
+  /** Bellek sınırı paketten geliyorsa değeri (MB). */
+  package_memory_mb: number | null;
   instance: RedisAccountInstance | null;
 }
 

@@ -98,8 +98,27 @@ pub async fn lock_import_account(role: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn create_user(name: &str, host: &str, password: &str) -> AppResult<()> {
-    run(&format!("CREATE USER {} IDENTIFIED BY {};\n", account(name, host), quote(password))).await?;
+/// `require_tls`: hesap yalnızca TLS bağlantısıyla girebilir (`REQUIRE SSL`); yerel olmayan adresli hesaplar için açılır.
+pub async fn create_user(name: &str, host: &str, password: &str, require_tls: bool) -> AppResult<()> {
+    let tls = if require_tls { " REQUIRE SSL" } else { "" };
+    run(&format!("CREATE USER {} IDENTIFIED BY {}{tls};\n", account(name, host), quote(password))).await?;
+    Ok(())
+}
+
+/// Hesabın TLS şartını değiştirir: `required` ise `REQUIRE SSL`, değilse `REQUIRE NONE` (adres yerel olunca).
+pub async fn set_tls_requirement(name: &str, host: &str, required: bool) -> AppResult<()> {
+    let tls = if required { "SSL" } else { "NONE" };
+    run(&format!("ALTER USER {} REQUIRE {tls};\n", account(name, host))).await?;
+    Ok(())
+}
+
+/// Verilen (kullanıcı, MariaDB hesap adresi) çiftlerinin hepsine `REQUIRE SSL` uygular. Sunucuda olmayan hesap atlanır.
+pub async fn require_ssl(accounts: &[(String, String)]) -> AppResult<()> {
+    if accounts.is_empty() {
+        return Ok(());
+    }
+    let script: String = accounts.iter().map(|(name, host)| format!("ALTER USER IF EXISTS {} REQUIRE SSL;\n", account(name, host))).collect();
+    run(&script).await?;
     Ok(())
 }
 

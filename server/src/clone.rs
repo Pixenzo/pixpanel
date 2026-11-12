@@ -35,7 +35,7 @@ async fn copy_files(ctx: &JobCtx, source: &Site, target: &Site) -> AppResult<()>
     let to = format!("{}/", target.root().display());
     ctx.log(format!("Dosyalar kopyalanıyor: {} → {}", source.root().display(), target.root().display()));
     // `-a`: izinler, zamanlar ve sembolik bağlar korunur. Hedefteki karşılama sayfasının üzerine yazılır.
-    let mut cmd = runas::command(&user, &target.root(), "cp", &["-a", "--", &from, &to]);
+    let mut cmd = runas::heavy_command(&user, &target.root(), "cp", &["-a", "--", &from, &to]);
     ctx.run_streaming(&mut cmd, "cp", None).await?;
     let size = runas::output(runas::command(&user, &target.root(), "du", &["-sh", "--", "."]), Duration::from_secs(120)).await;
     if let Ok(output) = size {

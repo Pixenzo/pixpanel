@@ -134,7 +134,7 @@ async fn transfer(ctx: &JobCtx, src: &Wp, dst: &Wp, src_host: &str, dst_url: &st
             from.as_str(),
             to.as_str(),
         ];
-        let mut cmd = runas::command(&dst.user, &dst.docroot, "rsync", &args);
+        let mut cmd = runas::heavy_command(&dst.user, &dst.docroot, "rsync", &args);
         ctx.run_streaming(&mut cmd, "rsync", None).await?;
     }
 

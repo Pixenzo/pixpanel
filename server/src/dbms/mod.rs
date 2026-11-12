@@ -184,7 +184,8 @@ pub async fn drop_database(engine: Engine, name: &str) -> AppResult<()> {
 
 pub async fn create_user(engine: Engine, name: &str, host: &str, password: &str) -> AppResult<()> {
     match engine {
-        Engine::Mariadb => mariadb::create_user(name, &remote::mariadb_account_host(host), password).await,
+        // Yerel olmayan adresle bağlanacak hesap yalnızca TLS ile girebilir.
+        Engine::Mariadb => mariadb::create_user(name, &remote::mariadb_account_host(host), password, remote::requires_tls(host)).await,
         Engine::Postgresql => postgres::create_user(name, password).await,
     }
 }
@@ -202,7 +203,15 @@ pub async fn set_password(engine: Engine, name: &str, host: &str, password: &str
 pub async fn change_host(engine: Engine, name: &str, old_host: &str, new_host: &str) -> AppResult<()> {
     match engine {
         Engine::Mariadb => {
-            mariadb::rename_user(name, &remote::mariadb_account_host(old_host), &remote::mariadb_account_host(new_host)).await
+            let (old_account, new_account) = (remote::mariadb_account_host(old_host), remote::mariadb_account_host(new_host));
+            mariadb::rename_user(name, &old_account, &new_account).await?;
+            // Yeni adres yerel olmayan bir adresse TLS şartı konur; "bu sunucu"ya dönünce kalkar. Konamazsa
+            // hesap TLS şartsız uzak adreste kalmasın diye eski adrese geri alınır.
+            if let Err(err) = mariadb::set_tls_requirement(name, &new_account, remote::requires_tls(new_host)).await {
+                let _ = mariadb::rename_user(name, &new_account, &old_account).await;
+                return Err(err);
+            }
+            Ok(())
         }
         Engine::Postgresql => Ok(()),
     }

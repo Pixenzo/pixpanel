@@ -107,7 +107,7 @@ impl Wp {
         let path = format!("--path={}", self.docroot.display());
         let mut full: Vec<&str> = vec!["-d", "memory_limit=512M", WP_CLI_PATH, "--no-color", &path];
         full.extend_from_slice(args);
-        let mut cmd = runas::command(&self.user, &self.docroot, &self.php, &full);
+        let mut cmd = runas::heavy_command(&self.user, &self.docroot, &self.php, &full);
         // Önbellek ve yapılandırma kullanıcının kendi klasöründe kalır.
         cmd.env("WP_CLI_CACHE_DIR", self.user.home.join(".wp-cli/cache"));
         cmd.env("WP_CLI_DISABLE_AUTO_CHECK_UPDATE", "1");

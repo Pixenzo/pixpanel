@@ -29,10 +29,17 @@ login() { curl -sk -o /dev/null -c "$1" -H 'content-type: application/json' -X P
 rc() { local port=$1 pass=$2; shift 2; redis-cli -p "$port" -a "$pass" --no-auth-warning "$@" 2>&1; }
 cmd() { call "$1" POST /redis/command -d "$(python3 -c 'import json,sys; print(json.dumps({"db":0,"command":sys.argv[1]}))' "$2")"; }
 field() { call "$1" GET /redis/mine | jget "d['instance']['$2']"; }
+# Komut beklenen çıktıyı verene kadar (en çok ~10 sn) yeniden denenir; son çıktıyı yazar.
+until_eq() { local want=$1 got=; shift; for _ in $(seq 1 20); do got=$("$@" 2>/dev/null); [ "$got" = "$want" ] && break; sleep 0.5; done; echo "$got"; }
+# Hesap örneğinin maxmemory değeri (bayt).
+maxmem() { rc $PA "$WA" info memory | tr -d '\r' | sed -n 's/^maxmemory://p'; }
+# Önceki koşudan kalan sınama paketleri silinir (hesaplar önce silinmiş olmalı).
+drop_packages() { for package in $(api GET /packages | jget "' '.join(str(p['id']) for p in d if p['name'].startswith('e2e-redis'))"); do api DELETE /packages/$package >/dev/null; done; }
 
 rm -f $J $JA $JB
 api POST /auth/login -d "{\"username\":\"$PX_USER\",\"password\":\"$PX_PASS\"}" >/dev/null
 for name in $A $O; do id=$(user_id $name); [ -n "$id" ] && api DELETE "/users/$id" >/dev/null; done
+drop_packages
 
 say "Hesaplar"
 check "birinci hesap" "$(code POST /users -d "{\"username\":\"$A\",\"password\":\"$PASS\",\"role\":\"user\"}")" 200
@@ -107,6 +114,41 @@ check "sınır dolunca eski anahtarlar atılır, örnek çalışmayı sürdürü
 check "dolan hesap ötekini etkilemez" "$(rc $PB "$WB" get benim)" ikinci
 check "olmayan hesabın örneği" "$(code PUT /redis/accounts/999999 -d '{"memory_mb":64}')" 400
 
+say "Bellek sınırı pakete bağlı"
+# Paketteki redis_memory_mb hesabın örneğinin maxmemory değeridir; paket atanınca/değişince eşitlenir.
+RP=$(api POST /packages -d '{"name":"e2e-redis-32","limits":{"redis_memory_mb":32}}' | jget 'd["id"]')
+check "paket oluşturuldu" "$([[ "$RP" =~ ^[0-9]+$ ]] && echo evet)" evet
+check "pakete bağlanınca örneğin bellek sınırı paketten gelir" "$(code PATCH /users/$IDA -d "{\"package_id\":$RP}") $(rc $PA "$WA" info memory | tr -d '\r' | sed -n 's/^maxmemory://p')" "200 33554432"
+check "hesabın görünümü paketten geldiğini söyler" "$(call $JA GET /redis/mine | jget '(d["allowed"], d["package"], d["package_memory_mb"], d["instance"]["memory_mb"])')" "(True, 'e2e-redis-32', 32, 32)"
+check "yönetici listesi bellek sınırının paketten geldiğini söyler" "$(api GET /redis/accounts | jget "next((a['memory_from_package'], a['package'], a['memory_mb']) for a in d['accounts'] if a['username']=='$A')")" "(True, 'e2e-redis-32', 32)"
+has "yönetici örnek başına değiştiremez" "$(api PUT /redis/accounts/$IDA -d '{"memory_mb":64}')" "paketinden geliyor"
+check "örnek çalışıyor, parola ve port aynı" "$(rc $PA "$WA" ping)" PONG
+check "birim dosyasında MemoryMax = 2 x bellek + 64" "$(grep -c '^MemoryMax=128M' /etc/systemd/system/pixpanel-redis-$A.service)" 1
+check "paket düzenlenince örnek yeni sınıra çekilir" "$(code PATCH /packages/$RP -d '{"name":"e2e-redis-32","limits":{"redis_memory_mb":48}}') $(until_eq 50331648 maxmem)" "200 50331648"
+check "öteki hesabın örneği etkilenmedi (paketsiz, 64 MB)" "$(rc $PB "$WB" info memory | tr -d '\r' | sed -n 's/^maxmemory://p')" 67108864
+
+say "Paket Redis içermiyor (redis_memory_mb = 0)"
+RZ=$(api POST /packages -d '{"name":"e2e-redis-yok","limits":{"redis_memory_mb":0}}' | jget 'd["id"]')
+check "pakete bağlanınca açık örnek durdurulur" "$(code PATCH /users/$IDA -d "{\"package_id\":$RZ}") $(until_eq inactive systemctl is-active pixpanel-redis-$A.service)" "200 inactive"
+check "açılışta başlamaz" "$(systemctl is-enabled pixpanel-redis-$A.service 2>/dev/null)" disabled
+check "port kapandı" "$(ss -ltnH "sport = :$PA" | wc -l)" 0
+check "veri ve kayıt silinmedi" "$(test -d /var/lib/pixpanel/redis/$A && echo var || echo yok) $(call $JA GET /redis/mine | jget 'd["instance"]["username"]')" "var $A"
+check "hesabın görünümü izin yok der" "$(call $JA GET /redis/mine | jget '(d["allowed"], d["package"], d["instance"]["running"])')" "(False, 'e2e-redis-yok', False)"
+check "yönetici listesi izin yok der" "$(api GET /redis/accounts | jget "next((a['allowed'], a['running']) for a in d['accounts'] if a['username']=='$A')")" "(False, False)"
+has "tarayıcı çalışmaz" "$(call $JA GET '/redis/keys?db=0')" "Redis içermiyor"
+has "konsol çalışmaz" "$(cmd $JA 'PING')" "Redis içermiyor"
+has "parola yenilenemez (örnek yeniden başlamaz)" "$(call $JA POST /redis/mine/password)" "Redis içermiyor"
+check "örnek hâlâ durmuş" "$(systemctl is-active pixpanel-redis-$A.service)" inactive
+has "bellek sınırı elle değiştirilemez" "$(api PUT /redis/accounts/$IDA -d '{"memory_mb":64}')" "paketinden geliyor"
+check "Redis'siz paketli ikinci hesap açamaz" "$(code PATCH /users/$IDB -d "{\"package_id\":$RZ}") $(call $JB POST /redis/mine/disable | jget 'd["instance"]')" "200 None"
+has "açma denemesi nedenini söyler" "$(call $JB POST /redis/mine/enable)" "Redis içermiyor"
+check "ikinci hesapta örnek oluşmadı" "$(call $JB GET /redis/mine | jget '(d["allowed"], d["instance"])')" "(False, None)"
+check "paket izin verince durdurulan örnek kendiliğinden başlar" "$(code PATCH /users/$IDA -d "{\"package_id\":$RP}") $(until_eq PONG rc $PA "$WA" ping)" "200 PONG"
+check "  bellek sınırı yeniden paketten (48 MB)" "$(rc $PA "$WA" info memory | tr -d '\r' | sed -n 's/^maxmemory://p')" 50331648
+check "  birim yeniden etkin" "$(systemctl is-enabled pixpanel-redis-$A.service)" enabled
+check "paket kaldırılınca bellek olduğu gibi kalır, yönetici yeniden değiştirebilir" "$(code PATCH /users/$IDA -d '{"package_id":0}') $(api PUT /redis/accounts/$IDA -d '{"memory_mb":16}' | jget 'd["memory_mb"]')" "200 16"
+check "ikinci hesabı paketsiz bırak, açabilir" "$(code PATCH /users/$IDB -d '{"package_id":0}') $(call $JB POST /redis/mine/enable | jget 'd["instance"]["running"]')" "200 True"
+
 say "Kapatma"
 check "kapat" "$(call $JA POST /redis/mine/disable | jget 'd["instance"]')" None
 check "süreç ve birim kalktı" "$(systemctl is-active pixpanel-redis-$A.service) $(test -e /etc/systemd/system/pixpanel-redis-$A.service && echo var || echo yok)" "inactive yok"
@@ -117,5 +159,7 @@ check "yönetici bir hesabın örneğini kapatır" "$(code DELETE /redis/account
 check "hesap silinince örneği de kalkar" "$(code DELETE /users/$IDB) $(systemctl is-active pixpanel-redis-$O.service) $(test -e /var/lib/pixpanel/redis/$O && echo var || echo yok)" "200 inactive yok"
 check "ortak Redis etkilenmedi" "$(systemctl is-active redis-server.service)" active
 check "birinci hesabı sil" "$(code DELETE /users/$IDA)" 200
+drop_packages
+check "sınama paketleri silindi" "$(api GET /packages | jget "[p['name'] for p in d if p['name'].startswith('e2e-redis')]")" "[]"
 rm -f $J $JA $JB
 echo "bitti"

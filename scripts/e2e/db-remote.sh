@@ -52,12 +52,23 @@ listen_all() { ss -H -ltn "( sport = :$1 )" | awk '{print $4}' | sort | tr '\n' 
 listens_remote() { if ss -H -ltn "( sport = :$1 )" | awk '{print $4}' | grep -qvE '^(127\.0\.0\.1|\[::1\]|::1):'; then echo evet; else echo hayir; fi; }
 
 my() { mariadb -N -B -e "$1" 2>&1; }
-# my_can <kullanıcı> <adres> : MariaDB'ye TCP ile bağlanılabiliyor mu? (parola ortam değişkeniyle verilir)
+# Çıktısı karşılaştırılan sorgular için stderr ayrılır (temiz kurulumda yerel ayar uyarıları çıktıya karışmasın).
+myq() { mariadb -N -B -e "$1" 2>/dev/null; }
+# my_can <kullanıcı> <adres> : MariaDB'ye TCP ile TLS kullanarak bağlanılabiliyor mu? (parola ortam değişkeniyle verilir;
+# uzak adresli kullanıcılar yalnızca TLS ile girebilir, sertifika kendinden imzalı olabileceğinden doğrulama kapalıdır)
 my_can() {
+  local out
+  out=$(MYSQL_PWD=$DBPASS mariadb --ssl --skip-ssl-verify-server-cert --connect-timeout=5 -h "$2" -P 3306 -u "$1" -N -B -e 'SELECT 1' 2>/dev/null)
+  if [ "$out" = 1 ]; then echo bağlandı; else echo reddedildi; fi
+}
+# my_can_plain <kullanıcı> <adres> : aynısı, TLS olmadan (REQUIRE SSL'li hesap bunu reddetmeli)
+my_can_plain() {
   local out
   out=$(MYSQL_PWD=$DBPASS mariadb --skip-ssl --connect-timeout=5 -h "$2" -P 3306 -u "$1" -N -B -e 'SELECT 1' 2>/dev/null)
   if [ "$out" = 1 ]; then echo bağlandı; else echo reddedildi; fi
 }
+# my_user_tls <kullanıcı> <adres> : hesabın TLS şartı (REQUIRE SSL ise "SSL", yoksa "yok")
+my_user_tls() { if myq "SHOW CREATE USER '$1'@'$2'" | grep -q 'REQUIRE SSL'; then echo SSL; else echo yok; fi; }
 pg() { runuser -u postgres -- psql -X -At -d "${2:-postgres}" -c "$1" 2>/dev/null; }
 # pg_can <kullanıcı> <veritabanı> [adres] [sslmode] : PostgreSQL'e TCP ile bağlanılabiliyor mu?
 pg_can() {
@@ -159,12 +170,47 @@ if [ "$(installed mariadb)" = True ]; then
   check "ikinci açma değişiklik yapmaz" "$(api PUT /databases/remote/mariadb -d '{"enabled":true}' | jget 'd.get("changed")')" False
   check "panel veritabanlarını listeleyebilir" "$(code GET /databases)" 200
 
+  say "MariaDB: TLS zorunlu"
+  TLSDIR=/etc/mysql/pixpanel-tls
+  check "sunucuda TLS açık (have_ssl)" "$(myq "SHOW GLOBAL VARIABLES LIKE 'have_ssl'" | awk '{print $2}')" YES
+  check "çalışan sunucu panelin sertifikasını yüklemiş (ssl_cert)" "$(myq "SELECT @@global.ssl_cert")" "$TLSDIR/server.crt"
+  check "yapılandırmada panelin sertifikası" "$(grep -c "^ssl-cert = $TLSDIR/server.crt" $MYCONF) $(grep -c "^ssl-key = $TLSDIR/server.key" $MYCONF)" "1 1"
+  check "sertifika kopyası panel sertifikasıyla aynı" "$(cmp -s $TLSDIR/server.crt /var/lib/pixpanel/tls/panel.crt && echo aynı || echo farklı)" aynı
+  check "anahtar yalnız root ve mysql grubu için okunur" "$(stat -c '%U:%G %a' $TLSDIR/server.key)" "root:mysql 640"
+  check "kopya klasörü mysql grubuna açık, başkasına kapalı" "$(stat -c '%U:%G %a' $TLSDIR)" "root:mysql 750"
+  check "durum ucu MariaDB için TLS açık bildirir" "$(remote_field mariadb tls)" True
+  check "uzak adresli kullanıcı REQUIRE SSL ile korunur (LAN)" "$(my_user_tls ${CUSTOMER}_myn $LAN)" SSL
+  check "uzak adresli kullanıcı REQUIRE SSL ile korunur (başka adres)" "$(my_user_tls ${CUSTOMER}_myy $WRONG)" SSL
+  check "yerel kullanıcıya TLS şartı konmaz" "$(my_user_tls ${CUSTOMER}_myl localhost)" yok
+  check "TLS'siz bağlantı reddedilir" "$(my_can_plain ${CUSTOMER}_myn $LAN)" reddedildi
+  check "TLS'li bağlantı kabul edilir" "$(my_can ${CUSTOMER}_myn $LAN)" bağlandı
+  check "bağlantı gerçekten şifreli (Ssl_cipher dolu)" "$([ -n "$(MYSQL_PWD=$DBPASS mariadb --ssl --skip-ssl-verify-server-cert -h $LAN -u ${CUSTOMER}_myn -N -B -e "SHOW SESSION STATUS LIKE 'Ssl_cipher'" 2>/dev/null | awk '{print $2}')" ] && echo evet)" evet
+  # Ayar kapalıyken açılmış (eski) uzak kullanıcıya da açılışta şart konur: şartı elle kaldırıp panel eşitlemesini bekler.
+  my "ALTER USER '${CUSTOMER}_myn'@'$LAN' REQUIRE NONE" >/dev/null
+  check "şart elle kaldırıldı" "$(my_user_tls ${CUSTOMER}_myn $LAN)" yok
+  api PUT /databases/remote/mariadb -d '{"enabled":false}' >/dev/null
+  api PUT /databases/remote/mariadb -d '{"enabled":true}' >/dev/null
+  check "ayar yeniden açılınca REQUIRE SSL geri gelir" "$(my_user_tls ${CUSTOMER}_myn $LAN)" SSL
+  # Yeni uzak adresli kullanıcı baştan REQUIRE SSL ile oluşur.
+  call $JC POST /databases/users -d "{\"engine\":\"mariadb\",\"name\":\"${CUSTOMER}_myz\",\"password\":\"$DBPASS\",\"host\":\"$LAN\"}" >/dev/null
+  check "yeni uzak adresli kullanıcı REQUIRE SSL ile açılır" "$(my_user_tls ${CUSTOMER}_myz $LAN)" SSL
+  call $JC DELETE /databases/users/$(user_id ${CUSTOMER}_myz) >/dev/null
+  # Sertifika kopyası panel açılışında (ve sertifika yenilenince) panelin güncel sertifikasına eşitlenir.
+  echo "# eski kopya" >> $TLSDIR/server.crt
+  check "kopya bozuldu" "$(cmp -s $TLSDIR/server.crt /var/lib/pixpanel/tls/panel.crt && echo aynı || echo farklı)" farklı
+  systemctl restart pixpanel
+  for _ in $(seq 1 40); do curl -sk -o /dev/null "$B/auth/login" && break; sleep 1; done
+  rm -f $J; curl -sk -o /dev/null -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST $B/auth/login -d "{\"username\":\"$PX_USER\",\"password\":\"$PX_PASS\"}"
+  SYNCED=farklı; for _ in $(seq 1 20); do if cmp -s $TLSDIR/server.crt /var/lib/pixpanel/tls/panel.crt; then SYNCED=aynı; break; fi; sleep 1; done
+  check "panel açılışında kopya yeniden eşitlendi" "$SYNCED" aynı
+  check "MariaDB hâlâ TLS ile bağlantı kabul ediyor" "$(my_can ${CUSTOMER}_myn $LAN)" bağlandı
+
   say "MariaDB: adrese göre bağlantı"
   check "LAN adresine izinli kullanıcı bağlanır" "$(my_can ${CUSTOMER}_myn $LAN)" bağlandı
   check "localhost kullanıcısı LAN adresinden bağlanamaz" "$(my_can ${CUSTOMER}_myl $LAN)" reddedildi
   check "yanlış adrese izinli kullanıcı bağlanamaz" "$(my_can ${CUSTOMER}_myy $LAN)" reddedildi
   # skip-name-resolve sonrası yerel hesapların 127.0.0.1 üzerinden TCP ile bağlanmaya devam ettiği doğrulanır.
-  check "localhost kullanıcısı 127.0.0.1 üzerinden bağlanır" "$(my_can ${CUSTOMER}_myl 127.0.0.1)" bağlandı
+  check "localhost kullanıcısı 127.0.0.1 üzerinden bağlanır" "$(my_can_plain ${CUSTOMER}_myl 127.0.0.1)" bağlandı
   check "kök hesabı uzaktan parolasız bağlanamaz" "$(MYSQL_PWD= mariadb --skip-ssl --connect-timeout=5 -h $LAN -u root -N -B -e 'SELECT 1' 2>&1 | grep -c -i 'denied')" 1
 
   say "MariaDB: kullanıcının adresi değiştirilir"
@@ -175,6 +221,7 @@ if [ "$(installed mariadb)" = True ]; then
   check "reddedilen adresler kaydı bozmadı" "$(user_host ${CUSTOMER}_myn)" "$LAN"
   check "eski adrese bağlantı hâlâ çalışır" "$(my_can ${CUSTOMER}_myn $LAN)" bağlandı
   check "adres yanlış adrese çevrilir" "$(status $JC PUT /databases/users/$UN/host -d "{\"host\":\"$WRONG\"}")" 200
+  check "yeni (uzak) adresli hesapta REQUIRE SSL var" "$(my_user_tls ${CUSTOMER}_myn $WRONG)" SSL
   check "eski adres artık bağlanamaz" "$(my_can ${CUSTOMER}_myn $LAN)" reddedildi
   check "hesap yeni adresle sunucuda var" "$(my "SELECT COUNT(*) FROM mysql.user WHERE User='${CUSTOMER}_myn' AND Host='$WRONG'")" 1
   check "eski adresli hesap sunucudan kalktı" "$(my "SELECT COUNT(*) FROM mysql.user WHERE User='${CUSTOMER}_myn' AND Host='$LAN'")" 0
@@ -188,6 +235,7 @@ if [ "$(installed mariadb)" = True ]; then
   check "her yer (%) müşteriye de açık" "$(status $JC PUT /databases/users/$UN/host -d '{"host":"%"}')" 200
   check "her yerden bağlanılır" "$(my_can ${CUSTOMER}_myn $LAN)" bağlandı
   check "yerel adrese döndürülür" "$(status $JC PUT /databases/users/$UN/host -d '{"host":"localhost"}')" 200
+  check "yerel adrese dönünce TLS şartı kalkar (REQUIRE NONE)" "$(my_user_tls ${CUSTOMER}_myn localhost)" yok
   check "yerel adrese dönünce LAN reddedilir" "$(my_can ${CUSTOMER}_myn $LAN)" reddedildi
   check "boş adres yerel sayılır" "$(status $JC PUT /databases/users/$UN/host -d '{"host":""}')" 200
   check "yetki kaybolmadı (yerel soketten giriş)" "$(MYSQL_PWD=$DBPASS mariadb -u ${CUSTOMER}_myn -N -B -e 'SELECT 1' ${CUSTOMER}_my1 2>&1)" 1

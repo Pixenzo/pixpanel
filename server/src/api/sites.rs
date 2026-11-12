@@ -37,9 +37,20 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/node/{action}", axum::routing::post(node_action))
 }
 
+/// Sitelerin PHP sürümü sahibinin paketindeki izinli sürümlerin dışındaysa işaretler (arayüzde "paket dışı sürüm" rozeti).
+fn mark_package_versions(db: &crate::db::Db, sites: &mut [Site]) {
+    let mut cache: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
+    for site in sites.iter_mut().filter(|site| site.kind == "php") {
+        let allowed = cache.entry(site.user_id).or_insert_with(|| crate::quota::allowed_php_versions(db, site.user_id).unwrap_or_default());
+        site.php_out_of_package = crate::quota::version_outside(allowed, site.php_version.as_deref());
+    }
+}
+
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<Site>>> {
     user.require(AREA)?;
-    Ok(Json(sites::list(&state.db, &user)?))
+    let mut list = sites::list(&state.db, &user)?;
+    mark_package_versions(&state.db, &mut list);
+    Ok(Json(list))
 }
 
 #[derive(serde::Deserialize)]
@@ -68,7 +79,9 @@ async fn uptime(State(state): State<AppState>, user: AuthUser, Path(id): Path<i6
 
 async fn detail(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Site>> {
     user.require(AREA)?;
-    Ok(Json(sites::get(&state.db, &user, id)?))
+    let mut site = sites::get(&state.db, &user, id)?;
+    mark_package_versions(&state.db, std::slice::from_mut(&mut site));
+    Ok(Json(site))
 }
 
 #[derive(Serialize)]
@@ -152,6 +165,8 @@ struct OwnerOption {
 struct Options {
     nginx_installed: bool,
     php_versions: Vec<String>,
+    /// Hesabın paketinin izin verdiği PHP sürümleri; boş: kısıt yok (yönetici her zaman boş görür).
+    php_allowed: Vec<String>,
     /// Sitenin atanabileceği hesaplar (yönetici ve bayiler için).
     owners: Vec<OwnerOption>,
     /// Sürüm başına genel PHP ayarları; site formunda devralınan değerleri göstermek için.
@@ -194,6 +209,9 @@ pub(crate) async fn start_clone(state: &AppState, user: &AuthUser, source: Site,
         return Err(AppError::bad("Askıdaki site kopyalanamaz"));
     }
     crate::quota::check(&state.db, source.user_id, crate::quota::Resource::Site)?;
+    if let (Some(version), false) = (source.php_version.as_deref().filter(|_| source.kind == "php"), user.is_admin()) {
+        crate::quota::check_php_version(&state.db, source.user_id, version)?;
+    }
     let domain_name = domain::normalize(domain_text)?;
     sites::check_names_allowed(&state.db, user, source.user_id, std::slice::from_ref(&domain_name))?;
     let wordpress = crate::wordpress::is_wordpress(&source).await;
@@ -361,13 +379,14 @@ async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
         _ => Vec::new(),
     };
     let php_versions = php::installed_versions();
+    let php_allowed = if user.is_admin() { Vec::new() } else { crate::quota::allowed_php_versions(&state.db, user.owner_id())? };
     let php_defaults = php_versions.iter().map(|version| (version.clone(), php::load_global(version))).collect();
     let ips = crate::addresses::selectable(&state.db, user.is_admin(), user.owner_id())
         .await?
         .into_iter()
         .map(|item| IpOption { address: item.address, label: item.label, user_id: item.user_id })
         .collect();
-    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, owners, php_defaults, node_versions: node::installed_versions(), python_versions: node::python_versions(), python_runtimes: crate::hosting::pyenv::installed_versions(), ips }))
+    Ok(Json(Options { nginx_installed: nginx::is_installed(), php_versions, php_allowed, owners, php_defaults, node_versions: node::installed_versions(), python_versions: node::python_versions(), python_runtimes: crate::hosting::pyenv::installed_versions(), ips }))
 }
 
 #[derive(Deserialize)]
@@ -429,6 +448,10 @@ async fn create(
         "php" => {
             let version = body.php_version.ok_or_else(|| AppError::bad("PHP sürümü seçin"))?;
             php::validate_version(&version)?;
+            // Paket izinli sürümleri kısıtlıyorsa dışına çıkılamaz (yönetici muaftır).
+            if !user.is_admin() {
+                crate::quota::check_php_version(&state.db, owner_id, &version)?;
+            }
             Some(version)
         }
         _ => None,
@@ -487,14 +510,9 @@ pub(crate) async fn create_site(state: &AppState, user: &AuthUser, new: NewSite)
     for line in crate::dns::add_site_records(state, site.user_id, &names).await {
         tracing::info!(domain = %site.domain, "DNS: {line}");
     }
-<<<<<<< HEAD
     auth::audit(&state.db, user, "site.create", &domain_name, &site.kind);
+    attach_default_backup(state, user, site.id, &domain_name).await;
     Ok(site)
-=======
-    auth::audit(&state.db, &user, "site.create", &domain_name, &site.kind);
-    attach_default_backup(&state, &user, site.id, &domain_name).await;
-    Ok(Json(site))
->>>>>>> agent/ops-history
 }
 
 /// Varsayılan yedek planı açıksa yeni siteyi o plana ekler (hata siteyi oluşturmayı bozmaz).
@@ -554,6 +572,11 @@ async fn update(
     }
     if let Some(version) = body.php_version {
         php::validate_version(&version)?;
+        // Yalnızca sürüm gerçekten değişiyorsa denetlenir: paket sonradan daraltılmışsa mevcut sürümün
+        // yeniden kaydedilmesi engellenmez. Yönetici muaftır.
+        if !user.is_admin() && previous.php_version.as_deref() != Some(version.as_str()) {
+            crate::quota::check_php_version(&state.db, site.user_id, &version)?;
+        }
         site.php_version = Some(version);
     }
     if let Some(settings) = body.php_settings {
@@ -654,6 +677,7 @@ async fn update(
         }
     }
     auth::audit(&state.db, &user, "site.update", &site.domain, "");
+    mark_package_versions(&state.db, std::slice::from_mut(&mut site));
     Ok(Json(site))
 }
 
@@ -714,7 +738,7 @@ fn python_install(state: &AppState, user: &AuthUser, site: Site, restart: bool) 
     let site_id = site.id;
     let job_id = state.jobs.start("python.pip", &title, Some(user.id), move |ctx| async move {
         ctx.log(format!("$ {shown}"));
-        let mut command = runas::command(&account, &root, "pip", &args);
+        let mut command = runas::heavy_command(&account, &root, "pip", &args);
         command.env("PATH", format!("{}:{}", venv_bin.display(), runas::USER_PATH)).env("VIRTUAL_ENV", venv_bin.parent().unwrap_or(&root));
         ctx.run_streaming(&mut command, "pip", None).await?;
         if restart {
@@ -765,7 +789,7 @@ async fn node_run(
     let job_id = state.jobs.start("node.npm", &title, Some(user.id), move |ctx| async move {
         ctx.log(format!("$ npm {}", args.join(" ")));
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let mut command = runas::command(&account, &root, "npm", &args);
+        let mut command = runas::heavy_command(&account, &root, "npm", &args);
         command.env("PATH", format!("{}:{}", bin.display(), runas::USER_PATH)).env("NODE_ENV", "production").env("CI", "1");
         ctx.run_streaming(&mut command, "npm", None).await?;
         if restart {
