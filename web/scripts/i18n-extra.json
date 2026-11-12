@@ -275,7 +275,9 @@
     "Veritabanı uzaktan erişimini kapattı",
     "Veritabanı kullanıcısının bağlantı adresini değiştirdi",
     "WordPress güvenlik düzeltmesi uyguladı",
-    "DNS hazır kayıt şablonu uyguladı"
+    "DNS hazır kayıt şablonu uyguladı",
+    "Trafik sınırı aşıldı, siteler askıya alındı",
+    "Trafik askısı kaldırıldı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
@@ -342,7 +344,8 @@
     "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde",
     "Siteniz yanıt vermediğinde ve yeniden yanıt vermeye başladığında",
     "Disk kotanız dolmak üzereyken ya da dolduğunda",
-    "Posta kutusu ya da alan adı saatlik gönderim sınırına takıldığında"
+    "Posta kutusu ya da alan adı saatlik gönderim sınırına takıldığında",
+    "Aylık trafik sınırınızın %80'ine ulaşıldığında ya da sınır dolduğunda"
   ],
   "server/src/health.rs (sağlık bulgusu düzeltme düğmeleri, Overview.tsx içinde t(finding.fix))": [
     "Yeniden başlat",

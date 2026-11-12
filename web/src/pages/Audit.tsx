@@ -85,6 +85,8 @@ const actionLabels: Record<string, string> = {
   "package.delete": "Paketi sildi",
   "site.clone": "Siteyi kopyaladı",
   "site.migrate": "Başka sunucudan site taşıdı",
+  "account.traffic_suspend": "Trafik sınırı aşıldı, siteler askıya alındı",
+  "account.traffic_resume": "Trafik askısı kaldırıldı",
   "wordpress.security.fix": "WordPress güvenlik düzeltmesi uyguladı",
   "dns.zone.template": "DNS hazır kayıt şablonu uyguladı",
   "database.remote.enable": "Veritabanı uzaktan erişimini açtı",

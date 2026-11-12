@@ -121,7 +121,7 @@ check "askıya alınan siteler işaretlendi" "$(query "SELECT COUNT(*) FROM traf
 check "elle askıya alınan site işaretlenmedi" "$(query "SELECT COUNT(*) FROM traffic_suspensions WHERE site_id = $S3")" 0
 check "kullanım görünümü askıdaki siteleri söyler" "$(call $JC GET /packages/usage | jget 'd["traffic_suspended_sites"]')" 2
 check "nginx askıdaki siteye bakım yanıtı verir" "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: trf-bir.test' http://127.0.0.1/)" 503
-check "denetim günlüğüne yazıldı" "$(api GET '/audit?limit=100' | jget "any(e['action']=='account.traffic_suspend' and e['target']=='$CUSTOMER' for e in d)")" True
+check "denetim günlüğüne yazıldı" "$(query "SELECT COUNT(*) > 0 FROM audit_log WHERE action = 'account.traffic_suspend' AND target = '$CUSTOMER'")" 1
 if [ "$MOCKED" = 1 ]; then
   check "%100 bildirimi bir kez gitti" "$(sleep 2; mock_count 'aylık trafik sınırı doldu')" 1
 fi
@@ -137,7 +137,7 @@ api PATCH /packages/$PK -d "$(body 100 suspend)" >/dev/null
 check "siteler açıldı" "$(until_eq "active active" two_status $S1 $S2)" "active active"
 check "işaretler temizlendi" "$(query "SELECT COUNT(*) FROM traffic_suspensions WHERE user_id = $CID")" 0
 check "elle askıya alınan site açılmadı" "$(site_status $S3)" suspended
-check "geri açma denetim günlüğüne yazıldı" "$(api GET '/audit?limit=100' | jget "any(e['action']=='account.traffic_resume' and e['target']=='$CUSTOMER' for e in d)")" True
+check "geri açma denetim günlüğüne yazıldı" "$(query "SELECT COUNT(*) > 0 FROM audit_log WHERE action = 'account.traffic_resume' AND target = '$CUSTOMER'")" 1
 
 say "Yalnız bildirim davranışı"
 set_traffic $S1 $((120 * GB))
@@ -178,6 +178,7 @@ say "Elle askıya alma kaydı geçersiz kılar"
 set_traffic $S1 $((150 * GB))
 api PATCH /packages/$PK -d "$(body 100 suspend)" >/dev/null
 check "site trafik yüzünden askıya alındı" "$(until_eq "suspended" site_status $S1)" suspended
+sleep 2
 check "işaretli" "$(query "SELECT COUNT(*) FROM traffic_suspensions WHERE site_id = $S1")" 1
 check "yönetici aynı siteyi elle askıya alır" "$(code PATCH /sites/$S1 -d '{"status":"suspended"}')" 200
 check "işaret silindi" "$(query "SELECT COUNT(*) FROM traffic_suspensions WHERE site_id = $S1")" 0
