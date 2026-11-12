@@ -147,6 +147,7 @@ suite dbtools mariadb postgresql phpmyadmin adminer php-8.3
 suite node node-22
 suite ftp ftp
 suite dns dns mail
+suite dns-depth dns
 suite redis redis
 suite backup restic mariadb
 suite features php-8.3 docker redis

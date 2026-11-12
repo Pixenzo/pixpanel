@@ -237,7 +237,10 @@
     "WordPress hazırlık ortamı açtı",
     "Hazırlık ortamını canlıya aktardı",
     "Hazırlık ortamını canlıdan yeniledi",
-    "Site önbelleğini temizledi"
+    "Site önbelleğini temizledi",
+    "DNSSEC'i açtı",
+    "DNSSEC'i kapattı",
+    "Bölge dosyası içe aktardı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
