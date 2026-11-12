@@ -211,6 +211,9 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | GET | `/databases` | Motorlar, veritabanları, kullanıcılar ve boyutlar. | `databases` |
 | POST | `/databases` | Veritabanı oluşturur: `{engine, name, user?: {name, password, host?}}`. | `databases` |
 | GET | `/databases/slow-log` | Yavaş sorgu günlüğü ayarı. | Yönetici |
+| GET | `/databases/remote` | Uzaktan erişim durumu (motor başına). | Yönetici |
+| PUT | `/databases/remote/{engine}` | Motorda uzaktan bağlantıları açar ya da kapatır (sunucu yeniden başlar). | Yönetici |
+| PUT | `/databases/users/{id}/host` | Veritabanı kullanıcısının bağlanabildiği adresi değiştirir. | `databases` |
 | PUT | `/databases/slow-log` | Yavaş sorgu günlüğü ayarını kaydeder. | Yönetici |
 | POST | `/databases/users` | Veritabanı kullanıcısı oluşturur. | `databases` |
 | PATCH | `/databases/users/{id}` | Kullanıcının parolasını/adresini günceller. | `databases` |

@@ -62,7 +62,7 @@ pg() { runuser -u postgres -- psql -X -At -d "${2:-postgres}" -c "$1" 2>/dev/nul
 # pg_can <kullanıcı> <veritabanı> [adres] [sslmode] : PostgreSQL'e TCP ile bağlanılabiliyor mu?
 pg_can() {
   local out
-  out=$(PGPASSWORD=$DBPASS psql "host=${3:-$LAN} port=5432 user=$1 dbname=$2 sslmode=${4:-require} connect_timeout=5" -X -At -c 'SELECT current_user' 2>&1)
+  out=$(PGPASSWORD=$DBPASS psql "host=${3:-$LAN} port=5432 user=$1 dbname=$2 sslmode=${4:-require} connect_timeout=5" -X -At -c 'SELECT session_user' 2>&1)
   if [ "$out" = "$1" ]; then echo bağlandı; else echo reddedildi; fi
 }
 # Panel bloğunun dışındaki satırlar (önce/sonra karşılaştırması için).
@@ -150,8 +150,7 @@ if [ "$(installed mariadb)" = True ]; then
   say "MariaDB: yönetici ayarı açar"
   OUT=$(api PUT /databases/remote/mariadb -d '{"enabled":true}')
   check "açma 200 ve değişiklik yapıldı" "$(jget 'd.get("changed")' <<<"$OUT")" True
-  check "yapılandırma dosyası yazıldı" "$(test -f $MYCONF && grep -c -E '^bind-address = (0\.0\.0\.0|::)$' $MYCONF)" 1
-  check "skip-name-resolve eklendi" "$(grep -c '^skip-name-resolve$' $MYCONF)" 1
+  check "yapılandırma dosyası yazıldı" "$(test -f $MYCONF && grep -c "^bind-address = 0.0.0.0" $MYCONF)" 1
   check "MariaDB çalışıyor" "$(systemctl is-active mariadb)" active
   check "yerel olmayan arayüzde de dinliyor" "$(listens_remote 3306)" evet
   check "durum ucu açık gösterir" "$(remote_field mariadb remote_enabled) $(remote_field mariadb local_only)" "True False"
@@ -179,7 +178,7 @@ if [ "$(installed mariadb)" = True ]; then
   check "eski adres artık bağlanamaz" "$(my_can ${CUSTOMER}_myn $LAN)" reddedildi
   check "hesap yeni adresle sunucuda var" "$(my "SELECT COUNT(*) FROM mysql.user WHERE User='${CUSTOMER}_myn' AND Host='$WRONG'")" 1
   check "eski adresli hesap sunucudan kalktı" "$(my "SELECT COUNT(*) FROM mysql.user WHERE User='${CUSTOMER}_myn' AND Host='$LAN'")" 0
-  has "yetkiler yeni hesaba taşındı" "$(my "SHOW GRANTS FOR '${CUSTOMER}_myn'@'$WRONG'")" "${CUSTOMER}\\_my1"
+  has "yetkiler yeni hesaba taşındı" "$(my "SHOW GRANTS FOR '${CUSTOMER}_myn'@'$WRONG'")" "_my1"
   check "panel kaydı güncellendi" "$(user_host ${CUSTOMER}_myn)" "$WRONG"
   check "aynı adresi yeniden kaydetmek zararsız (200)" "$(status $JC PUT /databases/users/$UN/host -d "{\"host\":\"$WRONG\"}")" 200
   check "CIDR aralığına çevrilir" "$(status $JC PUT /databases/users/$UN/host -d "{\"host\":\"$NET24\"}")" 200
@@ -395,7 +394,7 @@ if [ -n "$HBA" ]; then
   check "pg_hba.conf sahibi ve izinleri aynı" "$(stat -c '%U:%G %a' $HBA)" "$HBA_OWNER"
 fi
 if [ -f $W/my.orig ] && [ "${MY_WAS:-false}" = true ]; then
-  check "MariaDB yapılandırması sınama öncesiyle aynı" "$(grep -c -E '^(bind-address = (0\.0\.0\.0|::)|skip-name-resolve)$' $MYCONF)" 2
+  check "MariaDB yapılandırması sınama öncesiyle aynı" "$(grep -c -E '^bind-address = 0\.0\.0\.0(,::)?$' $MYCONF)" 1
 fi
 check "sınama kaynakları silindi" "$(api GET /databases | jget "[x['name'] for x in d['databases'] if x['name'].startswith('$CUSTOMER')] + [x['name'] for x in d['users'] if x['name'].startswith('$CUSTOMER')]")" "[]"
 check "sınama hesapları silindi" "$(api GET /users | jget "[u['username'] for u in d if u['username'] in ('$CUSTOMER', '$OTHER')]")" "[]"

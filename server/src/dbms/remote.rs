@@ -130,7 +130,8 @@ fn format_host(spec: &HostSpec) -> String {
 /// Kullanıcı oluşturma ve adres değiştirme uçlarında girdiyi doğrular ve kayıt biçimine çevirir.
 /// Boş değer `localhost` sayılır.
 pub fn normalize_host(engine: Engine, host: Option<&str>) -> AppResult<String> {
-    let host = host.map(str::trim).filter(|h| !h.is_empty()).unwrap_or("localhost");
+    // Kırpılmaz: baştaki/sondaki boşluk ya da satır sonu adresin geçersiz olduğunu gösterir.
+    let host = host.filter(|h| !h.is_empty()).unwrap_or("localhost");
     let spec = parse_host(host)?;
     match (engine, &spec) {
         (Engine::Postgresql, HostSpec::Pattern(_)) => {
@@ -404,8 +405,7 @@ fn render_mariadb_config(bind: &str) -> String {
     format!(
         "# PixPanel tarafından yönetilir (Veritabanları > Uzaktan erişim); elle değiştirmeyin.\n\
          [mysqld]\n\
-         bind-address = {bind}\n\
-         skip-name-resolve\n"
+         bind-address = {bind}\n"
     )
 }
 
@@ -422,7 +422,7 @@ async fn set_mariadb(enabled: bool) -> AppResult<Outcome> {
     let mut last_error = None;
     if enabled {
         // `::` hem IPv4 hem IPv6'yı dinler; IPv6 yoksa ya da başlatılamazsa yalnızca IPv4'e düşülür.
-        let candidates: &[&str] = if ipv6_available() { &["::", "0.0.0.0"] } else { &["0.0.0.0"] };
+        let candidates: &[&str] = if ipv6_available() { &["0.0.0.0,::", "0.0.0.0"] } else { &["0.0.0.0"] };
         for bind in candidates {
             if let Err(err) = write_file(path, render_mariadb_config(bind).as_bytes(), 0o644) {
                 last_error = Some(err);
@@ -784,7 +784,7 @@ mod tests {
     #[test]
     fn mariadb_config_text() {
         let text = render_mariadb_config("0.0.0.0");
-        assert!(text.contains("[mysqld]\nbind-address = 0.0.0.0\nskip-name-resolve\n"));
+        assert!(text.contains("[mysqld]\nbind-address = 0.0.0.0\n"));
         assert!(render_mariadb_config("::").contains("bind-address = ::\n"));
     }
 

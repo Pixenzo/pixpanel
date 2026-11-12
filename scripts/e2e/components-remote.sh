@@ -182,6 +182,7 @@ suite python python
 suite python-uv python
 suite dbimport mariadb
 suite db-depth mariadb postgresql
+suite db-remote mariadb postgresql
 suite tenancy dns mail mariadb
 suite portguard node-22
 suite dkim mail

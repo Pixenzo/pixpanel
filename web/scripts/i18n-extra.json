@@ -270,7 +270,10 @@
     "Karantinadan ileti bıraktı",
     "Karantinadan ileti sildi",
     "Karantinadan toplu ileti sildi",
-    "HTTP/3 ayarını değiştirdi"
+    "HTTP/3 ayarını değiştirdi",
+    "Veritabanı uzaktan erişimini açtı",
+    "Veritabanı uzaktan erişimini kapattı",
+    "Veritabanı kullanıcısının bağlantı adresini değiştirdi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
