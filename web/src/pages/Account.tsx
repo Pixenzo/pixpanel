@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { AccessPanel } from "../components/AccessPanel";
 import { NotificationSettings } from "../components/NotificationSettings";
+import { ResellerBrandingPanel } from "../components/ResellerBranding";
 import { WebhookSettings } from "../components/WebhookSettings";
 import { TwoFactorPanel } from "../components/TwoFactorPanel";
 import {
@@ -377,6 +378,7 @@ export function AccountPage() {
         <NotificationSettings />
         {role !== "member" && <WebhookSettings />}
         <LanguagePanel />
+        {role === "reseller" && <ResellerBrandingPanel resellerId={me.id} />}
         <SessionsPanel />
         <TokensPanel />
       </div>

@@ -576,6 +576,21 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE account_usage ADD COLUMN db_bytes INTEGER NOT NULL DEFAULT 0;
     "#,
+    // 32: bayi bazında marka. Bayinin müşterileri ve onların alt hesapları panelde bayinin adını
+    //     ve logosunu görür; `panel_domain` bayinin müşterilerine verdiği panel adresidir (oturumsuz
+    //     giriş sayfasının markası buna göre seçilir) ve tek bayiye bağlanabilir. Bayi silinince
+    //     markası da silinir.
+    r#"
+    CREATE TABLE reseller_brands (
+        reseller_id   INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        name          TEXT NOT NULL DEFAULT '',
+        logo          TEXT NOT NULL DEFAULT '',
+        login_message TEXT NOT NULL DEFAULT '',
+        support_url   TEXT NOT NULL DEFAULT '',
+        panel_domain  TEXT UNIQUE,
+        updated_at    INTEGER NOT NULL
+    );
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

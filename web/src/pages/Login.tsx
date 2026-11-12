@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Button, Input } from "../components/ui";
 import { ApiError, api, errorMessage } from "../lib/api";
-import { BrandLogo } from "../components/Brand";
+import { BrandLogo, SupportLink } from "../components/Brand";
 import { brandName, useBrandTitle, useBranding } from "../lib/branding";
 import { t } from "../lib/i18n";
 import { useSession, useTheme } from "../lib/session";
@@ -130,6 +130,7 @@ export function LoginPage() {
           )}
         </form>
         {branding.login_message !== "" && <p className="mt-4 text-center text-[13.5px] whitespace-pre-line text-ink-2">{branding.login_message}</p>}
+        <SupportLink className="mt-2 block text-center text-[13.5px] text-accent hover:underline" />
 
         <p className="mt-4 text-[13px] text-ink-3">
           {t("Parolanızı unuttuysanız sunucuda şu komutla sıfırlayabilirsiniz:")}{" "}
