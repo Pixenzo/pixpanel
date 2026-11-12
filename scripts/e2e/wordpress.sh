@@ -161,6 +161,82 @@ say "wp-cli bütünlüğü"
 echo "bozuk" >> /usr/local/lib/pixpanel/wp-cli.phar
 check "değiştirilmiş wp-cli çalıştırılmaz, yeniden indirilir" "$(api GET /sites/$S/wordpress | jget 'd["installed"]') $(sha256sum /usr/local/lib/pixpanel/wp-cli.phar | cut -c1-16)" "True ce34ddd838f7351d"
 
+say "Sıkılaştırma denetimi"
+SEC=/sites/$S/wordpress/security
+WPC=$WPR/wp-config.php
+JB=/tmp/pxjar-wp-b
+OTHER=wpsecb
+OTHERPASS='Wp-Baska-Hesap-Parola-4821'
+bad_ids() { jget "','.join(sorted(i['id'] for i in d['items'] if not i['ok'] and not i['info']))" <<<"$1"; }
+item_of() { jget "next(i for i in d['items'] if i['id']=='$2')$3" <<<"$1"; }
+# Önceki bölümler çekirdek güncellemesini kapatmıştı; yeni kurulumdaki varsayılana dön.
+api PUT /sites/$S/wordpress/settings -d '{"auto_core":"minor"}' >/dev/null
+R=$(api GET $SEC)
+check "sağlam kurulumda bütün maddeler tamam" "$(bad_ids "$R")" ""
+check "özet: 8 maddeden 8'i tamam" "$(jget '(d["passed"], d["total"])' <<<"$R")" "(8, 8)"
+check "kullanılmayan eklenti/tema bilgi maddesidir" "$(item_of "$R" unused_extensions '["info"]')" True
+check "madde alanları" "$(jget 'sorted(d["items"][0].keys())' <<<"$R")" "['detail', 'fixable', 'id', 'info', 'ok', 'title']"
+
+# Kurulumu bozuk hâle getir: izin, hata gösterimi, dosya düzenleyici, anahtar, güncelleme, şablon, çekirdek dosyası.
+wpc config set WP_DEBUG true --raw >/dev/null
+wpc config delete DISALLOW_FILE_EDIT >/dev/null
+wpc config set AUTH_KEY 'put your unique phrase here' >/dev/null
+api PUT /sites/$S/wordpress/settings -d '{"auto_core":"off"}' >/dev/null
+api PATCH /sites/$S -d '{"template":"default"}' >/dev/null
+echo '// pixpanel sinama' | runuser -u "$PX_USER" -- tee -a $WPR/wp-includes/version.php >/dev/null
+chmod 644 $WPC
+R=$(api GET $SEC)
+check "bozuk kurulumda sorunlu maddeler" "$(bad_ids "$R")" "auto_minor,config_permissions,core_checksums,debug_display,file_edit,salts,template"
+check "wp-config izni 644 uyarısı" "$(item_of "$R" config_permissions '["detail"]' | grep -c 644)" 1
+check "hata gösterimi açıkken uyarır" "$(item_of "$R" debug_display '["ok"]')" False
+check "varsayılan anahtar uyarısı" "$(item_of "$R" salts '["detail"]' | grep -c AUTH_KEY)" 1
+has "çekirdek dosyası sağlama uyarısı" "$(item_of "$R" core_checksums '["detail"]')" "wp-includes/version.php"
+check "çekirdek sağlaması düzeltilebilir sayılmaz" "$(item_of "$R" core_checksums '["fixable"]')" False
+check "şablon, izin ve ayarlar düzeltilebilir" "$(jget "sorted(i['id'] for i in d['items'] if i['fixable'])" <<<"$R")" "['auto_minor', 'config_permissions', 'debug_display', 'file_edit', 'salts', 'template']"
+
+# “admin” adlı yönetici: uyarılır, düzeltmesi yoktur.
+wpc user create admin admin@ornek.com --role=administrator --user_pass="$WP_PASS" >/dev/null
+R=$(api GET $SEC)
+check "admin adlı yönetici uyarısı" "$(item_of "$R" admin_user '["ok"]') $(item_of "$R" admin_user '["fixable"]')" "False False"
+check "düzeltilemeyen madde reddedilir" "$(code POST $SEC/fix -d '{"ids":["admin_user"]}')" 400
+wpc user delete admin --yes >/dev/null
+check "admin hesabı silinince tamam" "$(item_of "$(api GET $SEC)" admin_user '["ok"]')" True
+
+say "Sıkılaştırma düzeltmeleri"
+check "geçersiz kimlik" "$(code POST $SEC/fix -d '{"ids":["nope"]}')" 400
+check "seçenek gibi kimlik" "$(code POST $SEC/fix -d '{"ids":["--all"]}')" 400
+check "büyük harfli kimlik beyaz listede değil" "$(code POST $SEC/fix -d '{"ids":["SALTS"]}')" 400
+check "boş liste" "$(code POST $SEC/fix -d '{"ids":[]}')" 400
+check "bir geçersiz kimlik hiçbir düzeltmeyi yaptırmaz" "$(code POST $SEC/fix -d '{"ids":["file_edit","nope"]}') $(stat -c %a $WPC)" "400 644"
+check "oturumsuz istek" "$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'x-pixpanel-csrf: 1' "$B$SEC/fix" -d '{"ids":["salts"]}')" 401
+R=$(api POST $SEC/fix -d '{"ids":["file_edit","debug_display","config_permissions","salts","template","auto_minor"]}')
+check "altı madde düzeltildi" "$(jget '(sorted(d["fixed"]), d["failed"])' <<<"$R")" "(['auto_minor', 'config_permissions', 'debug_display', 'file_edit', 'salts', 'template'], [])"
+check "düzeltmeden sonra yalnızca çekirdek uyarısı kalır" "$(bad_ids "$(jget 'json.dumps(d["audit"])' <<<"$R")")" "core_checksums"
+check "wp-config izni 600" "$(stat -c '%a %U' $WPC)" "600 $PX_USER"
+check "dosya düzenleme kapandı" "$(grep -c "DISALLOW_FILE_EDIT" $WPC)" 1
+check "hata gösterimi kapandı" "$(wpc config get WP_DEBUG_DISPLAY --format=json)" false
+check "varsayılan anahtar kalmadı" "$(grep -c 'put your unique phrase here' $WPC)" 0
+check "şablon WordPress oldu" "$(api GET /sites/$S | jget 'd["template"]')" wordpress
+check "çekirdek güncellemesi geri açıldı" "$(api GET /sites/$S/wordpress | jget 'd["auto_core"]')" minor
+check "izin 600'ken site yayında" "$(site / -o /dev/null -w '%{http_code}')" 200
+check "xmlrpc yine kapalı" "$(site /xmlrpc.php -o /dev/null -w '%{http_code}')" 403
+R=$(api POST $SEC/fix -d '{"ids":["salts","file_edit"]}')
+check "tamam olan maddeye dokunulmaz" "$(jget '(d["fixed"], sorted(d["skipped"]))' <<<"$R")" "([], ['file_edit', 'salts'])"
+check "denetim günlüğüne yazıldı" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "SELECT count(*) >= 2 FROM audit_log WHERE action='wordpress.security.fix' AND target='$DOMAIN'")" 1
+runuser -u "$PX_USER" -- sed -i '/pixpanel sinama/d' $WPR/wp-includes/version.php
+check "çekirdek dosyası düzelince sağlama tamam" "$(item_of "$(api GET $SEC)" core_checksums '["ok"]')" True
+
+say "Sıkılaştırma: başka hesap"
+UB=$(api GET /users | jget "next((u['id'] for u in d if u['username']=='$OTHER'), '')")
+[ -n "$UB" ] && api DELETE /users/$UB >/dev/null
+check "ikinci hesap açılır" "$(code POST /users -d "{\"username\":\"$OTHER\",\"password\":\"$OTHERPASS\",\"role\":\"user\"}")" 200
+rm -f $JB; curl -sk -o /dev/null -c $JB -H 'content-type: application/json' -X POST $B/auth/login -d "{\"username\":\"$OTHER\",\"password\":\"$OTHERPASS\"}"
+check "başka hesabın sitesi denetlenemez" "$(curl -sk -o /dev/null -w '%{http_code}' -b $JB -H 'x-pixpanel-csrf: 1' "$B$SEC")" 404
+check "başka hesabın sitesi düzeltilemez" "$(curl -sk -o /dev/null -w '%{http_code}' -b $JB -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST "$B$SEC/fix" -d '{"ids":["salts"]}')" 404
+UB=$(api GET /users | jget "next((u['id'] for u in d if u['username']=='$OTHER'), '')")
+[ -n "$UB" ] && api DELETE /users/$UB >/dev/null
+rm -f $JB
+
 say "Temizlik"
 check "site sil" "$(code DELETE "/sites/$S?delete_files=true")" 200
 D=$(api GET /databases | jget 'next(x["id"] for x in d["databases"] if x["name"]=="wp_wp_e2e_test")')

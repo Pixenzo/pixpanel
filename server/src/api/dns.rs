@@ -30,6 +30,8 @@ pub fn router() -> Router<AppState> {
         .route("/zones/{id}/dnssec", post(dnssec_switch))
         .route("/zones/{id}/export", get(export_zone))
         .route("/zones/{id}/import", post(import_zone))
+        .route("/templates", get(template_list))
+        .route("/zones/{id}/templates/{template}", post(apply_template))
         .route("/zones/{id}/cloudflare", post(cloudflare_settings))
         .route("/zones/{id}/purge", post(purge_cache))
         .route("/cluster", get(cluster_view).put(cluster_save))
@@ -535,6 +537,81 @@ async fn import_zone(State(state): State<AppState>, user: AuthUser, Path(id): Pa
             "dns.zone.import",
             &zone.domain,
             &format!("+{} -{}{}{}", outcome.added, outcome.removed, if body.replace { " değiştirme" } else { "" }, if outcome.failed.is_empty() { String::new() } else { format!(" başarısız {}", outcome.failed.len()) }),
+        );
+        reply["result"] = json!(outcome);
+        reply["records"] = json!(dns::list_records(&state, &zone).await?);
+    }
+    Ok(Json(reply))
+}
+
+// ---- Hazır kayıt kümeleri (bölge şablonları) ----
+
+/// Şablonların listesi ve her birinin istediği alanlar.
+async fn template_list(user: AuthUser) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    Ok(Json(json!({ "templates": dns::templates::list() })))
+}
+
+#[derive(Deserialize)]
+struct TemplateBody {
+    /// Şablonun istediği alanlar (ad → değer); şablonda tanımlı olmayan alan reddedilir.
+    #[serde(default)]
+    fields: std::collections::HashMap<String, String>,
+    /// Şablonla çakışan var olan kayıtları (MX, SPF, DMARC…) sil ve şablonunkilerle değiştir.
+    #[serde(default)]
+    replace: bool,
+    /// Yanlışsa yalnızca önizleme döner, hiçbir şey yazılmaz.
+    #[serde(default)]
+    apply: bool,
+}
+
+async fn apply_template(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path((id, template)): Path<(i64, String)>,
+    Json(body): Json<TemplateBody>,
+) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    let zone = dns::get_zone(&state.db, &user, id)?;
+    if !dns::templates::exists(&template) {
+        return Err(AppError::NotFound);
+    }
+    let current = dns::list_records(&state, &zone).await?;
+    let preview = dns::templates::preview(&zone.domain, &template, &body.fields, &current, body.replace)?;
+    let plan = &preview.plan;
+
+    let mut notes: Vec<String> = Vec::new();
+    // Posta bu sunucuda tutuluyorsa MX değişikliği yeni postanın buraya gelmemesi demektir.
+    let changes_mx = plan.add.iter().chain(plan.remove.iter()).any(|record| record.kind == "MX");
+    let domain = zone.domain.clone();
+    let hosted_mail = state.db.call(move |conn| conn.query_row("SELECT count(*) FROM mail_domains WHERE domain = ?1", params![domain], |row| row.get::<_, i64>(0)))?;
+    if changes_mx && hosted_mail > 0 {
+        notes.push("Bu alan adı bu sunucunun posta sisteminde de tanımlı. MX kayıtları değişirse yeni gelen posta bu sunucuya düşmez.".into());
+    }
+    let mut skipped = plan.skipped.clone();
+    skipped.sort_by_key(|item| item.line);
+    let mut reply = json!({
+        "template": template,
+        "add": plan.add,
+        "existing": plan.existing,
+        "conflicts": preview.conflicts,
+        "remove": plan.remove,
+        "skipped": skipped,
+        "blocked": preview.blocked,
+        "notes": notes,
+        "result": Value::Null,
+    });
+    if body.apply {
+        if preview.blocked {
+            return Err(AppError::conflict("Bölgede şablonla çakışan kayıtlar var; “değiştir” seçeneğini işaretleyin ya da bu kayıtları önce silin"));
+        }
+        let outcome = dns::zonefile::apply(&state, &zone, plan, &current).await;
+        auth::audit(
+            &state.db,
+            &user,
+            "dns.zone.template",
+            &zone.domain,
+            &format!("{template} +{} -{}{}{}", outcome.added, outcome.removed, if body.replace { " değiştirme" } else { "" }, if outcome.failed.is_empty() { String::new() } else { format!(" başarısız {}", outcome.failed.len()) }),
         );
         reply["result"] = json!(outcome);
         reply["records"] = json!(dns::list_records(&state, &zone).await?);

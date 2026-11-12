@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # DNS derinliği sınaması: DNSSEC (yerel PowerDNS), BIND bölge dosyası dışa/içe aktarma ve
-# Cloudflare'de SRV/CAA yazma (sahte API'ye karşı). Test makinesinde root olarak çalışır.
+# Cloudflare'de SRV/CAA yazma (sahte API'ye karşı) ve hazır kayıt şablonları (Google Workspace,
+# Microsoft 365, Yandex 360, alan adı doğrulama, posta kullanılmıyor). Test makinesinde root olarak çalışır.
 # Kullanım: PX_USER=... PX_PASS=... bash dns-depth.sh
 # Önkoşul: DNS sunucusu kurulu (dns.sh kurar); Cloudflare bölümü için /etc/pixpanel/config.toml
 # içinde cloudflare_api = "http://127.0.0.1:9912" (yoksa o bölüm atlanır).
@@ -344,6 +345,99 @@ check "DNSKEY kalktı" "$(poll '' q DNSKEY $ZONE)" ""
 check "bölge imzasız yanıt vermeyi sürdürüyor" "$(q A imp1.$ZONE)" 203.0.113.99
 check "açıp kapatma tekrarlanabilir" "$(code POST $ZD/dnssec -d '{"enabled":true}') $(code POST $ZD/dnssec -d '{"enabled":false}')" "200 200"
 check "tekrar kapatınca da imzasız" "$(poll hayir signed SOA $ZONE)" hayir
+
+# ---------------------------------------------------------------------------
+say "Hazır kayıtlar (bölge şablonları)"
+TZONE=dnstpl.test
+id=$(zone_id $TZONE); [ -n "$id" ] && api DELETE /dns/zones/$id >/dev/null
+TZ=$(api POST /dns/zones -d "{\"domain\":\"$TZONE\",\"provider\":\"local\"}" | jget 'd["zone"]["id"]')
+check "şablon bölgesi açıldı" "$([[ "$TZ" =~ ^[0-9]+$ ]] && echo evet)" evet
+TD=/dns/zones/$TZ
+# tpl <şablon> <alanlar JSON> <değiştir true|false> <uygula true|false>: yanıt gövdesi yazılır
+tpl() { call $J POST $TD/templates/$1 -d "{\"fields\":$2,\"replace\":$3,\"apply\":$4}"; }
+tpl_code() { status ${5:-$J} POST /dns/zones/$TZ/templates/$1 -d "{\"fields\":$2,\"replace\":$3,\"apply\":$4}"; }
+mxn() { dig +short +time=2 +tries=1 @127.0.0.1 MX $TZONE | wc -l | tr -d ' '; }
+txtn() { dig +short +time=2 +tries=1 @127.0.0.1 TXT $TZONE | wc -l | tr -d ' '; }
+GOOGLE_VERIFY='{"provider":"google","value":"google-site-verification=abcdefghijklmnopqrstuvwxyz0123456789ABCD"}'
+
+check "şablon listesi" "$(api GET /dns/templates | jget 'sorted(t["id"] for t in d["templates"])')" "['domain_verification', 'google_workspace', 'microsoft_365', 'no_mail', 'yandex_360']"
+check "doğrulama şablonunun alanları" "$(api GET /dns/templates | jget 'next([f["name"] for f in t["fields"]] for t in d["templates"] if t["id"]=="domain_verification")')" "['provider', 'value']"
+check "oturumsuz liste" "$(curl -sk -o /dev/null -w '%{http_code}' -H 'x-pixpanel-csrf: 1' $B/dns/templates)" 401
+
+say "Google Workspace"
+P=$(tpl google_workspace '{}' false false)
+check "önizleme: 6 yeni, 0 var, çakışma yok" "$(jget '(len(d["add"]), len(d["existing"]), len(d["conflicts"]), d["blocked"])' <<<"$P")" "(6, 0, 0, False)"
+check "önizleme hiçbir şey yazmaz" "$(mxn)" 0
+A=$(tpl google_workspace '{}' false true)
+check "uygulama: 6 kayıt eklendi" "$(jget '(d["result"]["added"], d["result"]["removed"], d["result"]["failed"])' <<<"$A")" "(6, 0, [])"
+check "MX kayıtları yayında (dig)" "$(poll 5 mxn)" 5
+has "birincil MX" "$(q MX $TZONE)" "1 aspmx.l.google.com."
+has "ikincil MX" "$(q MX $TZONE)" "10 alt4.aspmx.l.google.com."
+has "SPF kaydı yayında (dig)" "$(poll '"v=spf1 include:_spf.google.com ~all"' q TXT $TZONE)" "include:_spf.google.com"
+check "ikinci uygulama hiçbir şey eklemez" "$(tpl google_workspace '{}' false true | jget '(d["result"]["added"], len(d["existing"]), d["blocked"])')" "(0, 6, False)"
+check "kayıtlar yinelenmedi" "$(mxn)" 5
+
+say "Çakışan MX ve SPF"
+P=$(tpl yandex_360 '{}' false false)
+check "var olan MX/SPF çakışma olarak bildirilir" "$(jget '(d["blocked"], len(d["conflicts"]), len(d["remove"]))' <<<"$P")" "(True, 6, 0)"
+check "çakışan kayıtların türleri" "$(jget 'sorted(set(r["type"] for r in d["conflicts"]))' <<<"$P")" "['MX', 'TXT']"
+check "çakışmayı geçerek uygulama reddedilir" "$(tpl_code yandex_360 '{}' false true)" 409
+check "reddedilince hiçbir şey değişmez" "$(mxn) $(q TXT $TZONE | grep -c yandex)" "5 0"
+P=$(tpl yandex_360 '{}' true false)
+check "değiştirme önizlemesi: 6 silinir, 2 eklenir" "$(jget '(d["blocked"], len(d["remove"]), len(d["add"]))' <<<"$P")" "(False, 6, 2)"
+A=$(tpl yandex_360 '{}' true true)
+check "değiştirme: 2 eklendi, 6 silindi" "$(jget '(d["result"]["added"], d["result"]["removed"], d["result"]["failed"])' <<<"$A")" "(2, 6, [])"
+check "MX değişti (dig)" "$(poll '10 mx.yandex.net.' q MX $TZONE)" "10 mx.yandex.net."
+has "SPF değişti (dig)" "$(poll '"v=spf1 include:_spf.yandex.net ~all"' q TXT $TZONE)" "include:_spf.yandex.net"
+hasnt "eski SPF kalmadı" "$(q TXT $TZONE)" "_spf.google.com"
+
+say "Alan adı doğrulama"
+P=$(tpl domain_verification "$GOOGLE_VERIFY" false false)
+check "doğrulama kaydı çakışmaz, tek kayıt eklenir" "$(jget '(len(d["add"]), d["blocked"])' <<<"$P")" "(1, False)"
+check "doğrulama uygulanır" "$(tpl domain_verification "$GOOGLE_VERIFY" false true | jget '(d["result"]["added"], d["result"]["failed"])')" "(1, [])"
+check "TXT kümesinde iki kayıt (SPF ve doğrulama)" "$(poll 2 txtn)" 2
+has "doğrulama TXT'si yayında" "$(q TXT $TZONE)" "google-site-verification=abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+has "SPF yerinde kaldı" "$(q TXT $TZONE)" "include:_spf.yandex.net"
+check "Microsoft doğrulama biçimi" "$(tpl_code domain_verification '{"provider":"microsoft","value":"MS=ms12345678"}' false false)" 200
+check "Facebook doğrulama biçimi" "$(tpl_code domain_verification '{"provider":"facebook","value":"facebook-domain-verification=abcdefghij0123456789klmno"}' false false)" 200
+check "satır sonlu değer" "$(tpl_code domain_verification '{"provider":"google","value":"google-site-verification=abcdefghijklmnopqrstuvwxyz\n0123456789"}' false false)" 400
+check "tırnaklı değer (TXT'ye ikinci kayıt sokma)" "$(tpl_code domain_verification '{"provider":"google","value":"google-site-verification=abcdefghijklmnopqrstuvwxyz0123456789\"; v=spf1 +all"}' false false)" 400
+check "boşluklu değer" "$(tpl_code domain_verification '{"provider":"google","value":"google-site-verification=abcdefghijklmnopqrstuvwxyz0123 v=spf1"}' false false)" 400
+check "noktalı virgüllü değer" "$(tpl_code domain_verification '{"provider":"google","value":"google-site-verification=abcdefghijklmnopqrstuvwxyz0123456789;"}' false false)" 400
+check "kısa değer" "$(tpl_code domain_verification '{"provider":"google","value":"abc"}' false false)" 400
+check "değer eksik" "$(tpl_code domain_verification '{"provider":"google"}' false false)" 400
+check "geçersiz hizmet" "$(tpl_code domain_verification '{"provider":"tiktok","value":"abcdefghijklmnopqrstuvwxyz"}' false false)" 400
+check "şablonda olmayan alan" "$(tpl_code domain_verification '{"provider":"google","value":"abcdefghijklmnopqrstuvwxyz0123","mx_host":"x"}' false false)" 400
+check "Microsoft değeri Google seçiliyken olmaz" "$(tpl_code domain_verification '{"provider":"google","value":"MS=ms12345678"}' false false)" 400
+
+say "Microsoft 365"
+check "çakışma varken değiştirmeden uygulanamaz" "$(tpl_code microsoft_365 '{}' false true)" 409
+A=$(tpl microsoft_365 '{}' true true)
+check "Microsoft 365: kayıtlar eklendi" "$(jget '(d["result"]["added"], d["result"]["failed"])' <<<"$A")" "(3, [])"
+check "MX alan adından türetildi (dig)" "$(poll '0 dnstpl-test.mail.protection.outlook.com.' q MX $TZONE)" "0 dnstpl-test.mail.protection.outlook.com."
+check "autodiscover CNAME (dig)" "$(poll 'autodiscover.outlook.com.' q CNAME autodiscover.$TZONE)" "autodiscover.outlook.com."
+has "Microsoft SPF" "$(q TXT $TZONE)" "include:spf.protection.outlook.com"
+check "özel MX adresi: yabancı alan reddedilir" "$(tpl_code microsoft_365 '{"mx_host":"mail.ornek.net"}' true false)" 400
+check "özel MX adresi: ek yönerge reddedilir" "$(tpl_code microsoft_365 '{"mx_host":"x.mail.protection.outlook.com evil.example"}' true false)" 400
+
+say "Posta kullanılmıyor"
+A=$(tpl no_mail '{}' true true)
+check "boş MX, SPF ve DMARC eklendi" "$(jget '(d["result"]["added"], d["result"]["failed"])' <<<"$A")" "(3, [])"
+check "boş MX (dig)" "$(poll '0 .' q MX $TZONE)" "0 ."
+has "hepsini reddeden SPF (dig)" "$(poll '"v=spf1 -all"' q TXT $TZONE)" "v=spf1 -all"
+has "DMARC reject (dig)" "$(q TXT _dmarc.$TZONE)" "p=reject"
+has "panel boş MX'i doğru gösterir" "$(api GET $TD | jget '[(r["content"], r["priority"]) for r in d["records"] if r["type"]=="MX"]')" "('.', 0)"
+has "dışa aktarılan dosyada boş MX" "$(api GET $TD/export | jget 'd["content"]')" "MX"$'\t'"0 ."
+
+say "Şablonlarda yetki ve geçersiz ad"
+check "geçersiz şablon adı" "$(tpl_code yok '{}' false false)" 404
+check "yol kaçışlı şablon adı" "$(tpl_code '..%2f..%2fetc' '{}' false false)" 404
+check "başka hesabın bölgesi: önizleme" "$(tpl_code no_mail '{}' false false $JA)" 404
+check "başka hesabın bölgesi: uygulama" "$(tpl_code google_workspace '{}' true true $JA)" 404
+check "başka hesabın denemesi kayıtları değiştirmedi" "$(poll '0 .' q MX $TZONE)" "0 ."
+check "başka hesap şablon listesini görebilir" "$(status $JA GET /dns/templates)" 200
+check "denetim günlüğüne yazıldı" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "SELECT count(*) >= 5 FROM audit_log WHERE action='dns.zone.template' AND target='$TZONE'")" 1
+check "şablon bölgesini sil" "$(code DELETE $TD)" 200
 
 say "Temizlik"
 check "bölge sil" "$(code DELETE $ZD)" 200

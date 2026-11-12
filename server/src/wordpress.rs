@@ -25,6 +25,7 @@ use crate::sys::exec::{self, CmdOutput};
 use crate::sys::runas;
 
 mod rollback;
+pub mod security;
 pub mod staging;
 
 /// Panelin kullandığı wp-cli sürümü. Dosya, gömülü özetle doğrulanmadan çalıştırılmaz.

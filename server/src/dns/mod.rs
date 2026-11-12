@@ -8,6 +8,7 @@
 pub mod cloudflare;
 pub mod cluster;
 pub mod local;
+pub mod templates;
 pub mod zonefile;
 
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -115,6 +116,8 @@ pub fn normalize(zone: &str, input: &Record) -> AppResult<Record> {
     let content = match kind.as_str() {
         "A" => raw.parse::<Ipv4Addr>().map(|ip| ip.to_string()).map_err(|_| AppError::bad("A kaydı bir IPv4 adresi olmalı (örnek: 203.0.113.10)"))?,
         "AAAA" => raw.parse::<Ipv6Addr>().map(|ip| ip.to_string()).map_err(|_| AppError::bad("AAAA kaydı bir IPv6 adresi olmalı"))?,
+        // Boş MX (RFC 7505, `0 .`): alan adı posta almaz.
+        "MX" if raw == "." => ".".to_string(),
         "CNAME" | "NS" | "MX" => target_host(raw)?,
         "TXT" => {
             if raw.is_empty() || raw.len() > 2048 || raw.chars().any(char::is_control) {
@@ -669,6 +672,17 @@ mod tests {
         assert_eq!(normalize("ornek.com", &input("A", "www", "1.2.3.4")).unwrap().name, "www.ornek.com");
         assert_eq!(normalize("ornek.com", &input("A", "*.alt", "1.2.3.4")).unwrap().name, "*.alt.ornek.com");
         assert_eq!(normalize("ornek.com", &input("TXT", "_dmarc.ornek.com.", "v=DMARC1")).unwrap().name, "_dmarc.ornek.com");
+    }
+
+    #[test]
+    fn null_mx_is_accepted_only_for_mx() {
+        let mut null = input("MX", "@", ".");
+        null.priority = Some(0);
+        let record = normalize("ornek.com", &null).unwrap();
+        assert_eq!((record.content.as_str(), record.priority), (".", Some(0)));
+        for kind in ["CNAME", "NS"] {
+            assert!(normalize("ornek.com", &input(kind, "www", ".")).is_err(), "{kind}");
+        }
     }
 
     #[test]

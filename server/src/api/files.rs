@@ -74,13 +74,17 @@ struct Scope {
     uid: u32,
     gid: u32,
     label: String,
+    /// Dosya alanının sahibi hesap (`root` kapsamında yok); disk kotası bu hesaba göre okunur.
+    account_id: Option<i64>,
+    /// Arşiv açma için hesabın kalan disk kotası (yalnızca açma işleminde doldurulur).
+    disk_budget: Option<u64>,
 }
 
 /// İstenen kapsamı çözer ve isteği yapanın ona erişimini denetler.
 async fn resolve_scope(state: &AppState, user: &AuthUser, scope: &str) -> AppResult<Scope> {
     if scope == "root" {
         user.require_admin()?;
-        return Ok(Scope { root: "/".into(), uid: 0, gid: 0, label: "root".into() });
+        return Ok(Scope { root: "/".into(), uid: 0, gid: 0, label: "root".into(), account_id: None, disk_budget: None });
     }
     let target: i64 =
         scope.strip_prefix("user:").and_then(|id| id.parse().ok()).ok_or_else(|| AppError::bad("Geçersiz dosya alanı"))?;
@@ -100,7 +104,7 @@ async fn resolve_scope(state: &AppState, user: &AuthUser, scope: &str) -> AppRes
         let _guard = state.sys_lock.lock().await;
         sysuser::ensure(&username).await?
     };
-    Ok(Scope { root: account.home.to_string_lossy().into_owned(), uid: account.uid, gid: account.gid, label: username })
+    Ok(Scope { root: account.home.to_string_lossy().into_owned(), uid: account.uid, gid: account.gid, label: username, account_id: Some(target), disk_budget: None })
 }
 
 /// Yardımcı süreci başlatır ve istek zarfını standart girdisine yazar.
@@ -115,7 +119,7 @@ async fn spawn_helper(scope: &Scope, request: Request) -> AppResult<Child> {
         .kill_on_drop(true)
         .spawn()
         .map_err(|err| AppError::internal(format!("dosya yardımcısı başlatılamadı: {err}")))?;
-    let envelope = Envelope { root: scope.root.clone(), uid: scope.uid, gid: scope.gid, request };
+    let envelope = Envelope { root: scope.root.clone(), uid: scope.uid, gid: scope.gid, disk_budget: scope.disk_budget, request };
     let mut header = serde_json::to_vec(&envelope).map_err(|err| AppError::internal(err.to_string()))?;
     header.push(b'\n');
     child.stdin.as_mut().expect("stdin borusu").write_all(&header).await?;
@@ -181,7 +185,11 @@ async fn op(State(state): State<AppState>, user: AuthUser, Json(body): Json<OpBo
     if matches!(body.request, Request::Download { .. } | Request::Upload { .. }) {
         return Err(AppError::bad("Bu işlem için indirme ya da yükleme ucunu kullanın"));
     }
-    let scope = resolve_scope(&state, &user, &body.scope).await?;
+    let mut scope = resolve_scope(&state, &user, &body.scope).await?;
+    // Arşiv açma, hesabın kalan disk kotasıyla sınırlanır; değeri istek değil panel verir.
+    if let (Request::Extract { .. }, Some(account)) = (&body.request, scope.account_id) {
+        scope.disk_budget = crate::quota::remaining_disk(&state.db, account)?;
+    }
     let entry = audit_entry(&body.request);
     let data = finish(spawn_helper(&scope, body.request).await?).await?;
     record(&state, &user, &scope, entry);

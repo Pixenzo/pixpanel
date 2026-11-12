@@ -10,7 +10,7 @@ use crate::auth::{self, AuthUser};
 use crate::error::{AppError, AppResult};
 use crate::hosting::sites;
 use crate::state::AppState;
-use crate::wordpress::{self, staging, InstallRequest, Settings, Status};
+use crate::wordpress::{self, security, staging, InstallRequest, Settings, Status};
 
 const AREA: &str = "sites";
 
@@ -21,6 +21,8 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/wordpress/update", post(update))
         .route("/{id}/wordpress/login", post(login))
         .route("/{id}/wordpress/settings", put(save_settings))
+        .route("/{id}/wordpress/security", get(security_show))
+        .route("/{id}/wordpress/security/fix", post(security_fix))
         .route("/{id}/wordpress/staging", get(staging_show).post(staging_create))
         .route("/{id}/wordpress/staging/sync", post(staging_sync))
         .route("/{id}/wordpress/{kind}/{slug}", post(extension))
@@ -106,6 +108,32 @@ async fn extension(
     wordpress::extension_action(&site, kind, &slug, &body.action).await?;
     auth::audit(&state.db, &user, "wordpress.extension", &site.domain, &format!("{kind} {slug} {}", body.action));
     Ok(Json(wordpress::status(&site).await?))
+}
+
+// ---- Sıkılaştırma denetimi ----
+
+async fn security_show(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<security::Audit>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    Ok(Json(security::audit(&site).await?))
+}
+
+#[derive(Deserialize)]
+struct SecurityFixBody {
+    ids: Vec<String>,
+}
+
+/// Seçilen sıkılaştırma maddelerini düzeltir. Komutlar kısadır; görev açılmaz ama site kilidi alınır
+/// (güncelleme ya da kurulumla aynı dosyalara aynı anda dokunulmasın).
+async fn security_fix(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<SecurityFixBody>) -> AppResult<Json<security::FixResult>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    let ids = security::validate_ids(&body.ids)?;
+    let _lock = wordpress::SiteLock::acquire(&site)?;
+    let result = security::fix(&state, &site, &ids).await?;
+    let detail = format!("fixed={} failed={}", result.fixed.join(","), result.failed.iter().map(|failure| failure.id).collect::<Vec<_>>().join(","));
+    auth::audit(&state.db, &user, "wordpress.security.fix", &site.domain, &detail);
+    Ok(Json(result))
 }
 
 // ---- Hazırlık ortamı ----

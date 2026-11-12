@@ -283,7 +283,9 @@ fn build(kind: &str, rdata: &[Token], origin: &str) -> Result<(String, Option<u3
         }
         "MX" => {
             let [preference, host] = rdata else { return Err(wrong()) };
-            Ok((absolute(host, origin)?, Some(u32::from(number::<u16>(preference, "MX önceliği")?))))
+            // Boş MX (`0 .`) olduğu gibi kalır.
+            let target = if !host.quoted && host.text() == Some(".") { ".".to_string() } else { absolute(host, origin)? };
+            Ok((target, Some(u32::from(number::<u16>(preference, "MX önceliği")?))))
         }
         "TXT" => {
             if rdata.is_empty() {
@@ -466,10 +468,10 @@ pub fn parse(zone: &str, text: &str) -> AppResult<Parsed> {
 
 // ---- Karşılaştırma ve plan ----
 
-type Key = (String, String, String, u32);
+pub(super) type Key = (String, String, String, u32);
 
 /// Kaydın karşılaştırma anahtarı: sağlayıcıların yazım farkları (IPv6 biçimi, büyük/küçük harf) yok sayılır.
-fn canon(record: &Record) -> Key {
+pub(super) fn canon(record: &Record) -> Key {
     let content = match record.kind.as_str() {
         "AAAA" => record.content.trim().parse::<Ipv6Addr>().map(|ip| ip.to_string()).unwrap_or_else(|_| record.content.trim().to_string()),
         "CNAME" | "NS" | "MX" => record.content.trim().trim_end_matches('.').to_ascii_lowercase(),
@@ -586,6 +588,7 @@ pub fn export(zone: &str, records: &[Record], serial: u32) -> String {
         let ttl = if record.ttl == 1 { 300 } else { record.ttl };
         let data = match record.kind.as_str() {
             "CNAME" | "NS" => format!("{}.", record.content),
+            "MX" if record.content == "." => format!("{} .", record.priority.unwrap_or(0)),
             "MX" => format!("{} {}.", record.priority.unwrap_or(10), record.content),
             "SRV" => {
                 let mut parts = record.content.split_whitespace();
@@ -730,6 +733,19 @@ x.baska.org. IN A     203.0.113.5
 
     fn kinds(parsed: &Parsed) -> Vec<String> {
         parsed.records.iter().map(|(_, r)| format!("{} {} {} {:?} {}", r.kind, r.name, r.content, r.priority, r.ttl)).collect()
+    }
+
+    #[test]
+    fn null_mx_survives_parse_and_export() {
+        let parsed = parse("ornek.com", "@ 3600 IN MX 0 .\n@ IN MX 10 mail\n").unwrap();
+        let list = kinds(&parsed);
+        assert!(list.contains(&"MX ornek.com . Some(0) 3600".to_string()), "{list:?}");
+        assert!(list.contains(&"MX ornek.com mail.ornek.com Some(10) 3600".to_string()), "{list:?}");
+        let records: Vec<Record> = parsed.records.into_iter().map(|(_, record)| record).collect();
+        let text = export("ornek.com", &records, 1);
+        assert!(text.contains("MX\t0 .\n"), "{text}");
+        assert!(!text.contains(". .") && !text.contains(".."), "{text}");
+        assert_eq!(parse("ornek.com", &text).unwrap().records.len(), 2);
     }
 
     #[test]
