@@ -175,6 +175,7 @@ suite clone php-8.3 mariadb
 suite branding
 suite python python
 suite dbimport mariadb
+suite db-depth mariadb postgresql
 suite tenancy dns mail mariadb
 suite portguard node-22
 suite dkim mail

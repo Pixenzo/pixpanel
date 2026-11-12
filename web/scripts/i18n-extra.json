@@ -248,7 +248,10 @@
     "Web kancasını sildi",
     "Web kancasının gizli anahtarını yeniledi",
     "Git web kancası imza anahtarını tanımladı",
-    "Git web kancası imza anahtarını kaldırdı"
+    "Git web kancası imza anahtarını kaldırdı",
+    "Veritabanını kopyaladı",
+    "Veritabanı bakımı yaptı",
+    "Yavaş sorgu günlüğü ayarını değiştirdi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",

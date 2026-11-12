@@ -44,7 +44,7 @@ pub struct Settings {
 /// Sunucunun o anki yavaş sorgu ayarları.
 pub async fn settings() -> AppResult<Settings> {
     let output = mariadb::query(
-        "SHOW GLOBAL VARIABLES WHERE Variable_name IN ('slow_query_log', 'long_query_time', 'slow_query_log_file', 'log_output');\n",
+        "SHOW GLOBAL VARIABLES WHERE Variable_name IN ('slow_query_log', 'long_query_time', 'slow_query_log_file', 'log_output', 'datadir');\n",
     )
     .await?;
     let values: HashMap<&str, &str> = output.lines().filter_map(|line| line.split_once('\t')).collect();
@@ -52,7 +52,11 @@ pub async fn settings() -> AppResult<Settings> {
     Ok(Settings {
         enabled: matches!(get("slow_query_log").to_ascii_uppercase().as_str(), "ON" | "1"),
         threshold: get("long_query_time").parse().unwrap_or(10.0),
-        file: get("slow_query_log_file"),
+        // Göreli dosya adı veri klasörüne göredir (ör. `sunucu-slow.log`).
+        file: match get("slow_query_log_file") {
+            file if file.is_empty() || file.starts_with('/') => file,
+            file => Path::new(&get("datadir")).join(file).to_string_lossy().into_owned(),
+        },
         file_output: get("log_output").to_ascii_uppercase().contains("FILE"),
         persistent: Path::new(CONFIG_PATH).is_file(),
     })

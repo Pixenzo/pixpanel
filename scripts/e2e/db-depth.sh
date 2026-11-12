@@ -46,7 +46,7 @@ copy_job() {
   local out job
   out=$(call $1 POST "/databases/$2/copy" -d "{\"name\":\"$3\"}")
   job=$(jget 'd["job_id"]' <<<"$out")
-  case "$job" in ''|'('*) echo "red:$(jget 'd["error"]["code"]' <<<"$out")"; return;; esac
+  case "$job" in ''|'('*) echo "        ($(jget 'd["error"]["message"]' <<<"$out"))" >&2; echo "red:$(jget 'd["error"]["code"]' <<<"$out")"; return;; esac
   echo "$job" > $W/lastjob
   wait_job "$job"
 }
@@ -55,7 +55,7 @@ maint_job() {
   local out job
   out=$(api POST "/databases/$1/maintenance" -d "{\"action\":\"$2\"}")
   job=$(jget 'd["job_id"]' <<<"$out")
-  case "$job" in ''|'('*) echo "red:$(jget 'd["error"]["code"]' <<<"$out")"; return;; esac
+  case "$job" in ''|'('*) echo "        ($(jget 'd["error"]["message"]' <<<"$out"))" >&2; echo "red:$(jget 'd["error"]["code"]' <<<"$out")"; return;; esac
   echo "$job" > $W/lastjob
   wait_job "$job"
 }
@@ -259,6 +259,8 @@ fi
 
 if [ "$(installed postgresql)" = True ]; then
   say "PostgreSQL: hazırlık"
+  # MariaDB bölümü paketin veritabanı sınırını doldurdu; PostgreSQL bölümü için yer açılır.
+  api PATCH /packages/$PKGID -d "{\"name\":\"$PKG\",\"limits\":{\"databases\":10,\"disk_mb\":1000}}" >/dev/null
   call $JC POST /databases -d "{\"engine\":\"postgresql\",\"name\":\"${CUSTOMER}_pgkaynak\",\"user\":{\"name\":\"${CUSTOMER}_pguyg\",\"password\":\"$DBPASS\"}}" >/dev/null
   PS=$(db_id ${CUSTOMER}_pgkaynak)
   check "PostgreSQL kaynağı açıldı" "$([ -n "$PS" ] && echo var)" var
