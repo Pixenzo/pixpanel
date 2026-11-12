@@ -187,13 +187,13 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 
 ## P2 — Plesk'le aradaki fark
 
-### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; kalan: var olan kurulumları bulma, klonlama ve hazırlık ortamı, güncelleme öncesi yedek ve geri dönüş, sıkılaştırma)
+### 12. WordPress araçları — İLK SÜRÜM TAMAMLANDI (11.11.2026: kurulum, parolasız giriş, güncelleme, eklenti/tema yönetimi, bakım kipi; 12.11.2026: hazırlık ortamı ve güncellemede kendiliğinden geri dönüş; kalan: alt klasördeki kurulumları bulma, sıkılaştırma denetimi)
 
 - **Kapsam:** wp-cli ile tek tıkla kurulum (veritabanını da açar), var olan kurulumları bulma, çekirdek/eklenti/tema güncelleme (toplu ve kendiliğinden), parolasız yönetici girişi, klonlama ve hazırlık ortamı (alt alan adına kopya, geri aktarma), sıkılaştırma (dosya izinleri, `xmlrpc`, dosya düzenleyici, `wp-config` koruması), bakım kipi.
 - **Örnek al:** `deploy.rs` (kullanıcı adına komut, canlı günlük).
 - **Kabul:** kurulan site açılır ve giriş yapılır; klon bağımsız çalışır; komutlar sitenin kullanıcısıyla yürür.
 
-### 13. Site ayarları paketi — İLK SÜRÜM TAMAMLANDI (11.11.2026: yönlendirme, parola korumalı klasör, adres kısıtlaması, bakım kipi, WWW tercihi, hotlink, hata sayfaları; kalan: önbellek başlıkları, FastCGI/vekil önbelleği, HTTP/3, yalnızca Cloudflare kipi)
+### 13. Site ayarları paketi — İLK SÜRÜM TAMAMLANDI (11.11.2026: yönlendirme, parola korumalı klasör, adres kısıtlaması, bakım kipi, WWW tercihi, hotlink, hata sayfaları; 12.11.2026: tarayıcı önbelleği, FastCGI/vekil önbelleği, yalnızca Cloudflare kipi; kalan: HTTP/3)
 
 Hepsi nginx şablonuna eklenir; her biri küçük ve bağımsızdır:
 yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve izin listesi, hotlink koruması, özel hata sayfaları, bakım kipi, sıkıştırma ve önbellek başlıkları, FastCGI/vekil önbelleği, HTTP/3, "yalnızca Cloudflare" kipi, WWW'li/WWW'siz tercih.
@@ -207,7 +207,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 ### 15. Taşıma aracı — B, sistem katmanı
 
 - SSH ile başka sunucudan çekme (rsync + döküm); Plesk, cPanel ve HestiaCP yedeklerinden içe aktarma; posta kutularını IMAP ile taşıma (`imapsync`).
-- **Durum (12.11.2026):** SSH ile çekme yapıldı (dosyalar + WordPress veritabanı; ayrıntı DURUM.md). Kalanlar: yedek dosyalarından içe aktarma, posta kutuları, WordPress dışı veritabanları.
+- **Durum (12.11.2026):** SSH ile çekme yapıldı (dosyalar + WordPress veritabanı; ayrıntı DURUM.md). WordPress dışı veritabanları da eklendi (bilgiler elle verilir). Kalanlar: yedek dosyalarından içe aktarma, posta kutuları.
 - **Not:** kaynak biçimlerinin her biri ayrı bir araştırma işidir.
 
 ### 16. Python uygulamaları — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: `uv` ile çoklu sürüm)
@@ -218,18 +218,18 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 ### 17. Posta derinliği — B (parçalar devredilebilir)
 
 - 17a. Kutu sahibinin kendi işleri: web postasından parola değiştirme, otomatik yanıt ve filtreler (panel kurallarıyla çakışmadan).
-- 17b. İstemci otomatik ayarı (autoconfig, autodiscover).
-- 17c. Giden posta sınırı (kutu ve alan adı başına saatlik sınır; ele geçirilmiş hesaba karşı).
+- 17b. İstemci otomatik ayarı (autoconfig, autodiscover). — **tamamlandı (12.11.2026)**
+- 17c. Giden posta sınırı (kutu ve alan adı başına saatlik sınır; ele geçirilmiş hesaba karşı). — **tamamlandı (12.11.2026)**
 - 17d. Karantina: şüpheli iletileri tutma, panelden bırakma ya da silme.
 - 17e. Antivirüs (ClamAV; yaklaşık 1 GB bellek ister, isteğe bağlı bileşen).
 - 17f. Posta listeleri (düşük öncelik).
 - 17g. Alan adı başına sertifika (SNI) ve `webmail.<alan>` adresi.
 
-### 18. DNS derinliği — O (devre uygun)
+### 18. DNS derinliği — TAMAMLANDI (12.11.2026; kalan: bölge şablonları)
 
 - DNSSEC (anahtar üretimi, DS kaydının gösterimi), ikincil ad sunucusu (AXFR, bildirim), bölge şablonları, BIND bölge dosyası içe/dışa aktarma, Cloudflare'de SRV ve CAA yazma.
 
-### 19. Veritabanı derinliği — K/O (devre uygun)
+### 19. Veritabanı derinliği — İLK SÜRÜM TAMAMLANDI (12.11.2026: boyutlar, kopyalama, denetim/onarım, yavaş sorgu günlüğü; kalan: PostgreSQL uzaktan erişim, zamanlı döküm, uzak sunucu)
 
 - PostgreSQL uzaktan erişim (`pg_hba`), veritabanı kopyalama, denetim ve onarım, zamanlı döküm (5 ile birlikte), yavaş sorgu günlüğü görünümü, uzak veritabanı sunucusu (düşük öncelik).
 
@@ -242,7 +242,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 | 20 | İngilizce çeviri (`t()` anahtarlarının çıkarılması, sözlük, dil seçimi; arka uç hata iletileri dahil) | O | Uygun |
 | 21 | API belgesi (OpenAPI), API anahtarı kapsamları (alan bazında izin) | O | Uygun |
 | 22 | Komut satırı aracı (`pixpanel site add …`; API'nin ince sarmalayıcısı) | O | Uygun |
-| 23 | Olay kancaları (site açıldı, yayın bitti gibi olaylarda webhook) | K | Uygun |
+| 23 | Olay kancaları (site açıldı, yayın bitti gibi olaylarda webhook) — **tamamlandı (12.11.2026)** | K | Uygun |
 | 24 | Çoklu IP ve IPv6 (siteye adres atama, DNS'te AAAA) | O | Sistem katmanı |
 | 25 | Kaynak sınırı (hesap başına işlemci ve bellek; systemd dilimleri) | O | Sistem katmanı |
 | 26 | Eklenti sistemi | B | Tasarım önce |
@@ -253,7 +253,7 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 ## Teknik borç (araya sıkıştırılacak)
 
 - Bileşen kaldırma (bugün yalnızca kurma var) ve sürüm güncelleme (Node.js dahil).
-- Git web kancasında imza doğrulaması (`X-Hub-Signature-256`).
+- ~~Git web kancasında imza doğrulaması (`X-Hub-Signature-256`).~~ Tamamlandı (12.11.2026).
 - Arşiv açmada boyut sınırı (zip bombası).
 - Redis için hesap başına yalıtım (ACL) ya da kullanımı yöneticiye bırakma kararı.
 - Birim testleri: bugün 14; doğrulama işlevlerinin hepsi kapsanmalı.
