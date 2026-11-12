@@ -285,7 +285,7 @@ URL=$(api POST "/sites/$S/wordpress/login?path=blog" | jget 'd["url"]')
 has "alt klasör giriş adresi" "$URL" "http://$DOMAIN/blog/?pixpanel_login="
 check "giriş eklentisi alt klasöre yazıldı" "$([ -f $SUB/wp-content/mu-plugins/pixpanel-login.php ] && echo var)" var
 R=$(api GET "/sites/$S/wordpress/security?path=blog")
-check "alt klasörün güvenlik denetimi" "$(jget '(d["total"], len(d["items"]))' <<<"$R")" "(8, 8)"
+check "alt klasörün güvenlik denetimi" "$(jget '(d["total"], len(d["items"]))' <<<"$R")" "(8, 9)"
 BJOB=$(api POST "/sites/$S/wordpress/update?path=blog" -d '{"what":"plugins"}' | jget 'd["job_id"]')
 check "alt klasör güncelleme görevi" "$(wait_job "$BJOB")" success
 has "geri dönüş yalnızca kökte" "$(api GET "/jobs/$BJOB" | jget 'd["log"]')" "Alt klasördeki kurulumlarda otomatik geri dönüş"

@@ -277,7 +277,8 @@
     "WordPress güvenlik düzeltmesi uyguladı",
     "DNS hazır kayıt şablonu uyguladı",
     "Trafik sınırı aşıldı, siteler askıya alındı",
-    "Trafik askısı kaldırıldı"
+    "Trafik askısı kaldırıldı",
+    "Node.js sürümünü güncelledi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
