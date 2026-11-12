@@ -231,6 +231,46 @@ ExecStart=/usr/bin/php{version} /usr/share/roundcube/bin/gc.sh
     Ok(())
 }
 
+/// Bir araç (phpMyAdmin, Adminer, Roundcube) paketi kaldırıldıktan sonra çalışma ortamını
+/// temizler: kaldırılan aracın bağlantısı silinir; hiç araç kalmadıysa nginx sunucusu ve PHP
+/// havuzu da kaldırılır, aksi hâlde ortam kalan araçlara göre yeniden kurulur.
+/// Araçların yapılandırma ve veri dosyaları (ör. Roundcube'un kendi veritabanı) silinmez.
+pub async fn after_removal(cfg: &Config) -> AppResult<()> {
+    let tools = installed();
+    let web_root = work("root");
+    let drop_link = |path: PathBuf| match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(AppError::from(err)),
+    };
+    if !tools.phpmyadmin {
+        drop_link(web_root.join("tools").join("phpmyadmin"))?;
+    }
+    if !tools.adminer {
+        drop_link(web_root.join("tools").join("adminer"))?;
+    }
+    if !tools.roundcube {
+        drop_link(web_root.join("webmail"))?;
+    }
+    if tools.phpmyadmin || tools.adminer || tools.roundcube {
+        return ensure_runtime(cfg).await;
+    }
+    // Hiç araç kalmadı: sunucuyu ve havuzları kaldır, ilgili servisleri yeniden yükle.
+    if Path::new(NGINX_CONF).exists() {
+        std::fs::remove_file(NGINX_CONF)?;
+        exec::run_ok("nginx", &["-t"]).await?;
+        exec::run_ok("systemctl", &["reload", "nginx.service"]).await?;
+    }
+    for version in installed_versions() {
+        let pool = PathBuf::from(format!("/etc/php/{version}/fpm/pool.d/pixpanel-tools.conf"));
+        if pool.exists() {
+            std::fs::remove_file(&pool)?;
+            exec::run_ok("systemctl", &["reload-or-restart", "--", &format!("php{version}-fpm.service")]).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Veritabanı için geçici bir hesap açar ve aracı o hesapla başlatan adresi döner.
 pub async fn open(db: &Db, cfg: &Config, engine: Engine, database: &str) -> AppResult<String> {
     let tools = installed();

@@ -3,6 +3,7 @@
 
 use serde::Serialize;
 
+use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::hosting;
 use crate::jobs::JobCtx;
@@ -491,4 +492,151 @@ pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
     }
     ctx.log(format!("{} kuruldu", component.name));
     Ok(())
+}
+
+// ---- Kaldırma ----
+
+/// Panelden kaldırılabilen bileşenler. Veri tutanlar (MariaDB, PostgreSQL, posta, DNS, nginx)
+/// kasıtlı olarak yok: kaldırmaları veri kaybına ya da siteleri durdurmaya yol açar.
+pub fn removable(id: &str) -> bool {
+    id.starts_with("php-") || matches!(id, "phpmyadmin" | "adminer" | "roundcube" | "redis" | "docker" | "ftp" | "fail2ban")
+}
+
+/// Bileşeni kullanımda tutan şey varsa nedenini döner. Kullanımdaki bileşen kaldırılmaz.
+pub async fn removal_blocker(db: &Db, component: &Component) -> AppResult<Option<String>> {
+    let id = component.id.as_str();
+    if let Some(version) = id.strip_prefix("php-") {
+        let sites = hosting::sites::list_by_php(db, version)?;
+        if !sites.is_empty() {
+            let names: Vec<&str> = sites.iter().take(3).map(|site| site.domain.as_str()).collect();
+            let more = if sites.len() > 3 { format!(" ve {} site daha", sites.len() - 3) } else { String::new() };
+            return Ok(Some(format!("{} site bu PHP sürümünü kullanıyor: {}{more}. Önce sitelerin PHP sürümünü değiştirin.", sites.len(), names.join(", "))));
+        }
+        // Veritabanı araçları ve web postası PHP ile çalışır; son sürüm kaldırılırsa çalışamazlar.
+        let tools = crate::dbtools::installed();
+        let remaining = hosting::php::installed_versions().into_iter().filter(|other| other != version).count();
+        if remaining == 0 && (tools.phpmyadmin || tools.adminer || tools.roundcube) {
+            return Ok(Some("Veritabanı araçları ya da web postası bu PHP sürümüyle çalışıyor; son PHP sürümü kaldırılamaz.".into()));
+        }
+        return Ok(None);
+    }
+    match id {
+        "redis" => {
+            let accounts: i64 = db.call(|conn| conn.query_row("SELECT COUNT(*) FROM redis_instances", [], |row| row.get(0)))?;
+            if accounts > 0 {
+                return Ok(Some(format!("{accounts} hesabın kendi Redis örneği var. Önce hesapların Redis örneklerini silin.")));
+            }
+            if status(&find("mail")?).await.installed {
+                return Ok(Some("Posta sunucusu (Rspamd) Redis kullanıyor. Önce posta sunucusu kaldırılmalı.".into()));
+            }
+            Ok(None)
+        }
+        "ftp" => {
+            let accounts: i64 = db.call(|conn| conn.query_row("SELECT COUNT(*) FROM ftp_accounts", [], |row| row.get(0)))?;
+            Ok((accounts > 0).then(|| format!("{accounts} FTP hesabı var. Önce hesapları silin.")))
+        }
+        "docker" => {
+            // Docker durmuşsa `docker ps` çalışmaz; bu durumda konteyner klasörüne bakılır.
+            let containers = match exec::run("docker", &["ps", "-aq"]).await {
+                Ok(output) if output.success() => output.stdout.lines().filter(|line| !line.trim().is_empty()).count(),
+                _ => std::fs::read_dir("/var/lib/docker/containers").map(|entries| entries.flatten().count()).unwrap_or(0),
+            };
+            if containers > 0 {
+                return Ok(Some(format!("{containers} konteyner var. Önce konteynerleri ve yığınları silin.")));
+            }
+            let stacks = std::fs::read_dir("/opt/pixpanel/stacks").map(|entries| entries.flatten().count()).unwrap_or(0);
+            Ok((stacks > 0).then(|| format!("{stacks} Compose yığını tanımlı. Önce yığınları silin.")))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Kaldırılacak paketler: bileşenin yalnızca ona ait paketleri. Başka bileşenlerle ortak paketler
+/// (python3-systemd, nftables, redis-server...) bilerek dışarıda bırakılır.
+async fn removal_packages(component: &Component) -> AppResult<Vec<String>> {
+    let candidates: Vec<String> = if let Some(version) = component.id.strip_prefix("php-") {
+        hosting::php::validate_version(version)?;
+        // Sürüme ait bütün paketler (eklentiler dahil); yalnızca bu sürümün ön ekiyle eşleşenler.
+        let prefix = format!("php{version}-");
+        let listing = exec::run("dpkg-query", &["-W", "-f=${db:Status-Abbrev}\t${Package}\n", &format!("{prefix}*")]).await?;
+        listing
+            .stdout
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .filter(|(status, name)| status.starts_with("ii") && name.starts_with(&prefix))
+            .map(|(_, name)| name.trim().to_string())
+            .collect()
+    } else if component.id == "fail2ban" {
+        vec!["fail2ban".into()]
+    } else if component.id == "redis" {
+        vec!["redis-server".into()]
+    } else {
+        component.packages.clone()
+    };
+    let mut installed = Vec::new();
+    for package in candidates {
+        if !crate::sys::updates::valid_package_name(&package) {
+            return Err(AppError::internal(format!("Beklenmeyen paket adı: {package}")));
+        }
+        if installed_version(&package).await.is_some() {
+            installed.push(package);
+        }
+    }
+    Ok(installed)
+}
+
+/// `apt-get -s remove` çıktısındaki `Remv` satırlarından kaldırılacak paketler.
+fn parse_removals(simulation: &str) -> Vec<String> {
+    simulation.lines().filter_map(|line| line.strip_prefix("Remv ")?.split_whitespace().next()).map(str::to_string).collect()
+}
+
+/// Bileşeni kaldırır (`apt-get remove`; yapılandırma ve veri dosyaları `purge` edilmez, yeniden
+/// kurulumda yerinde bulunur). Önce benzetim yapılır: apt bileşene ait olmayan bir paketi de
+/// kaldıracaksa (ör. başka bir bileşenin bağımlılığı) hiçbir şey yapılmadan durulur.
+pub async fn remove(ctx: &JobCtx, component: &Component) -> AppResult<()> {
+    ctx.log(format!("{} kaldırılıyor", component.name));
+    let packages = removal_packages(component).await?;
+    if packages.is_empty() {
+        ctx.log("Kaldırılacak paket yok");
+        return Ok(());
+    }
+    let mut simulate: Vec<&str> = vec!["-s", "-o", "Debug::NoLocking=true", "remove", "--"];
+    simulate.extend(packages.iter().map(String::as_str));
+    let plan = exec::run_with_timeout("apt-get", &simulate, std::time::Duration::from_secs(120)).await?;
+    if !plan.success() {
+        return Err(AppError::internal(format!("Kaldırma planı çıkarılamadı: {}", plan.stderr.trim())));
+    }
+    let extra: Vec<String> = parse_removals(&plan.stdout).into_iter().filter(|name| !packages.contains(name)).collect();
+    if !extra.is_empty() {
+        return Err(AppError::conflict(format!(
+            "Kaldırma, başka yazılımların dayandığı şu paketleri de silerdi; hiçbir şey kaldırılmadı: {}",
+            extra.join(", ")
+        )));
+    }
+    let mut args: Vec<&str> = vec!["remove", "-y", "-o", "DPkg::Lock::Timeout=180", "-o", "Dpkg::Use-Pty=0", "--"];
+    args.extend(packages.iter().map(String::as_str));
+    ctx.exec("apt-get", &args).await?;
+    ctx.log(format!("{} kaldırıldı (yapılandırma dosyaları korundu)", component.name));
+    Ok(())
+}
+
+#[cfg(test)]
+mod removal_tests {
+    use super::*;
+
+    #[test]
+    fn only_safe_components_are_removable() {
+        for id in ["php-8.3", "phpmyadmin", "adminer", "roundcube", "redis", "docker", "ftp", "fail2ban"] {
+            assert!(removable(id), "{id}");
+        }
+        for id in ["nginx", "mariadb", "postgresql", "mail", "dns", "restic", "python", "node-22"] {
+            assert!(!removable(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn removal_plan_lists_packages_to_be_removed() {
+        let simulation = "Reading package lists...\nRemv phpmyadmin [5.2.1]\nRemv php8.3-cli [8.3.1] []\nPurg x [1]\n";
+        assert_eq!(parse_removals(simulation), vec!["phpmyadmin".to_string(), "php8.3-cli".to_string()]);
+    }
 }

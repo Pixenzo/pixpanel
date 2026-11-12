@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
 import { Button, ErrorBlock, LoadingBlock, Modal, Mono, PageHeader, Panel, Status } from "../components/ui";
@@ -7,6 +7,9 @@ import type { ComponentStatus } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { t } from "../lib/i18n";
 import { JobLog } from "./Jobs";
+
+/** Sunucunun eklediği kaldırma bilgisi. */
+type ComponentRow = ComponentStatus & { removable?: boolean; in_use?: string | null };
 
 const categories: { id: ComponentStatus["category"]; title: string }[] = [
   { id: "web", title: "Web sunucusu" },
@@ -24,7 +27,7 @@ export function ComponentsPage() {
 
   const components = useQuery({
     queryKey: ["components"],
-    queryFn: () => api.get<ComponentStatus[]>("/components"),
+    queryFn: () => api.get<ComponentRow[]>("/components"),
   });
 
   const install = useMutation({
@@ -35,6 +38,25 @@ export function ComponentsPage() {
     },
     onError: (error) => feedback.error(error),
   });
+
+  const remove = useMutation({
+    mutationFn: (component: ComponentRow) => api.post<{ job_id: number }>(`/components/${component.id}/remove`),
+    onSuccess: (result, component) => {
+      setWatching({ jobId: result.job_id, title: t("{name} kaldırma", { name: component.name }) });
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error) => feedback.error(error),
+  });
+
+  async function confirmRemove(component: ComponentRow) {
+    const confirmed = await feedback.confirm({
+      title: t("{name} kaldırılsın mı?", { name: component.name }),
+      description: t("Paketler kaldırılır, yapılandırma dosyaları ve veriler silinmez; yeniden kurarsanız yerinde bulunur."),
+      confirmLabel: t("Kaldır"),
+      danger: true,
+    });
+    if (confirmed) remove.mutate(component);
+  }
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ["components"] });
@@ -62,6 +84,7 @@ export function ComponentsPage() {
                       <div className="min-w-48 flex-1">
                         <p className="font-medium">{component.name}</p>
                         <p className="text-[13.5px] text-ink-2">{t(component.description)}</p>
+                        {component.installed && component.in_use && <p className="mt-1 text-[13.5px] text-warn">{component.in_use}</p>}
                       </div>
                       {component.installed ? (
                         <>
@@ -76,6 +99,19 @@ export function ComponentsPage() {
                               <Status tone="ok">{t("Kurulu")}</Status>
                             )}
                           </div>
+                          {component.removable && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<Trash2 className="size-3.5" />}
+                              loading={remove.isPending && remove.variables?.id === component.id}
+                              disabled={Boolean(component.in_use)}
+                              title={component.in_use ?? undefined}
+                              onClick={() => void confirmRemove(component)}
+                            >
+                              {t("Kaldır")}
+                            </Button>
+                          )}
                         </>
                       ) : (
                         <Button

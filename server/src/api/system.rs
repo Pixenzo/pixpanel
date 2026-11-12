@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::auth::{self, AuthUser};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::sys::{exec, metrics, procs, services};
+use crate::sys::{exec, metrics, procs, services, updates};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -23,6 +23,11 @@ pub fn router() -> Router<AppState> {
         .route("/services", get(list_services))
         .route("/services/{name}/{action}", post(service_action))
         .route("/audit", get(audit_log))
+        .route("/updates", get(updates_view))
+        .route("/updates/refresh", post(updates_refresh))
+        .route("/updates/install", post(updates_install))
+        .route("/reboot", post(reboot))
+        .route("/reboot/cancel", post(reboot_cancel))
 }
 
 #[derive(Serialize)]
@@ -108,6 +113,52 @@ async fn service_action(
     user.require_admin()?;
     services::action(&name, &action).await?;
     auth::audit(&state.db, &user, "service.action", &name, &action);
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// Bekleyen paketler, yeniden başlatma durumu, çekirdek ve otomatik güncelleme özeti.
+async fn updates_view(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<updates::UpdatesView>> {
+    user.require_admin()?;
+    Ok(Json(updates::view(&state, None).await?))
+}
+
+/// Paket listesini ağdan yeniler ve yeniden sayar.
+async fn updates_refresh(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<updates::UpdatesView>> {
+    user.require_admin()?;
+    let warning = updates::refresh(&state).await?;
+    auth::audit(&state.db, &user, "system.updates.refresh", "", "");
+    Ok(Json(updates::view(&state, warning).await?))
+}
+
+#[derive(Deserialize)]
+struct InstallBody {
+    /// `security` ya da `all`.
+    scope: String,
+}
+
+async fn updates_install(State(state): State<AppState>, user: AuthUser, Json(body): Json<InstallBody>) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    let scope = updates::Scope::parse(&body.scope)?;
+    let job_id = updates::start_install(&state, Some(user.id), scope)?;
+    auth::audit(&state.db, &user, "system.updates.install", &body.scope, "");
+    Ok(Json(json!({ "job_id": job_id })))
+}
+
+/// Sunucunun yeniden başlatılmasını bir dakika sonrasına zamanlar; `reboot/cancel` ile iptal edilir.
+async fn reboot(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    if updates::job_running(&state) {
+        return Err(AppError::conflict("Güncelleme görevi sürerken sunucu yeniden başlatılamaz"));
+    }
+    updates::schedule_reboot().await?;
+    auth::audit(&state.db, &user, "system.reboot", "", "1 dakika sonra");
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn reboot_cancel(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    updates::cancel_reboot().await?;
+    auth::audit(&state.db, &user, "system.reboot.cancel", "", "");
     Ok(Json(json!({ "ok": true })))
 }
 

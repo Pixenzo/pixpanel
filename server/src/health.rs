@@ -258,9 +258,9 @@ impl Monitor {
         self.report.read().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
-    /// Paket listesi bir sonraki turda yeniden okunsun (güncelleme kurulduktan sonra).
-    fn forget_updates(&self) {
-        *self.updates.write().unwrap_or_else(|p| p.into_inner()) = PendingUpdates::default();
+    /// Güncellemeler sayfası taze sayım yaptığında Genel bakış da aynı sayıyı göstersin.
+    pub fn set_updates(&self, total: usize, security: usize) {
+        *self.updates.write().unwrap_or_else(|p| p.into_inner()) = PendingUpdates { checked_at: now(), total, security };
     }
 }
 
@@ -741,20 +741,14 @@ async fn refresh_updates(monitor: &Monitor) {
         return;
     }
     // Liste yenilenemese de (ağ yok) eldeki listeyle sayım yapılır.
-    let _ = exec::run_with_timeout("apt-get", &["update", "-qq", "-o", "DPkg::Lock::Timeout=30"], Duration::from_secs(180)).await;
-    let Ok(output) = exec::run_with_timeout("apt-get", &["-s", "-o", "Debug::NoLocking=true", "upgrade"], Duration::from_secs(120)).await
-    else {
+    if matches!(exec::run_with_timeout("apt-get", &["update", "-qq", "-o", "DPkg::Lock::Timeout=30"], Duration::from_secs(180)).await, Ok(output) if output.success()) {
+        crate::sys::updates::mark_checked();
+    }
+    let Ok(packages) = crate::sys::updates::scan().await else {
         return;
     };
-    let (total, security) = count_upgrades(&output.stdout);
-    *monitor.updates.write().unwrap_or_else(|p| p.into_inner()) = PendingUpdates { checked_at: now(), total, security };
-}
-
-/// `apt-get -s upgrade` çıktısından (toplam, güvenlik) güncelleme sayısını çıkarır.
-fn count_upgrades(simulation: &str) -> (usize, usize) {
-    let installs: Vec<&str> = simulation.lines().filter(|line| line.starts_with("Inst ")).collect();
-    let security = installs.iter().filter(|line| line.to_ascii_lowercase().contains("security")).count();
-    (installs.len(), security)
+    let security = packages.iter().filter(|package| package.security).count();
+    *monitor.updates.write().unwrap_or_else(|p| p.into_inner()) = PendingUpdates { checked_at: now(), total: packages.len(), security };
 }
 
 /// WordPress sitelerini bekleyen güncellemeler için tarar. Site başına birkaç saniye
@@ -896,17 +890,21 @@ fn check_updates(state: &AppState, batch: &mut Batch) {
         };
         batch.push(
             Finding::new("updates.pending", "server", severity, title, "İşletim sistemi paketlerinin yeni sürümleri var. Güvenlik güncellemelerini geciktirmeyin.")
+                .link("/updates")
                 .fix("Güncellemeleri kur"),
         );
     }
     if std::path::Path::new("/var/run/reboot-required").exists() {
-        batch.push(Finding::new(
-            "system.reboot",
-            "server",
-            Severity::Info,
-            "Sunucunun yeniden başlatılması gerekiyor",
-            "Kurulan bir güncelleme (çoğunlukla çekirdek) ancak yeniden başlatınca devreye girer. Uygun bir saatte sunucuyu yeniden başlatın.",
-        ));
+        batch.push(
+            Finding::new(
+                "system.reboot",
+                "server",
+                Severity::Info,
+                "Sunucunun yeniden başlatılması gerekiyor",
+                "Kurulan bir güncelleme (çoğunlukla çekirdek) ancak yeniden başlatınca devreye girer. Uygun bir saatte sunucuyu yeniden başlatın.",
+            )
+            .link("/updates"),
+        );
     }
     if crate::update::view(state).available {
         batch.push(
@@ -1359,24 +1357,10 @@ pub async fn apply_security_updates(state: &AppState, enabled: bool) {
     });
 }
 
-/// İşletim sistemi paketlerini günceller. Yapılandırma dosyalarında var olan hâl korunur.
+/// İşletim sistemi paketlerini günceller (Güncellemeler sayfasındaki "Hepsini kur" ile aynı görev).
+/// Yapılandırma dosyalarında var olan hâl korunur.
 fn start_upgrade_job(state: &AppState, user_id: Option<i64>) -> AppResult<i64> {
-    let job_state = state.clone();
-    state.jobs.start("system.upgrade", "Paket güncellemeleri", user_id, move |ctx| async move {
-        if job_state.apt_lock.try_lock().is_err() {
-            ctx.log("Başka bir kurulumun bitmesi bekleniyor");
-        }
-        let _guard = job_state.apt_lock.lock().await;
-        ctx.exec("apt-get", &["update", "-o", "DPkg::Lock::Timeout=180"]).await?;
-        ctx.exec(
-            "apt-get",
-            &["upgrade", "-y", "-o", "DPkg::Lock::Timeout=180", "-o", "Dpkg::Use-Pty=0", "-o", "Dpkg::Options::=--force-confold"],
-        )
-        .await?;
-        job_state.health.forget_updates();
-        ctx.log("Güncellemeler kuruldu");
-        Ok(())
-    })
+    crate::sys::updates::start_install(state, user_id, crate::sys::updates::Scope::All)
 }
 
 #[cfg(test)]
@@ -1392,13 +1376,6 @@ mod tests {
         assert_eq!(blocks[0]["ActiveState"], "failed");
         assert_eq!(blocks[1]["LoadState"], "not-found");
         assert_eq!(blocks[1]["UnitFileState"], "");
-    }
-
-    #[test]
-    fn upgrades_are_counted_with_security_subset() {
-        let simulation = "Reading package lists...\nInst libssl3 [3.0.1] (3.0.2 Debian-Security:13/stable-security [amd64])\nInst curl [8.1] (8.2 Debian:13.2/stable [amd64])\nConf libssl3 (3.0.2 Debian-Security:13/stable-security [amd64])\nConf curl (8.2 Debian:13.2/stable [amd64])\n";
-        assert_eq!(count_upgrades(simulation), (2, 1));
-        assert_eq!(count_upgrades("Reading package lists...\n0 upgraded, 0 newly installed\n"), (0, 0));
     }
 
     #[test]
