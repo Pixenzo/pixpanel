@@ -320,9 +320,9 @@ pub async fn list(domain: &str) -> AppResult<Vec<Record>> {
     Ok(records)
 }
 
-/// Bir ad ve türe ait kayıt kümesini verilen kayıtlarla değiştirir; boşsa kümeyi siler.
-async fn write_set(domain: &str, name: &str, kind: &str, records: &[&Record]) -> AppResult<()> {
-    let rrset = if records.is_empty() {
+/// Bir kayıt kümesinin API gövdesi; küme boşsa silme isteği olur.
+fn rrset_json(name: &str, kind: &str, records: &[&Record]) -> Value {
+    if records.is_empty() {
         json!({ "name": dotted(name), "type": kind, "changetype": "DELETE" })
     } else {
         json!({
@@ -332,8 +332,142 @@ async fn write_set(domain: &str, name: &str, kind: &str, records: &[&Record]) ->
             "changetype": "REPLACE",
             "records": records.iter().map(|record| json!({ "content": to_wire(record), "disabled": false })).collect::<Vec<_>>(),
         })
+    }
+}
+
+/// Bir ad ve türe ait kayıt kümesini verilen kayıtlarla değiştirir; boşsa kümeyi siler.
+async fn write_set(domain: &str, name: &str, kind: &str, records: &[&Record]) -> AppResult<()> {
+    request(reqwest::Method::PATCH, &format!("/zones/{}", dotted(domain)), Some(json!({ "rrsets": [rrset_json(name, kind, records)] }))).await.map(|_| ())
+}
+
+/// Birçok kayıt kümesini tek istekte (tek işlemde) yazar; içe aktarma için. Her öğe: (ad, tür, kümenin son hâli).
+pub async fn write_sets(domain: &str, sets: &[(String, String, Vec<Record>)]) -> AppResult<()> {
+    let rrsets: Vec<Value> = sets.iter().map(|(name, kind, records)| rrset_json(name, kind, &records.iter().collect::<Vec<_>>())).collect();
+    request(reqwest::Method::PATCH, &format!("/zones/{}", dotted(domain)), Some(json!({ "rrsets": rrsets }))).await.map(|_| ())
+}
+
+// ---- DNSSEC ----
+
+/// Alan adı kayıt firmasına girilecek DS kaydı.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DsRecord {
+    pub key_tag: u16,
+    pub algorithm: u8,
+    pub digest_type: u8,
+    pub digest: String,
+}
+
+/// Bölgenin imzalama anahtarı (KSK ya da CSK; ZSK için DS gerekmez ve gösterilmez).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DnssecKey {
+    pub id: u64,
+    pub keytype: String,
+    pub algorithm: String,
+    /// `bayrak protokol algoritma açık-anahtar` (DNSKEY kaydının veri kısmı).
+    pub dnskey: String,
+    pub ds: Vec<DsRecord>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Dnssec {
+    pub enabled: bool,
+    pub keys: Vec<DnssecKey>,
+}
+
+/// PowerDNS'in `ds` dizisindeki bir satırı ayrıştırır: `anahtar-etiketi algoritma özet-türü özet`.
+pub fn parse_ds(line: &str) -> Option<DsRecord> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    let [tag, algorithm, digest_type, digest] = parts.as_slice() else { return None };
+    if digest.is_empty() || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(DsRecord { key_tag: tag.parse().ok()?, algorithm: algorithm.parse().ok()?, digest_type: digest_type.parse().ok()?, digest: digest.to_ascii_uppercase() })
+}
+
+/// DNSKEY satırı yalnızca base64 ve sayılardan oluşmalı; arayüze ham metin olarak gider.
+fn clean_dnskey(line: &str) -> Option<String> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    let [flags, protocol, algorithm, key] = parts.as_slice() else { return None };
+    let numbers = [flags, protocol, algorithm].iter().all(|part| part.bytes().all(|b| b.is_ascii_digit()));
+    let base64 = !key.is_empty() && key.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='));
+    (numbers && base64).then(|| format!("{flags} {protocol} {algorithm} {key}"))
+}
+
+/// Bölgedeki imzalama anahtarları. DNSSEC, etkin bir KSK/CSK varsa açık sayılır.
+pub async fn dnssec_status(domain: &str) -> AppResult<Dnssec> {
+    let list = request(reqwest::Method::GET, &format!("/zones/{}/cryptokeys", dotted(domain)), None).await?;
+    let mut keys = Vec::new();
+    let mut enabled = false;
+    for item in list.as_array().into_iter().flatten() {
+        let keytype = item["keytype"].as_str().unwrap_or_default().to_ascii_lowercase();
+        if !matches!(keytype.as_str(), "ksk" | "csk") || !item["active"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        enabled = true;
+        let mut ds: Vec<DsRecord> = item["ds"].as_array().into_iter().flatten().filter_map(|line| line.as_str().and_then(parse_ds)).collect();
+        // SHA-1 özeti artık önerilmez; SHA-256 (2) ve SHA-384 (4) kalır. Hiçbiri yoksa eldeki gösterilir.
+        if ds.iter().any(|record| record.digest_type != 1) {
+            ds.retain(|record| record.digest_type != 1);
+        }
+        ds.sort_by_key(|record| record.digest_type);
+        keys.push(DnssecKey {
+            id: item["id"].as_u64().unwrap_or(0),
+            keytype,
+            algorithm: item["algorithm"].as_str().unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).collect(),
+            dnskey: item["dnskey"].as_str().and_then(clean_dnskey).unwrap_or_default(),
+            ds,
+        });
+    }
+    Ok(Dnssec { enabled, keys })
+}
+
+/// Kayıt kümelerini aynen yeniden yazarak SOA seri numarasını artırır (`soa_edit_api`); ikincillerin
+/// değişikliği (anahtar, imza) alması için seri numarası değişmelidir.
+pub async fn bump_serial(domain: &str) -> AppResult<()> {
+    let ns: Vec<Record> = list(domain).await?.into_iter().filter(|record| record.kind == "NS" && record.name == domain).collect();
+    if ns.is_empty() {
+        return Ok(());
+    }
+    write_set(domain, domain, "NS", &ns.iter().collect::<Vec<_>>()).await
+}
+
+/// DNSSEC'i açar: ECDSA P-256 (algoritma 13) tek imzalama anahtarı (CSK) üretilir, bölge her API
+/// değişikliğinde düzeltilecek (`api_rectify`) biçimde işaretlenir ve bir kez düzeltilir.
+/// NSEC3 kullanılmaz (düz NSEC).
+pub async fn dnssec_enable(domain: &str) -> AppResult<()> {
+    if dnssec_status(domain).await?.enabled {
+        return Err(AppError::conflict("DNSSEC bu bölgede zaten açık"));
+    }
+    let zone_path = format!("/zones/{}", dotted(domain));
+    let key = json!({ "keytype": "csk", "active": true, "published": true, "algorithm": "ecdsa256", "bits": 256 });
+    request(reqwest::Method::POST, &format!("{zone_path}/cryptokeys"), Some(key)).await?;
+    let finish = async {
+        request(reqwest::Method::PUT, &zone_path, Some(json!({ "api_rectify": true }))).await?;
+        request(reqwest::Method::PUT, &format!("{zone_path}/rectify"), None).await?;
+        bump_serial(domain).await
     };
-    request(reqwest::Method::PATCH, &format!("/zones/{}", dotted(domain)), Some(json!({ "rrsets": [rrset] }))).await.map(|_| ())
+    if let Err(err) = finish.await {
+        // Yarım kalmış imzalama (anahtar var, düzeltme yok) yanlış yanıtlara yol açar; anahtar geri alınır.
+        let _ = remove_keys(domain).await;
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn remove_keys(domain: &str) -> AppResult<()> {
+    let zone_path = format!("/zones/{}", dotted(domain));
+    let list = request(reqwest::Method::GET, &format!("{zone_path}/cryptokeys"), None).await?;
+    for id in list.as_array().into_iter().flatten().filter_map(|item| item["id"].as_u64()) {
+        request(reqwest::Method::DELETE, &format!("{zone_path}/cryptokeys/{id}"), None).await?;
+    }
+    Ok(())
+}
+
+/// DNSSEC'i kapatır: bölgenin bütün anahtarları silinir. Alan adı kayıt firmasında DS kaydı hâlâ
+/// duruyorsa doğrulayan çözücüler alan adını çözemez; bu yüzden arayüz önce DS'nin kaldırılmasını ister.
+pub async fn dnssec_disable(domain: &str) -> AppResult<()> {
+    remove_keys(domain).await?;
+    bump_serial(domain).await
 }
 
 fn same_set(a: &Record, b: &Record) -> bool {
@@ -394,6 +528,19 @@ mod tests {
         assert_eq!(txt_from_wire(&wire), long);
         let tricky = r#"a "quoted" \ value"#;
         assert_eq!(txt_from_wire(&txt_to_wire(tricky)), tricky);
+    }
+
+    #[test]
+    fn ds_lines_are_parsed_strictly() {
+        let ds = parse_ds("12345 13 2 abcdef0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789").unwrap();
+        assert_eq!((ds.key_tag, ds.algorithm, ds.digest_type), (12345, 13, 2));
+        assert!(ds.digest.starts_with("ABCDEF01"));
+        for bad in ["", "12345 13 2", "x 13 2 ab", "12345 13 2 zz", "12345 13 2 ab cd", "70000 13 2 ab"] {
+            assert!(parse_ds(bad).is_none(), "{bad}");
+        }
+        assert_eq!(clean_dnskey("257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ=="), Some("257 3 13 mdsswUyr3DPW132mOi8V9xESWE8jTo0dxCjjnopKl+GqJxpVXckHAeF+KkxLbxILfDLUT0rAK9iUzy1L53eKGQ==".to_string()));
+        assert!(clean_dnskey("257 3 13 a;b").is_none());
+        assert!(clean_dnskey("257 3 13").is_none());
     }
 
     #[test]

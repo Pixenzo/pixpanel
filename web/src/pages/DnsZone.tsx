@@ -2,7 +2,7 @@
 // Cloudflare ayarları ve site/posta kayıtlarının otomatik eklenmesi.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Copy, Download, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Upload } from "lucide-react";
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -41,9 +41,31 @@ interface CloudflareInfo {
   writable_kinds: string[];
 }
 
+interface DsRecord {
+  key_tag: number;
+  algorithm: number;
+  digest_type: number;
+  digest: string;
+}
+
+interface DnssecKey {
+  id: number;
+  keytype: string;
+  algorithm: string;
+  dnskey: string;
+  ds: DsRecord[];
+}
+
+interface DnssecInfo {
+  enabled: boolean;
+  keys: DnssecKey[];
+}
+
 interface ZoneDetail {
   zone: Zone;
   records: DnsRecord[];
+  /** Yalnızca bu sunucudaki bölgelerde dolu; Cloudflare bölgelerinde null (bölüm gösterilmez). */
+  dnssec: DnssecInfo | null;
   kinds: string[];
   /** Yalnızca bu sunucuda barındırılan bölgelerde dolu. */
   nameservers: string[] | null;
@@ -107,11 +129,11 @@ function useCopy(): [boolean, (value: string) => Promise<void>] {
 }
 
 /** Tek satırlık, kopyalanabilir makine değeri. */
-function CopyValue({ value }: { value: string }) {
+function CopyValue({ value, display }: { value: string; display?: string }) {
   const [copied, copy] = useCopy();
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <code className="min-w-0 flex-1 truncate rounded-md border border-line bg-sunken/60 px-3 py-1.5 font-mono text-[13px] select-all">{value}</code>
+      <code title={value} className="min-w-0 flex-1 truncate rounded-md border border-line bg-sunken/60 px-3 py-1.5 font-mono text-[13px] select-all">{display ?? value}</code>
       <IconButton label={copied ? t("Kopyalandı") : t("Kopyala")} onClick={() => void copy(value)}>
         {copied ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
       </IconButton>
@@ -658,6 +680,386 @@ function RecordsPanel({
   );
 }
 
+// ---- DNSSEC ----
+
+const dsAlgorithms: Record<number, string> = { 8: "RSA/SHA-256", 13: "ECDSA P-256", 14: "ECDSA P-384", 15: "Ed25519", 16: "Ed448" };
+const dsDigests: Record<number, string> = { 1: "SHA-1", 2: "SHA-256", 4: "SHA-384" };
+
+function labelled(value: number, names: Record<number, string>): string {
+  return names[value] ? `${value} (${names[value]})` : String(value);
+}
+
+function DsField({ label, value, shown }: { label: string; value: string; shown?: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-[13px] font-medium text-ink-2">{label}</span>
+      <CopyValue value={value} display={shown} />
+    </div>
+  );
+}
+
+function DnssecPanel({ zone, info }: { zone: Zone; info: DnssecInfo }) {
+  const feedback = useFeedback();
+  const queryClient = useQueryClient();
+
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => api.post<{ dnssec: DnssecInfo }>(`/dns/zones/${zone.id}/dnssec`, { enabled }),
+    onSuccess: (result, enabled) => {
+      queryClient.setQueryData<ZoneDetail>(detailKey(zone.id), (old) => (old ? { ...old, dnssec: result.dnssec } : old));
+      feedback.success(enabled ? t("DNSSEC açıldı. DS kaydını kayıt firmasına girmeyi unutmayın.") : t("DNSSEC kapatıldı"));
+    },
+    onError: (error) => feedback.error(error),
+  });
+
+  async function confirmDisable() {
+    const confirmed = await feedback.confirm({
+      title: t("{domain} için DNSSEC kapatılsın mı?", { domain: zone.domain }),
+      description: t(
+        "Kapatmadan ÖNCE alan adını aldığınız kayıt firmasından DS kaydını kaldırmış olmalısınız. DS kaydı yerinde dururken DNSSEC kapatılırsa doğrulama yapan çözücüler alan adını çözemez; siteniz ve postanız erişilemez olur. DS kaldırıldıktan sonra yayılması için kayıt süresi (genellikle 1–2 gün) beklenir.",
+      ),
+      confirmLabel: t("DNSSEC'i kapat"),
+      danger: true,
+      typeToConfirm: zone.domain,
+    });
+    if (confirmed) toggle.mutate(false);
+  }
+
+  async function confirmEnable() {
+    const confirmed = await feedback.confirm({
+      title: t("{domain} için DNSSEC açılsın mı?", { domain: zone.domain }),
+      description: t(
+        "Bölge imzalanır ve ECDSA P-256 anahtarı üretilir. DNSSEC, kayıt firmasına DS kaydı girilene kadar doğrulanmaz; DS girildikten sonra da bu bölgeyi kapatmadan önce DS'yi kaldırmanız gerekir.",
+      ),
+      confirmLabel: t("DNSSEC'i aç"),
+    });
+    if (confirmed) toggle.mutate(true);
+  }
+
+  return (
+    <Panel
+      title={
+        <span className="inline-flex items-center gap-2">
+          <ShieldCheck className="size-4 text-ink-2" /> {t("DNSSEC")}
+        </span>
+      }
+      actions={
+        info.enabled ? (
+          <Button size="sm" variant="danger" loading={toggle.isPending} onClick={() => void confirmDisable()}>
+            {t("DNSSEC'i kapat")}
+          </Button>
+        ) : (
+          <Button size="sm" variant="primary" loading={toggle.isPending} onClick={() => void confirmEnable()}>
+            {t("DNSSEC'i aç")}
+          </Button>
+        )
+      }
+      className="mb-4"
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Status tone={info.enabled ? "ok" : "idle"}>{info.enabled ? t("Açık") : t("Kapalı")}</Status>
+          <p className="max-w-[80ch] text-ink-2">
+            {info.enabled
+              ? t("Bölge imzalı yayınlanıyor. Yeni ve değişen kayıtlar kendiliğinden imzalanır.")
+              : t("DNSSEC, yanıtların sahte olmadığını doğrulanabilir hâle getirir. Açınca bölge ECDSA P-256 ile imzalanır; ardından alan adını aldığınız kayıt firmasına DS kaydını girmeniz gerekir.")}
+          </p>
+        </div>
+
+        {info.enabled && (
+          <>
+            <div role="note" className="rounded-lg border border-warn/40 bg-warn-soft px-4 py-3 text-warn">
+              <p className="font-medium">{t("DS kaydını kayıt firmasına girin")}</p>
+              <ul className="mt-1 list-disc pl-5 text-[13.5px]">
+                <li>{t("Aşağıdaki DS kaydı alan adını aldığınız kayıt firmasının panelinde girilmedikçe çözümleme doğrulanmaz; DNSSEC bir güvenlik sağlamaz.")}</li>
+                <li>{t("DNSSEC'i kapatmadan ÖNCE kayıt firmasından DS kaydını kaldırın; yoksa alan adı çözülmez.")}</li>
+                <li>{t("Çoğu firma yalnızca DS kaydını ister; bazıları DNSKEY de ister, ikisi de aşağıda.")}</li>
+              </ul>
+            </div>
+
+            {info.keys.map((key) => (
+              <div key={key.id} className="flex flex-col gap-4 rounded-lg border border-line p-4">
+                <p className="text-[13.5px] text-ink-2">
+                  {t("Anahtar")} {key.id} · {key.keytype.toUpperCase()} · {key.algorithm}
+                </p>
+                {key.ds.length === 0 && <p className="text-ink-3">{t("Bu anahtar için DS kaydı üretilemedi.")}</p>}
+                {key.ds.map((ds) => (
+                  <div key={`${ds.digest_type}`} className="flex flex-col gap-3">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <DsField label={t("Anahtar etiketi (Key Tag)")} value={String(ds.key_tag)} />
+                      <DsField label={t("Algoritma")} value={String(ds.algorithm)} shown={labelled(ds.algorithm, dsAlgorithms)} />
+                      <DsField label={t("Özet türü (Digest Type)")} value={String(ds.digest_type)} shown={labelled(ds.digest_type, dsDigests)} />
+                    </div>
+                    <DsField label={t("Özet (Digest)")} value={ds.digest} />
+                    <DsField label={t("DS kaydı (tek satır)")} value={`${zone.domain}. IN DS ${ds.key_tag} ${ds.algorithm} ${ds.digest_type} ${ds.digest}`} />
+                  </div>
+                ))}
+                {key.dnskey && <DsField label={t("DNSKEY kaydı")} value={`${zone.domain}. IN DNSKEY ${key.dnskey}`} />}
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+// ---- Bölge dosyası: dışa ve içe aktarma ----
+
+interface SkippedLine {
+  line: number;
+  text: string;
+  reason: string;
+}
+
+interface ImportReply {
+  add: DnsRecord[];
+  existing_count: number;
+  remove: DnsRecord[];
+  skipped: SkippedLine[];
+  skipped_total: number;
+  notes: string[];
+  result: { added: number; removed: number; failed: string[] } | null;
+  records?: DnsRecord[];
+}
+
+const MAX_IMPORT_BYTES = 512 * 1024;
+const PREVIEW_ROWS = 100;
+
+function RecordList({ records, zone }: { records: DnsRecord[]; zone: string }) {
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <Th>{t("Tür")}</Th>
+          <Th>{t("Ad")}</Th>
+          <Th>{t("Değer")}</Th>
+          <Th>{t("TTL")}</Th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.slice(0, PREVIEW_ROWS).map((record, index) => (
+          <tr key={index}>
+            <Td className="whitespace-nowrap">
+              <Badge tone="accent">{record.type}</Badge>
+            </Td>
+            <Td className="max-w-40">
+              <p className="truncate" title={record.name}>
+                <Mono>{relativeName(record.name, zone)}</Mono>
+              </p>
+            </Td>
+            <Td className="max-w-xs">
+              <p className="truncate" title={record.content}>
+                {record.priority !== null && <span className="tabular mr-1.5 text-[12.5px] text-ink-3">{record.priority}</span>}
+                <Mono>{record.content}</Mono>
+              </p>
+            </Td>
+            <Td className="whitespace-nowrap text-ink-2">{formatTtl(record.ttl)}</Td>
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  );
+}
+
+function ImportModal({ detail, onClose }: { detail: ZoneDetail; onClose: () => void }) {
+  const feedback = useFeedback();
+  const updateRecords = useRecordsCache(detail.zone.id);
+  const zone = detail.zone.domain;
+  const [text, setText] = useState("");
+  const [replace, setReplace] = useState(false);
+  const [preview, setPreview] = useState<ImportReply | null>(null);
+  const [applied, setApplied] = useState<ImportReply | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const run = useMutation({
+    mutationFn: (apply: boolean) => api.post<ImportReply>(`/dns/zones/${detail.zone.id}/import`, { text, replace, apply }),
+    onSuccess: (reply, apply) => {
+      if (!apply) {
+        setPreview(reply);
+        return;
+      }
+      if (reply.records) updateRecords(reply.records);
+      setApplied(reply);
+      if (reply.result && reply.result.failed.length === 0) {
+        feedback.success(t("{added} kayıt eklendi, {removed} kayıt silindi", { added: reply.result.added, removed: reply.result.removed }));
+        onClose();
+      }
+    },
+  });
+
+  function edit(next: string) {
+    setText(next);
+    setPreview(null);
+    setApplied(null);
+    setLocalError(null);
+  }
+
+  async function load(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_IMPORT_BYTES) {
+      setLocalError(t("Dosya en çok {kb} KB olabilir.", { kb: MAX_IMPORT_BYTES / 1024 }));
+      return;
+    }
+    edit(await file.text());
+  }
+
+  function startPreview() {
+    if (!text.trim()) {
+      setLocalError(t("Bölge dosyasını yapıştırın ya da bir dosya seçin."));
+      return;
+    }
+    if (new Blob([text]).size > MAX_IMPORT_BYTES) {
+      setLocalError(t("Metin en çok {kb} KB olabilir.", { kb: MAX_IMPORT_BYTES / 1024 }));
+      return;
+    }
+    setLocalError(null);
+    run.mutate(false);
+  }
+
+  async function apply() {
+    if (!preview) return;
+    if (preview.remove.length > 0) {
+      const confirmed = await feedback.confirm({
+        title: t("{n} var olan kayıt silinsin mi?", { n: preview.remove.length }),
+        description: t("“Var olanları değiştir” açık: dosyada bulunan ad ve türlerdeki, dosyada olmayan kayıtlar silinir. Bu işlem geri alınamaz."),
+        confirmLabel: t("Uygula"),
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    run.mutate(true);
+  }
+
+  const nothingToDo = preview !== null && preview.add.length === 0 && preview.remove.length === 0;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      extraWide
+      title={t("Bölge dosyasını içe aktar")}
+      description={t("BIND biçimindeki bölge dosyasından {domain} bölgesine kayıt ekler.", { domain: zone })}
+      footer={
+        <>
+          <Button onClick={onClose}>{applied ? t("Kapat") : t("Vazgeç")}</Button>
+          {!applied && (
+            <>
+              <Button loading={run.isPending && !run.variables} onClick={startPreview} disabled={run.isPending}>
+                {t("Önizle")}
+              </Button>
+              <Button variant="primary" loading={run.isPending && run.variables === true} disabled={!preview || nothingToDo || run.isPending} onClick={() => void apply()}>
+                {t("Uygula")}
+              </Button>
+            </>
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        <Textarea
+          label={t("Bölge dosyası")}
+          value={text}
+          onChange={(event) => edit(event.target.value)}
+          placeholder={"$ORIGIN " + zone + ".\n$TTL 3600\n@ IN A 203.0.113.10\nwww IN CNAME @"}
+          hint={t("En çok 512 KB ve 5000 kayıt. A, AAAA, CNAME, MX, TXT, NS, SRV ve CAA alınır; SOA ve öteki türler atlanır.")}
+          spellCheck={false}
+          className="min-h-48"
+        />
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[13.5px] font-medium text-accent hover:underline">
+            <Upload className="size-4" />
+            {t("Dosyadan yükle")}
+            <input type="file" accept=".zone,.txt,.db,text/plain" className="sr-only" onChange={(event) => void load(event.target.files?.[0])} />
+          </label>
+          <Checkbox
+            label={t("Aynı ad ve türdeki var olan kayıtları değiştir")}
+            hint={t("Kapalıyken var olan kayıtlara dokunulmaz, yalnızca eksikler eklenir.")}
+            checked={replace}
+            onChange={(event) => {
+              setReplace(event.target.checked);
+              setPreview(null);
+              setApplied(null);
+            }}
+          />
+        </div>
+
+        {(localError || run.isError) && <ErrorBlock message={localError ?? errorMessage(run.error)} />}
+
+        {preview && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <Status tone="ok">{t("Eklenecek: {n}", { n: preview.add.length })}</Status>
+              <Status tone="idle">{t("Zaten var: {n}", { n: preview.existing_count })}</Status>
+              {preview.remove.length > 0 && <Status tone="bad">{t("Silinecek: {n}", { n: preview.remove.length })}</Status>}
+              <Status tone="warn">{t("Atlanacak: {n}", { n: preview.skipped_total })}</Status>
+            </div>
+            {preview.notes.map((note) => (
+              <p key={note} className="text-ink-2">
+                {note}
+              </p>
+            ))}
+            {nothingToDo && <p className="text-ink-2">{t("Eklenecek ya da silinecek bir şey yok.")}</p>}
+            {preview.add.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold">{t("Eklenecek kayıtlar")}</h3>
+                <RecordList records={preview.add} zone={zone} />
+                {preview.add.length > PREVIEW_ROWS && <p className="text-[13px] text-ink-3">{t("İlk {n} kayıt gösteriliyor; hepsi eklenir.", { n: PREVIEW_ROWS })}</p>}
+              </div>
+            )}
+            {preview.remove.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold text-bad">{t("Silinecek kayıtlar")}</h3>
+                <RecordList records={preview.remove} zone={zone} />
+              </div>
+            )}
+            {preview.skipped.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h3 className="font-semibold">{t("Atlanan satırlar")}</h3>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>{t("Satır")}</Th>
+                      <Th>{t("İçerik")}</Th>
+                      <Th>{t("Neden")}</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.skipped.slice(0, PREVIEW_ROWS).map((item, index) => (
+                      <tr key={index}>
+                        <Td className="tabular whitespace-nowrap text-ink-2">{item.line}</Td>
+                        <Td className="max-w-xs">
+                          <p className="truncate" title={item.text}>
+                            <Mono>{item.text}</Mono>
+                          </p>
+                        </Td>
+                        <Td className="text-ink-2">{item.reason}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+                {preview.skipped_total > Math.min(preview.skipped.length, PREVIEW_ROWS) && (
+                  <p className="text-[13px] text-ink-3">{t("Atlanan satırların bir kısmı gösteriliyor.")}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {applied?.result && applied.result.failed.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <ErrorBlock message={t("{added} kayıt eklendi, {removed} silindi; bazı kayıtlar yazılamadı:", { added: applied.result.added, removed: applied.result.removed })} />
+            <ul className="list-disc pl-5 text-ink-2">
+              {applied.result.failed.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // ---- Çalışma alanı ----
 
 function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
@@ -668,6 +1070,22 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
   const isLocal = zone.provider === "local";
   const [recordModal, setRecordModal] = useState<{ record: DnsRecord | null } | null>(null);
   const [report, setReport] = useState<string[] | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  const exportZone = useMutation({
+    mutationFn: () => api.get<{ filename: string; content: string }>(`/dns/zones/${zone.id}/export`),
+    onSuccess: (file) => {
+      const url = URL.createObjectURL(new Blob([file.content], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    },
+    onError: (error) => feedback.error(error),
+  });
 
   const sync = useMutation({
     mutationFn: () => api.post<{ report: string[] }>(`/dns/zones/${zone.id}/sync`),
@@ -720,6 +1138,12 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
           <Button loading={sync.isPending} onClick={() => sync.mutate()}>
             {t("Site ve posta kayıtlarını ekle")}
           </Button>
+          <Button icon={<Download className="size-3.5" />} loading={exportZone.isPending} onClick={() => exportZone.mutate()}>
+            {t("Dışa aktar")}
+          </Button>
+          <Button icon={<Upload className="size-3.5" />} onClick={() => setImporting(true)}>
+            {t("İçe aktar")}
+          </Button>
           <Button variant="danger" loading={removeZone.isPending} onClick={() => void confirmRemove()}>
             {isLocal ? t("Bölgeyi sil") : t("Bağlantıyı kaldır")}
           </Button>
@@ -727,12 +1151,14 @@ function ZoneWorkspace({ detail }: { detail: ZoneDetail }) {
       </header>
 
       {isLocal && detail.nameservers && <NameserversPanel nameservers={detail.nameservers} serverIp={detail.server_ip} />}
+      {isLocal && detail.dnssec && <DnssecPanel zone={zone} info={detail.dnssec} />}
       {detail.cloudflare && <CloudflareStrip zoneId={zone.id} info={detail.cloudflare} />}
 
       <RecordsPanel detail={detail} onAdd={() => setRecordModal({ record: null })} onEdit={(record) => setRecordModal({ record })} />
 
       {recordModal && <RecordModal detail={detail} record={recordModal.record} onClose={() => setRecordModal(null)} />}
       {report && <SyncReportModal report={report} onClose={() => setReport(null)} />}
+      {importing && <ImportModal detail={detail} onClose={() => setImporting(false)} />}
     </>
   );
 }

@@ -27,6 +27,9 @@ pub fn router() -> Router<AppState> {
         .route("/zones/{id}/records", post(create_record).put(update_record))
         .route("/zones/{id}/records/delete", post(delete_record))
         .route("/zones/{id}/sync", post(sync_zone))
+        .route("/zones/{id}/dnssec", post(dnssec_switch))
+        .route("/zones/{id}/export", get(export_zone))
+        .route("/zones/{id}/import", post(import_zone))
         .route("/zones/{id}/cloudflare", post(cloudflare_settings))
         .route("/zones/{id}/purge", post(purge_cache))
         .route("/cluster", get(cluster_view).put(cluster_save))
@@ -372,9 +375,12 @@ async fn zone_detail(State(state): State<AppState>, user: AuthUser, Path(id): Pa
     } else {
         Value::Null
     };
+    // DNSSEC yalnızca bu sunucudaki bölgelerde yönetilir; durum okunamazsa kutu gösterilmez.
+    let dnssec = if zone.provider == "local" { local::dnssec_status(&zone.domain).await.ok() } else { None };
     Ok(Json(json!({
         "zone": zone,
         "records": records,
+        "dnssec": dnssec,
         "kinds": dns::KINDS,
         // Yerel bölgelerde alan adının kayıt şirketinde tanımlanması gereken ad sunucuları.
         "nameservers": if zone.provider == "local" { json!(nameservers) } else { Value::Null },
@@ -449,6 +455,91 @@ async fn delete_record(State(state): State<AppState>, user: AuthUser, Path(id): 
     dns::delete_record(&state, &zone, &record).await?;
     auth::audit(&state.db, &user, "dns.record.delete", &format!("{} {}", record.kind, record.name), &zone.domain);
     records_reply(&state, &zone).await
+}
+
+// ---- DNSSEC (yerel bölgeler) ----
+
+#[derive(Deserialize)]
+struct DnssecBody {
+    enabled: bool,
+}
+
+async fn dnssec_switch(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<DnssecBody>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    let zone = dns::get_zone(&state.db, &user, id)?;
+    if zone.provider != "local" {
+        return Err(AppError::bad("DNSSEC yalnızca bu sunucudaki bölgelerde yönetilir; Cloudflare bölgelerinde Cloudflare panelini kullanın"));
+    }
+    let _guard = state.sys_lock.lock().await;
+    if body.enabled {
+        local::dnssec_enable(&zone.domain).await?;
+    } else {
+        local::dnssec_disable(&zone.domain).await?;
+    }
+    // İkincillere imzalı (ya da imzasız) bölgenin yeni seri numarası bildirilir.
+    dns::announce(&state, &zone).await;
+    auth::audit(&state.db, &user, if body.enabled { "dns.dnssec.enable" } else { "dns.dnssec.disable" }, &zone.domain, "");
+    Ok(Json(json!({ "dnssec": local::dnssec_status(&zone.domain).await? })))
+}
+
+// ---- Bölge dosyası: dışa ve içe aktarma ----
+
+/// Bölgeyi BIND bölge dosyası olarak verir (her sağlayıcıda, kayıtlardan üretilir).
+async fn export_zone(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    let zone = dns::get_zone(&state.db, &user, id)?;
+    let records = dns::list_records(&state, &zone).await?;
+    let serial = u32::try_from(now()).unwrap_or(1);
+    Ok(Json(json!({
+        "filename": format!("{}.zone", zone.domain),
+        "content": dns::zonefile::export(&zone.domain, &records, serial),
+    })))
+}
+
+#[derive(Deserialize)]
+struct ImportBody {
+    text: String,
+    /// Dosyadaki her (ad, tür) kümesinin var olan kayıtlarını dosyadakilerle değiştir.
+    #[serde(default)]
+    replace: bool,
+    /// Yanlışsa yalnızca önizleme döner, hiçbir şey yazılmaz.
+    #[serde(default)]
+    apply: bool,
+}
+
+async fn import_zone(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<ImportBody>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    let zone = dns::get_zone(&state.db, &user, id)?;
+    let parsed = dns::zonefile::parse(&zone.domain, &body.text)?;
+    let current = dns::list_records(&state, &zone).await?;
+    let plan = dns::zonefile::plan(&zone.domain, &parsed.records, &current, body.replace);
+    if zone.provider == "cloudflare" && plan.add.len() > dns::zonefile::MAX_CLOUDFLARE_ADDS {
+        return Err(AppError::bad(format!("Cloudflare bölgelerine tek seferde en çok {} kayıt aktarılabilir", dns::zonefile::MAX_CLOUDFLARE_ADDS)));
+    }
+    let mut skipped = parsed.skipped.clone();
+    skipped.extend(plan.skipped.iter().cloned());
+    let mut reply = json!({
+        "add": plan.add,
+        "existing_count": plan.existing.len(),
+        "remove": plan.remove,
+        "skipped": skipped,
+        "skipped_total": parsed.skipped_total + plan.skipped.len(),
+        "notes": parsed.notes,
+        "result": Value::Null,
+    });
+    if body.apply {
+        let outcome = dns::zonefile::apply(&state, &zone, &plan, &current).await;
+        auth::audit(
+            &state.db,
+            &user,
+            "dns.zone.import",
+            &zone.domain,
+            &format!("+{} -{}{}{}", outcome.added, outcome.removed, if body.replace { " değiştirme" } else { "" }, if outcome.failed.is_empty() { String::new() } else { format!(" başarısız {}", outcome.failed.len()) }),
+        );
+        reply["result"] = json!(outcome);
+        reply["records"] = json!(dns::list_records(&state, &zone).await?);
+    }
+    Ok(Json(reply))
 }
 
 // ---- Cloudflare bölge ayarları ----

@@ -11,9 +11,9 @@ use serde_json::{json, Value};
 use super::Record;
 use crate::error::{AppError, AppResult};
 
-/// Panelin Cloudflare üzerinde yazabildiği kayıt türleri. (SRV ve CAA ayrı bir
-/// veri biçimi kullanır; onlar Cloudflare panelinden yönetilir.)
-pub const WRITABLE_KINDS: &[&str] = &["A", "AAAA", "CNAME", "MX", "TXT", "NS"];
+/// Panelin Cloudflare üzerinde yazabildiği kayıt türleri. SRV ve CAA, Cloudflare'de `content`
+/// yerine yapılandırılmış `data` alanıyla yazılır (bkz. `Client::body`).
+pub const WRITABLE_KINDS: &[&str] = &["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA"];
 
 pub fn validate_token(token: &str) -> AppResult<()> {
     let valid = (20..=200).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
@@ -84,9 +84,31 @@ impl Client {
     fn record_from(item: &Value) -> Record {
         let kind = item["type"].as_str().unwrap_or_default().to_string();
         let mut content = item["content"].as_str().unwrap_or_default().to_string();
+        let mut priority = item["priority"].as_u64().map(|value| value as u32);
         // Cloudflare TXT değerlerini tırnak içinde döndürebilir.
         if kind == "TXT" && content.len() >= 2 && content.starts_with('"') && content.ends_with('"') {
             content = content[1..content.len() - 1].replace("\" \"", "").replace("\\\"", "\"");
+        }
+        // SRV ve CAA'nın asıl verisi `data` alanındadır; panelin biçimine çevrilir.
+        let data = &item["data"];
+        match kind.as_str() {
+            "SRV" if data.is_object() => {
+                let target = data["target"].as_str().unwrap_or_default().trim_end_matches('.').to_ascii_lowercase();
+                content = format!("{} {} {target}", data["weight"].as_u64().unwrap_or(0), data["port"].as_u64().unwrap_or(0));
+                priority = data["priority"].as_u64().map(|value| value as u32).or(priority);
+            }
+            "SRV" => {
+                // `data` yoksa içerik `ağırlık port hedef` (ya da başında öncelikle dört alan) olarak gelir.
+                let parts: Vec<&str> = content.split_whitespace().collect();
+                if let [first, weight, port, target] = parts.as_slice() {
+                    priority = first.parse().ok().or(priority);
+                    content = format!("{weight} {port} {}", target.trim_end_matches('.').to_ascii_lowercase());
+                }
+            }
+            "CAA" if data.is_object() => {
+                content = format!("{} {} \"{}\"", data["flags"].as_u64().unwrap_or(0), data["tag"].as_str().unwrap_or_default(), data["value"].as_str().unwrap_or_default());
+            }
+            _ => {}
         }
         Record {
             id: item["id"].as_str().unwrap_or_default().to_string(),
@@ -94,7 +116,7 @@ impl Client {
             name: item["name"].as_str().unwrap_or_default().to_ascii_lowercase(),
             content,
             ttl: item["ttl"].as_u64().unwrap_or(1) as u32,
-            priority: item["priority"].as_u64().map(|value| value as u32),
+            priority,
             proxied: item["proxied"].as_bool(),
         }
     }
@@ -117,12 +139,40 @@ impl Client {
             return Err(AppError::bad(format!("{} kayıtları Cloudflare'de panelden düzenlenemiyor; Cloudflare panelini kullanın", record.kind)));
         }
         let proxied = record.proxied.unwrap_or(false) && matches!(record.kind.as_str(), "A" | "AAAA" | "CNAME");
+        // Vekillenen kayıtlarda süreyi Cloudflare belirler (1 = otomatik).
+        let ttl = if proxied { 1 } else { record.ttl };
+        match record.kind.as_str() {
+            // İçerik `ağırlık port hedef`; Cloudflare yapılandırılmış alan ister.
+            "SRV" => {
+                let parts: Vec<&str> = record.content.split_whitespace().collect();
+                let [weight, port, target] = parts.as_slice() else { return Err(AppError::bad("SRV değeri “ağırlık port hedef” biçiminde olmalı")) };
+                let (Ok(weight), Ok(port)) = (weight.parse::<u16>(), port.parse::<u16>()) else { return Err(AppError::bad("SRV ağırlığı ve portu sayı olmalı")) };
+                return Ok(json!({
+                    "type": "SRV",
+                    "name": record.name,
+                    "ttl": ttl,
+                    "data": { "priority": record.priority.unwrap_or(10), "weight": weight, "port": port, "target": target },
+                }));
+            }
+            // İçerik `bayrak etiket "değer"`.
+            "CAA" => {
+                let mut parts = record.content.splitn(3, ' ');
+                let (flags, tag, value) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default(), parts.next().unwrap_or_default().trim_matches('"'));
+                let Ok(flags) = flags.parse::<u8>() else { return Err(AppError::bad("CAA bayrağı sayı olmalı")) };
+                return Ok(json!({
+                    "type": "CAA",
+                    "name": record.name,
+                    "ttl": ttl,
+                    "data": { "flags": flags, "tag": tag, "value": value },
+                }));
+            }
+            _ => {}
+        }
         let mut body = json!({
             "type": record.kind,
             "name": record.name,
             "content": record.content,
-            // Vekillenen kayıtlarda süreyi Cloudflare belirler (1 = otomatik).
-            "ttl": if proxied { 1 } else { record.ttl },
+            "ttl": ttl,
         });
         if matches!(record.kind.as_str(), "A" | "AAAA" | "CNAME") {
             body["proxied"] = json!(proxied);
@@ -197,4 +247,40 @@ pub async fn fetch_ranges(base: &str) -> Vec<String> {
         .collect();
     // Beklenmedik biçimde kısa bir liste, gerçek ziyaretçi adreslerinin kaybolmasına yol açardı.
     if ranges.len() >= 10 { ranges } else { fallback() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn srv_and_caa_are_written_with_data_field() {
+        let mut srv = Record::new("SRV", "_sip._tcp.ornek.com", "5 5060 sip.ornek.com");
+        srv.priority = Some(10);
+        let body = Client::body(&srv).unwrap();
+        assert_eq!(body["data"], json!({ "priority": 10, "weight": 5, "port": 5060, "target": "sip.ornek.com" }));
+        assert!(body.get("content").is_none());
+        assert_eq!(body["name"], "_sip._tcp.ornek.com");
+
+        let caa = Record::new("CAA", "ornek.com", "0 issue \"letsencrypt.org\"");
+        let body = Client::body(&caa).unwrap();
+        assert_eq!(body["data"], json!({ "flags": 0, "tag": "issue", "value": "letsencrypt.org" }));
+        assert!(Client::body(&Record::new("SRV", "_x._tcp.ornek.com", "5060 sip.ornek.com")).is_err());
+        assert!(Client::body(&Record::new("PTR", "x.ornek.com", "y.ornek.com")).is_err());
+    }
+
+    #[test]
+    fn srv_and_caa_are_read_back_in_panel_format() {
+        let srv = json!({ "id": "a", "type": "SRV", "name": "_SIP._tcp.ornek.com", "content": "5 5060 sip.ornek.com", "ttl": 300, "priority": 10,
+            "data": { "priority": 10, "weight": 5, "port": 5060, "target": "sip.ornek.com" } });
+        let record = Client::record_from(&srv);
+        assert_eq!((record.content.as_str(), record.priority, record.name.as_str()), ("5 5060 sip.ornek.com", Some(10), "_sip._tcp.ornek.com"));
+        let caa = json!({ "id": "b", "type": "CAA", "name": "ornek.com", "content": "0 issue \"letsencrypt.org\"", "ttl": 1,
+            "data": { "flags": 0, "tag": "issue", "value": "letsencrypt.org" } });
+        assert_eq!(Client::record_from(&caa).content, "0 issue \"letsencrypt.org\"");
+        // `data` olmadan gelen SRV (öncelikli dört alan)
+        let plain = json!({ "id": "c", "type": "SRV", "name": "_a._tcp.ornek.com", "content": "7 5 5060 Sip.Ornek.com.", "ttl": 300 });
+        let record = Client::record_from(&plain);
+        assert_eq!((record.content.as_str(), record.priority), ("5 5060 sip.ornek.com", Some(7)));
+    }
 }
