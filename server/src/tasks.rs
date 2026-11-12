@@ -100,9 +100,32 @@ pub fn spawn_wordpress_scan(state: AppState) {
     });
 }
 
+/// Giden posta sınırı (Postfix policy servisi) ve istemci otomatik ayarının nginx tarafı.
+/// Not: `main.rs`e dokunmamak için `spawn_dkim_owner_sync` içinden başlatılır.
+fn spawn_mail_depth(state: AppState) {
+    crate::mail::autoconfig::init(&state.cfg);
+    let policy_state = state.clone();
+    tokio::spawn(async move { crate::mail::policy::run(policy_state).await });
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        loop {
+            if crate::mail::is_installed() {
+                // Yeni alınan sertifikalar ve eklenen/silinen siteler de nginx bloklarına yansısın diye
+                // düzenli aralıkla yenilenir; içerik değişmediyse hiçbir şey yazılmaz.
+                let _guard = state.sys_lock.lock().await;
+                if let Err(err) = crate::mail::autoconfig::sync_nginx(&state.db).await {
+                    tracing::warn!(error = %err, "posta istemcisi otomatik ayarı nginx yapılandırması yenilenemedi");
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(600)).await;
+        }
+    });
+}
+
 /// DKIM imza yetkisi eşlemesini güncel tutar: hesabın Linux kullanıcısı ilk sitesiyle oluşur,
 /// o ana kadar eşlemede yer almaz. Dosya yalnızca içeriği değiştiyse yeniden yazılır.
 pub fn spawn_dkim_owner_sync(state: AppState) {
+    spawn_mail_depth(state.clone());
     tokio::spawn(async move {
         {
             let _guard = state.sys_lock.lock().await;

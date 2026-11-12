@@ -5,6 +5,8 @@
 //! Dovecot'un okuduğu düz eşleme dosyaları (`/etc/pixpanel/mail/`) baştan
 //! üretilir; servisler panelin veritabanına doğrudan erişmez.
 
+pub mod autoconfig;
+pub mod policy;
 pub mod sieve;
 
 use std::path::{Path, PathBuf};
@@ -110,6 +112,12 @@ pub struct MailDomain {
     pub mailbox_count: i64,
     pub alias_count: i64,
     pub created_at: i64,
+    /// Alan adının saatlik alıcı sınırı (yalnızca yönetici/bayi ayarlar): `None` varsayılan, 0 sınırsız.
+    pub send_limit: Option<i64>,
+    /// Geçerli sınır (varsayılan uygulanmış hâli; 0 sınırsız).
+    pub effective_limit: i64,
+    /// Son bir saatte alan adından gönderilen alıcı sayısı.
+    pub sent_last_hour: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,6 +135,12 @@ pub struct Mailbox {
     /// Kullanılan alan (bayt); Dovecot'tan okunur.
     pub used_bytes: Option<i64>,
     pub created_at: i64,
+    /// Kutunun saatlik alıcı sınırı (yalnızca yönetici/bayi ayarlar): `None` varsayılan, 0 sınırsız.
+    pub send_limit: Option<i64>,
+    /// Geçerli sınır (varsayılan uygulanmış hâli; 0 sınırsız).
+    pub effective_limit: i64,
+    /// Son bir saatte kutunun gönderdiği alıcı sayısı.
+    pub sent_last_hour: u32,
     #[serde(skip)]
     pub password_hash: String,
 }
@@ -147,7 +161,7 @@ fn split_list(raw: &str) -> Vec<String> {
 
 const DOMAIN_COLUMNS: &str = "d.id, d.user_id, u.username, d.domain, d.catch_all, d.dkim_record, d.created_at,
      (SELECT COUNT(*) FROM mailboxes m WHERE m.domain_id = d.id),
-     (SELECT COUNT(*) FROM mail_aliases a WHERE a.domain_id = d.id)";
+     (SELECT COUNT(*) FROM mail_aliases a WHERE a.domain_id = d.id), d.send_limit";
 
 fn read_domain(row: &rusqlite::Row<'_>) -> rusqlite::Result<MailDomain> {
     Ok(MailDomain {
@@ -160,6 +174,9 @@ fn read_domain(row: &rusqlite::Row<'_>) -> rusqlite::Result<MailDomain> {
         created_at: row.get(6)?,
         mailbox_count: row.get(7)?,
         alias_count: row.get(8)?,
+        send_limit: row.get(9)?,
+        effective_limit: 0,
+        sent_last_hour: 0,
     })
 }
 
@@ -167,13 +184,15 @@ fn read_domain(row: &rusqlite::Row<'_>) -> rusqlite::Result<MailDomain> {
 pub fn list_domains(db: &Db, user: &AuthUser) -> AppResult<Vec<MailDomain>> {
     let owner = user.owner_id();
     let (all, include_children) = (user.is_admin(), user.role == Role::Reseller);
-    db.call(|conn| {
+    let mut domains: Vec<MailDomain> = db.call(|conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {DOMAIN_COLUMNS} FROM mail_domains d JOIN users u ON u.id = d.user_id
              WHERE ?1 OR d.user_id = ?2 OR (?3 AND u.parent_id = ?2) ORDER BY d.domain"
         ))?;
         stmt.query_map(params![all, owner, include_children], read_domain)?.collect()
-    })
+    })?;
+    policy::decorate_domains(db, &mut domains);
+    Ok(domains)
 }
 
 pub fn get_domain(db: &Db, user: &AuthUser, id: i64) -> AppResult<MailDomain> {
@@ -181,17 +200,21 @@ pub fn get_domain(db: &Db, user: &AuthUser, id: i64) -> AppResult<MailDomain> {
         conn.query_row(
             &format!("SELECT {DOMAIN_COLUMNS}, u.parent_id FROM mail_domains d JOIN users u ON u.id = d.user_id WHERE d.id = ?1"),
             params![id],
-            |row| Ok((read_domain(row)?, row.get::<_, Option<i64>>(9)?)),
+            |row| Ok((read_domain(row)?, row.get::<_, Option<i64>>(10)?)),
         )
         .optional()
     })?;
-    let (domain, owner_parent) = found.ok_or(AppError::NotFound)?;
+    let (mut domain, owner_parent) = found.ok_or(AppError::NotFound)?;
     let allowed = user.is_admin() || domain.user_id == user.owner_id() || (user.role == Role::Reseller && owner_parent == Some(user.id));
-    if allowed { Ok(domain) } else { Err(AppError::NotFound) }
+    if !allowed {
+        return Err(AppError::NotFound);
+    }
+    policy::decorate_domains(db, std::slice::from_mut(&mut domain));
+    Ok(domain)
 }
 
 const MAILBOX_COLUMNS: &str = "m.id, m.domain_id, m.local, d.domain, m.quota_mb, m.enabled, m.forward_to, m.forward_keep,
-     m.auto_reply, m.filters, m.created_at, m.password_hash";
+     m.auto_reply, m.filters, m.created_at, m.password_hash, m.send_limit";
 
 fn read_mailbox(row: &rusqlite::Row<'_>) -> rusqlite::Result<Mailbox> {
     let (local, domain): (String, String) = (row.get(2)?, row.get(3)?);
@@ -210,29 +233,37 @@ fn read_mailbox(row: &rusqlite::Row<'_>) -> rusqlite::Result<Mailbox> {
         used_bytes: None,
         created_at: row.get(10)?,
         password_hash: row.get(11)?,
+        send_limit: row.get(12)?,
+        effective_limit: 0,
+        sent_last_hour: 0,
     })
 }
 
 pub fn list_mailboxes(db: &Db, domain_id: Option<i64>) -> AppResult<Vec<Mailbox>> {
-    db.call(|conn| {
+    let mut mailboxes: Vec<Mailbox> = db.call(|conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {MAILBOX_COLUMNS} FROM mailboxes m JOIN mail_domains d ON d.id = m.domain_id
              WHERE ?1 IS NULL OR m.domain_id = ?1 ORDER BY d.domain, m.local"
         ))?;
         stmt.query_map(params![domain_id], read_mailbox)?.collect()
-    })
+    })?;
+    policy::decorate_mailboxes(db, &mut mailboxes);
+    Ok(mailboxes)
 }
 
 pub fn load_mailbox(db: &Db, id: i64) -> AppResult<Mailbox> {
-    db.call(|conn| {
-        conn.query_row(
-            &format!("SELECT {MAILBOX_COLUMNS} FROM mailboxes m JOIN mail_domains d ON d.id = m.domain_id WHERE m.id = ?1"),
-            params![id],
-            read_mailbox,
-        )
-        .optional()
-    })?
-    .ok_or(AppError::NotFound)
+    let mut mailbox = db
+        .call(|conn| {
+            conn.query_row(
+                &format!("SELECT {MAILBOX_COLUMNS} FROM mailboxes m JOIN mail_domains d ON d.id = m.domain_id WHERE m.id = ?1"),
+                params![id],
+                read_mailbox,
+            )
+            .optional()
+        })?
+        .ok_or(AppError::NotFound)?;
+    policy::decorate_mailboxes(db, std::slice::from_mut(&mut mailbox));
+    Ok(mailbox)
 }
 
 pub fn save_mailbox(db: &Db, mailbox: &Mailbox) -> AppResult<()> {
@@ -240,10 +271,10 @@ pub fn save_mailbox(db: &Db, mailbox: &Mailbox) -> AppResult<()> {
     db.call(|conn| {
         conn.execute(
             "UPDATE mailboxes SET password_hash = ?1, quota_mb = ?2, enabled = ?3, forward_to = ?4, forward_keep = ?5,
-                    auto_reply = ?6, filters = ?7 WHERE id = ?8",
+                    auto_reply = ?6, filters = ?7, send_limit = ?8 WHERE id = ?9",
             params![
                 mailbox.password_hash, mailbox.quota_mb, mailbox.enabled, mailbox.forward_to.join(","),
-                mailbox.forward_keep, auto_reply, filters, mailbox.id
+                mailbox.forward_keep, auto_reply, filters, mailbox.send_limit, mailbox.id
             ],
         )
     })?;
@@ -478,6 +509,10 @@ pub async fn sync(db: &Db) -> AppResult<()> {
     if services::is_active("dovecot.service").await {
         exec::run_ok("doveadm", &["reload"]).await?;
     }
+    // Posta alan adları değiştiyse istemci otomatik ayarının nginx tarafı yenilenir (hata postayı bozmaz).
+    if let Err(err) = autoconfig::sync_nginx(db).await {
+        tracing::warn!(error = %err, "posta istemcisi otomatik ayarı nginx yapılandırması yenilenemedi");
+    }
     Ok(())
 }
 
@@ -538,7 +573,7 @@ pub struct DnsRecord {
 /// Postanın düzgün çalışması için alan adına eklenmesi gereken kayıtlar.
 pub fn dns_records(domain: &MailDomain, hostname: &str) -> Vec<DnsRecord> {
     let record = |kind, name: String, value: String, purpose| DnsRecord { kind, name, value, purpose, status: "unknown", found: String::new() };
-    vec![
+    let mut records = vec![
         record("MX", domain.domain.clone(), format!("10 {hostname}."), "Gelen postanın bu sunucuya teslim edilmesi"),
         record("TXT", domain.domain.clone(), "v=spf1 mx ~all".to_string(), "SPF: bu alan adı adına yalnızca posta sunucunuz gönderebilir"),
         record("TXT", format!("{DKIM_SELECTOR}._domainkey.{}", domain.domain), domain.dkim_record.clone(), "DKIM: giden postanın imzasını doğrular"),
@@ -548,7 +583,16 @@ pub fn dns_records(domain: &MailDomain, hostname: &str) -> Vec<DnsRecord> {
             format!("v=DMARC1; p=quarantine; rua=mailto:postmaster@{}", domain.domain),
             "DMARC: SPF/DKIM doğrulanamazsa alıcının ne yapacağı",
         ),
-    ]
+    ];
+    // İstemci otomatik ayarı (autoconfig, autodiscover, RFC 6186).
+    for client in autoconfig::client_dns_records(&domain.domain, hostname) {
+        let value = match client.kind {
+            "SRV" => format!("{} {}.", client.priority.unwrap_or(0), client.content),
+            _ => format!("{}.", client.content),
+        };
+        records.push(record(client.kind, client.name, value, client.purpose));
+    }
+    records
 }
 
 async fn dig(kind: &str, name: &str) -> Vec<String> {
@@ -562,7 +606,8 @@ async fn dig(kind: &str, name: &str) -> Vec<String> {
 /// Kayıtları genel DNS'te arar ve her birinin durumunu işaretler.
 pub async fn check_dns(records: &mut [DnsRecord]) {
     for record in records.iter_mut() {
-        let answers = dig(record.kind, &record.name).await;
+        // CNAME'in doğrusu "ad çözülüyor mu"dur (A kaydı da olabilir); bu yüzden A sorulur.
+        let answers = dig(if record.kind == "CNAME" { "A" } else { record.kind }, &record.name).await;
         let normalize = |value: &str| value.to_ascii_lowercase().replace(' ', "").trim_end_matches('.').to_string();
         let expected = normalize(&record.value);
         let relevant: Vec<&String> = match record.name.as_str() {
@@ -583,6 +628,14 @@ pub async fn check_dns(records: &mut [DnsRecord]) {
             if relevant.iter().any(|a| normalize(a).trim_start_matches(|c: char| c.is_ascii_digit()) == target) { "ok" } else { "mismatch" }
         } else if record.name.contains("._domainkey.") {
             if relevant.iter().any(|a| normalize(a) == expected) { "ok" } else { "mismatch" }
+        } else if record.kind == "SRV" {
+            // Öncelik ve ağırlık farklı olabilir; port ve hedef aynıysa kayıt doğrudur.
+            let tail = |value: &str| value.split_whitespace().rev().take(2).map(|part| part.trim_end_matches('.').to_ascii_lowercase()).collect::<Vec<_>>();
+            let target = tail(&record.value);
+            if relevant.iter().any(|a| tail(a) == target) { "ok" } else { "mismatch" }
+        } else if record.kind == "CNAME" {
+            // Ad bir adrese çözülüyorsa (CNAME ya da A) otomatik ayar adresi çalışır.
+            "ok"
         } else {
             // SPF: sunucuyu kapsayan herhangi bir kayıt kabul edilir (mx, a ya da ip4 ile).
             "ok"
@@ -972,6 +1025,7 @@ pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
         postconf(&options).await?;
     }
     configure_local_sender_mark().await?;
+    policy::configure_postfix().await?;
     exec::run_ok("postfix", &["check"]).await?;
 
     // ---- Rspamd ----

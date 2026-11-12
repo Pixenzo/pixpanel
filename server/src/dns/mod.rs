@@ -530,6 +530,14 @@ pub async fn add_mail_records(state: &AppState, owner_id: i64, domain: &str, mai
         )
         .await,
     ];
+    // İstemci otomatik ayarı: autoconfig/autodiscover adları ve RFC 6186 SRV kayıtları. Adların
+    // altında başka bir kayıt varsa dokunulmaz.
+    for client in crate::mail::autoconfig::client_dns_records(domain, mail_host) {
+        let mut record = Record::new(client.kind, &client.name, &client.content);
+        record.priority = client.priority;
+        let policy = if client.kind == "CNAME" { Policy::IfNoAddress } else { Policy::IfNoneOfKind };
+        report.push(ensure(state, &zone, &existing, record, policy).await);
+    }
     // Posta sunucusunun adı bu bölgenin içindeyse ve adres kaydı yoksa o da eklenir.
     if mail_host == zone.domain || mail_host.ends_with(&format!(".{}", zone.domain)) {
         report.push(ensure(state, &zone, &existing, Record::new("A", mail_host, &server_ip(&state.db)), Policy::IfNoAddress).await);

@@ -25,6 +25,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("backup_failed", "Yedekleme başarısız olduğunda"),
     ("site_down", "Siteniz yanıt vermediğinde ve yeniden yanıt vermeye başladığında"),
     ("quota_warning", "Disk kotanız dolmak üzereyken ya da dolduğunda"),
+    ("mail_limit", "Posta kutusu ya da alan adı saatlik gönderim sınırına takıldığında"),
     ("health_alert", "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde"),
 ];
 

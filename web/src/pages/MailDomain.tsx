@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Smartphone, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -34,6 +34,7 @@ import { api, errorMessage } from "../lib/api";
 import { classNames, formatBytes, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { MailClientSettings } from "./MailClientSettings";
 import type { AutoReply, DnsRecord, FilterAction, FilterCondition, MailAlias, MailDomain, MailFilter, Mailbox } from "./Mail";
 
 interface DomainDetail {
@@ -53,7 +54,18 @@ function webmailUrl(address?: string): string {
   return address ? `/webmail/?_user=${encodeURIComponent(address)}` : "/webmail/";
 }
 
-type MailboxChanges = Partial<Pick<Mailbox, "quota_mb" | "enabled" | "forward_to" | "forward_keep" | "auto_reply" | "filters">> & { password?: string };
+type MailboxChanges = Partial<Pick<Mailbox, "quota_mb" | "enabled" | "forward_to" | "forward_keep" | "auto_reply" | "filters">> & { password?: string; send_limit?: number };
+
+/** Saatlik gönderim sınırını yalnızca yönetici ve bayi değiştirebilir. */
+function useCanSetSendLimit(): boolean {
+  const me = useMe();
+  return me.role === "admin" || me.role === "reseller";
+}
+
+/** Sınırın okunur hâli: 0 sınırsızdır. */
+function limitLabel(limit: number): string {
+  return limit > 0 ? String(limit) : t("sınırsız");
+}
 
 const detailKey = (domainId: number | string) => ["mail-domain", String(domainId)] as const;
 
@@ -252,6 +264,8 @@ function GeneralTab({ mailbox }: { mailbox: Mailbox }) {
   const [enabled, setEnabled] = useState(mailbox.enabled);
   const [quota, setQuota] = useState(String(mailbox.quota_mb));
   const [password, setPassword] = useState("");
+  const [sendLimit, setSendLimit] = useState(mailbox.send_limit === null ? "" : String(mailbox.send_limit));
+  const canSetSendLimit = useCanSetSendLimit();
   const [localError, setLocalError] = useState<string | null>(null);
 
   function submit() {
@@ -262,6 +276,15 @@ function GeneralTab({ mailbox }: { mailbox: Mailbox }) {
     }
     setLocalError(null);
     const changes: MailboxChanges = { enabled, quota_mb: quotaMb };
+    if (canSetSendLimit) {
+      // Boş alan "varsayılana dön" demektir (-1).
+      const limit = sendLimit.trim() === "" ? -1 : Number(sendLimit);
+      if (!Number.isInteger(limit) || limit < -1 || limit > 1_000_000) {
+        setLocalError(t("Gönderim sınırı, 0 ile 1.000.000 arasında bir tam sayı olmalıdır (boş: varsayılan)."));
+        return;
+      }
+      changes.send_limit = limit;
+    }
     if (password) changes.password = password;
     save.mutate({ changes, message: t("Kutu ayarları kaydedildi") }, { onSuccess: () => setPassword("") });
   }
@@ -284,6 +307,28 @@ function GeneralTab({ mailbox }: { mailbox: Mailbox }) {
         className="max-w-48"
         required
       />
+      {canSetSendLimit ? (
+        <Input
+          label={t("Saatlik gönderim sınırı")}
+          type="number"
+          min={0}
+          value={sendLimit}
+          onChange={(event) => setSendLimit(event.target.value)}
+          placeholder={t("Varsayılan")}
+          hint={t("Kutunun saatte en fazla kaç alıcıya gönderebileceği. Boş: sunucu varsayılanı ({limit}); 0: sınırsız. Son bir saatte: {sent}.", {
+            limit: limitLabel(sendLimit.trim() === "" ? mailbox.effective_limit : Number(sendLimit)),
+            sent: mailbox.sent_last_hour,
+          })}
+          className="max-w-48"
+        />
+      ) : (
+        <p className="text-[13.5px] text-ink-2">
+          {t("Saatlik gönderim sınırı: {limit}. Son bir saatte gönderilen: {sent}. Sınırı yöneticiniz değiştirebilir.", {
+            limit: limitLabel(mailbox.effective_limit),
+            sent: mailbox.sent_last_hour,
+          })}
+        </p>
+      )}
       <PasswordField label={t("Yeni parola")} value={password} onChange={setPassword} hint={t("Parolayı değiştirmek istemiyorsanız boş bırakın. En az 10 karakter olmalıdır.")} />
     </FormShell>
   );
@@ -918,6 +963,7 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                 <Th>{t("Adres")}</Th>
                 <Th>{t("Kullanım")}</Th>
                 <Th>{t("Durum")}</Th>
+                <Th>{t("Son saat gönderim")}</Th>
                 <Th>{t("Özellikler")}</Th>
                 <Th align="right">
                   <span className="sr-only">{t("İşlemler")}</span>
@@ -936,6 +982,17 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                     <UsageCell mailbox={mailbox} />
                   </Td>
                   <Td className="whitespace-nowrap">{mailbox.enabled ? <Status tone="ok">{t("Etkin")}</Status> : <Status tone="idle">{t("Kapalı")}</Status>}</Td>
+                  <Td className="tabular whitespace-nowrap">
+                    {mailbox.effective_limit > 0 && mailbox.sent_last_hour >= mailbox.effective_limit ? (
+                      <Status tone="bad">
+                        {mailbox.sent_last_hour} / {mailbox.effective_limit}
+                      </Status>
+                    ) : (
+                      <span className="text-ink-2">
+                        {mailbox.sent_last_hour} / {limitLabel(mailbox.effective_limit)}
+                      </span>
+                    )}
+                  </Td>
                   <Td>
                     <div className="flex flex-wrap gap-1">
                       {mailbox.forward_to.length > 0 && <Badge>{t("Yönlendirme")}</Badge>}
@@ -1259,12 +1316,69 @@ function DnsSection({ detail }: { detail: DomainDetail }) {
 
 // ---- Ayarlar bölümü ----
 
+/** Alan adının toplam saatlik alıcı sınırı (yalnızca yönetici ve bayi). */
+function DomainLimitPanel({ detail }: { detail: DomainDetail }) {
+  const feedback = useFeedback();
+  const queryClient = useQueryClient();
+  const updateCache = useDetailCache(detail.domain.id);
+  const { domain } = detail;
+  const [value, setValue] = useState(domain.send_limit === null ? "" : String(domain.send_limit));
+  const [localError, setLocalError] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (limit: number) => api.patch<MailDomain>(`/mail/domains/${domain.id}`, { send_limit: limit }),
+    onSuccess: (updated) => {
+      updateCache((current) => ({ ...current, domain: updated }));
+      void queryClient.invalidateQueries({ queryKey: ["mail"] });
+      feedback.success(t("Alan adı gönderim sınırı kaydedildi"));
+    },
+  });
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const limit = value.trim() === "" ? -1 : Number(value);
+    if (!Number.isInteger(limit) || limit < -1 || limit > 1_000_000) {
+      setLocalError(t("Gönderim sınırı, 0 ile 1.000.000 arasında bir tam sayı olmalıdır (boş: varsayılan)."));
+      return;
+    }
+    setLocalError(null);
+    save.mutate(limit);
+  }
+
+  return (
+    <Panel title={t("Alan adı gönderim sınırı")}>
+      <form onSubmit={submit} className="flex max-w-xl flex-col gap-4">
+        <Input
+          label={t("Saatlik toplam alıcı sınırı")}
+          type="number"
+          min={0}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={t("Varsayılan")}
+          hint={t("Alan adındaki bütün kutuların birlikte saatte gönderebileceği alıcı sayısı. Boş: varsayılan ({limit}); 0: sınırsız. Son bir saatte: {sent}.", {
+            limit: limitLabel(domain.effective_limit),
+            sent: domain.sent_last_hour,
+          })}
+          className="max-w-48"
+        />
+        {localError && <ErrorBlock message={localError} />}
+        {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
+        <div>
+          <Button type="submit" variant="primary" loading={save.isPending}>
+            {t("Kaydet")}
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
 function SettingsSection({ detail }: { detail: DomainDetail }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const updateCache = useDetailCache(detail.domain.id);
-  const { domain, hostname } = detail;
+  const { domain } = detail;
+  const canSetSendLimit = useCanSetSendLimit();
   const [catchAll, setCatchAll] = useState(domain.catch_all);
 
   const saveCatchAll = useMutation({
@@ -1328,28 +1442,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
         </form>
       </Panel>
 
-      <Panel title={t("Posta istemcisi ayarları")}>
-        <p className="mb-3 max-w-[75ch] text-ink-2">{t("Outlook, Thunderbird ya da telefon uygulamasında hesabı bu bilgilerle tanımlayın.")}</p>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
-          <dt className="text-ink-2">{t("Web postası")}</dt>
-          <dd>
-            <a href="/webmail/" target="_blank" rel="noreferrer" className="font-mono text-[13px] text-accent hover:underline">
-              {window.location.origin}/webmail/
-            </a>{" "}
-            <span className="text-ink-3">{t("(kuruluysa; adres ve parolayla girilir)")}</span>
-          </dd>
-          <dt className="text-ink-2">{t("IMAP sunucusu")}</dt>
-          <dd>
-            <Mono>{hostname}</Mono> · {t("port")} <Mono>993</Mono> (SSL/TLS)
-          </dd>
-          <dt className="text-ink-2">{t("SMTP sunucusu")}</dt>
-          <dd>
-            <Mono>{hostname}</Mono> · {t("port")} <Mono>587</Mono> (STARTTLS) {t("ya da")} <Mono>465</Mono> (SSL/TLS)
-          </dd>
-          <dt className="text-ink-2">{t("Kullanıcı adı")}</dt>
-          <dd>{t("E-posta adresinin tamamı")}</dd>
-        </dl>
-      </Panel>
+      {canSetSendLimit && <DomainLimitPanel detail={detail} />}
 
       <Panel title={t("Postayı kaldır")}>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1373,7 +1466,7 @@ function SettingsSection({ detail }: { detail: DomainDetail }) {
 
 // ---- Sayfa ----
 
-type SectionId = "kutular" | "takma-adlar" | "dns" | "ayarlar";
+type SectionId = "kutular" | "takma-adlar" | "dns" | "istemci" | "ayarlar";
 
 interface Section {
   id: SectionId;
@@ -1396,6 +1489,7 @@ export function MailDomainPage() {
     { id: "kutular", label: t("Kutular"), icon: Inbox, count: data.domain.mailbox_count },
     { id: "takma-adlar", label: t("Takma adlar"), icon: AtSign, count: data.domain.alias_count },
     { id: "dns", label: t("DNS kayıtları"), icon: Globe },
+    { id: "istemci", label: t("İstemci ayarları"), icon: Smartphone },
     { id: "ayarlar", label: t("Ayarlar"), icon: SlidersHorizontal },
   ];
   const requested = searchParams.get("bolum");
@@ -1454,6 +1548,7 @@ export function MailDomainPage() {
           {active === "kutular" && <MailboxesSection detail={data} />}
           {active === "takma-adlar" && <AliasesSection detail={data} />}
           {active === "dns" && <DnsSection detail={data} />}
+          {active === "istemci" && <MailClientSettings domain={data.domain} />}
           {active === "ayarlar" && <SettingsSection key={data.domain.catch_all} detail={data} />}
         </div>
       </div>
