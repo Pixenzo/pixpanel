@@ -242,7 +242,13 @@
     "DNSSEC'i kapattı",
     "Bölge dosyası içe aktardı",
     "Posta gönderim sınırına takıldı",
-    "Gönderim sınırı ayarını değiştirdi"
+    "Gönderim sınırı ayarını değiştirdi",
+    "Web kancası ekledi",
+    "Web kancasını değiştirdi",
+    "Web kancasını sildi",
+    "Web kancasının gizli anahtarını yeniledi",
+    "Git web kancası imza anahtarını tanımladı",
+    "Git web kancası imza anahtarını kaldırdı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
@@ -566,5 +572,28 @@
     "Bilinmeyen her adres index.html dosyasına düşer; yönlendirmeyi uygulama yapar.",
     "Uzantısız adresler",
     "/hakkinda adresi hakkinda.html dosyasını sunar."
+  ],
+  "web/src/components/WebhookSettings.tsx": [
+    "Bir görev başladığında",
+    "Bir görev başarıyla bittiğinde",
+    "Bir görev başarısız olduğunda",
+    "Site işlemleri",
+    "SSL işlemleri",
+    "Git ile yayınlama işlemleri",
+    "Veritabanı işlemleri",
+    "Posta işlemleri",
+    "DNS işlemleri",
+    "Yedekleme işlemleri",
+    "Docker işlemleri",
+    "Redis işlemleri",
+    "WordPress işlemleri",
+    "Zamanlı görev işlemleri",
+    "PHP işlemleri",
+    "FTP işlemleri",
+    "Güvenlik duvarı işlemleri",
+    "Hesap ve kullanıcı işlemleri",
+    "API anahtarı işlemleri",
+    "Paket işlemleri",
+    "Web kancası işlemleri"
   ]
 }

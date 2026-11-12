@@ -82,6 +82,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("audit.user", "Hesap ve kullanıcı işlemleri"),
     ("audit.token", "API anahtarı işlemleri"),
     ("audit.package", "Paket işlemleri"),
+    ("audit.webhook", "Web kancası işlemleri"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -259,7 +260,10 @@ pub fn validate_events(events: &[String]) -> AppResult<Vec<String>> {
     }
     let mut chosen: Vec<String> = Vec::new();
     for event in events {
-        if !EVENTS.iter().any(|(id, _)| id == event) {
+        // Listedeki bir olayın alt olayı da seçilebilir (ör. `audit.site.create`).
+        let plain = event.len() <= 80 && event.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-'));
+        let known = EVENTS.iter().any(|(id, _)| id == event || event.strip_prefix(id).is_some_and(|rest| rest.starts_with('.')));
+        if !plain || !known {
             return Err(AppError::bad("Bilinmeyen olay türü"));
         }
         if !chosen.contains(event) {

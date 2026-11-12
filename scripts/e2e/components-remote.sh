@@ -155,6 +155,7 @@ suite features php-8.3 docker redis
 [ -f /etc/systemd/system/pebble-test.service ] && suite panelcert
 suite twofactor
 suite events
+suite webhooks
 suite health ftp
 suite wordpress php-8.3 mariadb restic
 suite packages mail ftp dns mariadb
