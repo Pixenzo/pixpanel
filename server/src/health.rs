@@ -794,7 +794,7 @@ fn check_service_history(state: &AppState, batch: &mut Batch) {
                     &unit,
                     Severity::Warning,
                     format!("{label} son 24 saatte {restarts} kez yeniden başladı"),
-                    format!("{unit} sık sık çöküp yeniden başlıyor. Servisin günlüğüne bakın (bellek yetmiyor ya da yapılandırma hatalı olabilir)."),
+                    format!("{unit} sık yeniden başlıyor. Siz yeniden başlatmadıysanız servis çöküyor olabilir; günlüğüne bakın (bellek yetmiyor ya da yapılandırma hatalı olabilir)."),
                 )
                 .link("/services"),
             );

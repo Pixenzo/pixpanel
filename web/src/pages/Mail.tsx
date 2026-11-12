@@ -654,7 +654,7 @@ function SpamTab() {
   if (settings.isError) return <ErrorBlock message={errorMessage(settings.error)} onRetry={() => void settings.refetch()} />;
   // `key`, kaydetme sonrası gelen değerlerle formun sıfırlanmasını sağlar.
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-3xl flex-col gap-5">
       <SpamForm key={JSON.stringify(settings.data)} settings={settings.data} />
       <AntivirusCard />
     </div>

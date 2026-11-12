@@ -253,6 +253,7 @@ Ayrıntılı ve önceliklendirilmiş liste: `docs/YOL-HARITASI.md`. P0'dan kalan
 - Web postasında kullanıcı kendi parolasını ve filtrelerini değiştiremiyor (panelden yapılır).
 
 - Posta bileşeninin sıfırdan kurulumu (Bileşenler sayfasından) denenmedi; test makinesinde paketler elle kuruldu, yapılandırma `POST /mail/setup` ile uygulandı.
+- 13.11.2026 arayüz gözden geçirmesi (masaüstü ve telefon genişliği): yedekten içe aktarma penceresi, veritabanı silme penceresi ve çöp kutusu, virüs taraması kartı, posta listeleri, "Kendi adıyla bağlan", haftalık özet, kara liste denetimi, paket tablosu ve formu. Düzeltilenler: çöp kutusunda saklama süresi "az önce silinecek" yazıyordu (artık "6 gün sonra"); paket formunda izinli PHP sürümü kutularında sürüm numarası görünmüyordu; paket tablosu ve posta kutusu tablosu masaüstünde yana taşıyordu; virüs taraması kartı üstündeki formdan genişti; Listeler yan menüde sayısız duruyordu; "servis sık yeniden başlıyor" bulgusu elle yeniden başlatmaları da saydığı hâlde "çöküyor" diyordu. İçe aktarmanın inceleme sonrası adımları ve posta listesi oluşturma penceresi gerçek veriyle tıklanarak denenmedi.
 - Docker, PHP, Ayarlar ve Posta sayfalarının arayüzü tarayıcıda açılıp gözle denetlendi ama her düğmesi tek tek tıklanarak sınanmadı; arka uçları `scripts/e2e` ile sınandı.
 - Web kancası yalnızca adresteki gizli anahtarla korunuyor; GitHub imza başlığı (`X-Hub-Signature-256`) doğrulanmıyor.
 

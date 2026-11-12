@@ -59,6 +59,15 @@ export function formatTime(unixSeconds: number): string {
   return timeFormat.format(new Date(unixSeconds * 1000));
 }
 
+/** Gelecekteki bir an için "3 gün sonra" gibi göreli zaman. */
+export function formatUntil(unixSeconds: number): string {
+  const diff = unixSeconds - Math.floor(Date.now() / 1000);
+  if (diff < 60) return t("birazdan");
+  if (diff < 3600) return t("{n} dk sonra", { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t("{n} sa sonra", { n: Math.floor(diff / 3600) });
+  return t("{n} gün sonra", { n: Math.floor(diff / 86400) });
+}
+
 /** "5 dakika önce" gibi göreli zaman. */
 export function formatRelative(unixSeconds: number | null | undefined): string {
   if (!unixSeconds) return t("hiç");

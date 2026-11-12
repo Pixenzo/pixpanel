@@ -7,7 +7,7 @@ import { useFeedback } from "../components/feedback";
 import { Button, Checkbox, ErrorBlock, IconButton, Input, Modal, Mono, Panel, Table, Td, Th } from "../components/ui";
 import type { DatabaseInfo, DatabaseTrashItem } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { formatBytes, formatDateTime, formatRelative } from "../lib/format";
+import { formatBytes, formatDateTime, formatUntil } from "../lib/format";
 import { t } from "../lib/i18n";
 import { JobLog } from "./Jobs";
 
@@ -128,7 +128,7 @@ export function TrashPanel() {
                   </p>
                 </Td>
                 <Td className="whitespace-nowrap text-ink-2">{formatDateTime(item.deleted_at)}</Td>
-                <Td className="whitespace-nowrap text-ink-2">{t("{when} silinecek", { when: formatRelative(item.expires_at) })}</Td>
+                <Td className="whitespace-nowrap text-ink-2">{t("{when} silinecek", { when: formatUntil(item.expires_at) })}</Td>
                 <Td align="right" className="whitespace-nowrap text-ink-2">
                   {formatBytes(item.size)}
                 </Td>

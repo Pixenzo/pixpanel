@@ -10,7 +10,7 @@ import { useFeedback } from "../components/feedback";
 import { Button, Checkbox, EmptyState, ErrorBlock, IconButton, Input, LoadingBlock, Meter, Modal, Panel, Select, Table, Td, Th } from "../components/ui";
 import type { AccountUsage, CustomerTotals, PackageInfo, PackageLimits, SiteOptions } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
-import { formatBytes, formatRelative } from "../lib/format";
+import { classNames, formatBytes, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 
 /** Sayısal sınır alanları (davranış alanı ve PHP sürüm listesi hariç). */
@@ -244,7 +244,7 @@ function PackageModal({ pack, onClose }: { pack: PackageInfo | null; onClose: ()
               {choices.map((version) => (
                 <Checkbox
                   key={version}
-                  label={`PHP `}
+                  label={`PHP ${version}`}
                   checked={phpVersions.includes(version)}
                   onChange={(event) => setPhpVersions((current) => (event.target.checked ? [...current, version] : current.filter((item) => item !== version)))}
                 />
@@ -314,11 +314,7 @@ export function PackagesPanel() {
             <thead>
               <tr>
                 <Th>{t("Paket")}</Th>
-                {LIMIT_FIELDS.map((field) => (
-                  <Th key={field.key} align="right">
-                    {t(field.label)}
-                  </Th>
-                ))}
+                <Th>{t("Sınırlar")}</Th>
                 <Th>{t("Aylık trafik")}</Th>
                 <Th>{t("İşlemci ve bellek")}</Th>
                 <Th align="right">{t("Hesap")}</Th>
@@ -331,12 +327,18 @@ export function PackagesPanel() {
                   <Td>
                     <span className="font-medium">{pack.name}</span>
                   </Td>
-                  {LIMIT_FIELDS.map((field) => (
-                    <Td key={field.key} align="right" className={pack.limits[field.key] === null ? "text-ink-3" : undefined}>
-                      {limitText(pack.limits[field.key], field.unit)}
-                    </Td>
-                  ))}
-                  <Td className={pack.limits.traffic_gb === null ? "text-ink-3" : undefined}>{trafficSummary(pack.limits)}</Td>
+                  {/* On ayrı sütun tabloyu yana taşırıyordu; sınırlar tek hücrede, kendi içinde sarılan çiftler olarak durur. */}
+                  <Td>
+                    <dl className="flex max-w-xl flex-wrap gap-x-4 gap-y-1 text-[13.5px]">
+                      {LIMIT_FIELDS.map((field) => (
+                        <div key={field.key} className="flex items-baseline gap-1.5 whitespace-nowrap">
+                          <dt className="text-ink-2">{t(field.label)}</dt>
+                          <dd className={pack.limits[field.key] === null ? "text-ink-3" : "tabular font-medium"}>{limitText(pack.limits[field.key], field.unit)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </Td>
+                  <Td className={classNames("whitespace-nowrap", pack.limits.traffic_gb === null && "text-ink-3")}>{trafficSummary(pack.limits)}</Td>
                   <Td className={resourceSummary(pack.limits) === t("Sınırsız") ? "text-ink-3" : undefined}>{resourceSummary(pack.limits)}</Td>
                   <Td align="right">{pack.accounts}</Td>
                   <Td align="right" className="py-0.5">

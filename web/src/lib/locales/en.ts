@@ -3465,4 +3465,8 @@ export const en: Record<string, string> = {
   "Siteyi varsayılan yedek planına ekledi": "Added the site to the default backup plan",
   "Silinen veritabanını geri getirdi": "Restored a deleted database",
   "Silinen veritabanının yedeğini kalıcı olarak sildi": "Permanently removed a deleted database's backup",
+  "birazdan": "shortly",
+  "{n} dk sonra": "in {n} min",
+  "{n} sa sonra": "in {n} h",
+  "{n} gün sonra": "in {n} days",
 };

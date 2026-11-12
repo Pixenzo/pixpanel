@@ -942,6 +942,9 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
     if (confirmed) remove.mutate({ mailbox, deleteMail });
   }
 
+  // Hiçbir kutuda yönlendirme, otomatik yanıt ya da filtre yoksa sütun gösterilmez.
+  const anyFeatures = detail.mailboxes.some((mailbox) => mailbox.forward_to.length > 0 || mailbox.auto_reply.enabled || mailbox.filters.length > 0);
+
   return (
     <>
       <Panel
@@ -971,7 +974,7 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                 <Th>{t("Kullanım")}</Th>
                 <Th>{t("Durum")}</Th>
                 <Th>{t("Son saat gönderim")}</Th>
-                <Th>{t("Özellikler")}</Th>
+                {anyFeatures && <Th>{t("Özellikler")}</Th>}
                 <Th align="right">
                   <span className="sr-only">{t("İşlemler")}</span>
                 </Th>
@@ -1000,13 +1003,15 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                       </span>
                     )}
                   </Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-1">
-                      {mailbox.forward_to.length > 0 && <Badge>{t("Yönlendirme")}</Badge>}
-                      {mailbox.auto_reply.enabled && <Badge>{t("Otomatik yanıt")}</Badge>}
-                      {mailbox.filters.length > 0 && <Badge>{t("{n} filtre", { n: mailbox.filters.length })}</Badge>}
-                    </div>
-                  </Td>
+                  {anyFeatures && (
+                    <Td>
+                      <div className="flex flex-wrap gap-1">
+                        {mailbox.forward_to.length > 0 && <Badge>{t("Yönlendirme")}</Badge>}
+                        {mailbox.auto_reply.enabled && <Badge>{t("Otomatik yanıt")}</Badge>}
+                        {mailbox.filters.length > 0 && <Badge>{t("{n} filtre", { n: mailbox.filters.length })}</Badge>}
+                      </div>
+                    </Td>
+                  )}
                   <Td align="right" className="whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
                       {detail.webmail && (
@@ -1491,6 +1496,8 @@ export function MailDomainPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const detail = useQuery({ queryKey: detailKey(id ?? ""), queryFn: () => api.get<DomainDetail>(`/mail/domains/${id}`), enabled: Boolean(id) });
+  // Yan menüdeki sayı için; Listeler bölümüyle aynı sorgu anahtarını paylaşır.
+  const lists = useQuery({ queryKey: ["mail-lists", Number(id)], queryFn: () => api.get<unknown[]>(`/mail/domains/${id}/lists`), enabled: Boolean(id) });
 
   if (detail.isPending) return <LoadingBlock />;
   if (detail.isError) return <ErrorBlock message={errorMessage(detail.error)} onRetry={() => void detail.refetch()} />;
@@ -1499,7 +1506,7 @@ export function MailDomainPage() {
   const sections: Section[] = [
     { id: "kutular", label: t("Kutular"), icon: Inbox, count: data.domain.mailbox_count },
     { id: "takma-adlar", label: t("Takma adlar"), icon: AtSign, count: data.domain.alias_count },
-    { id: "listeler", label: t("Listeler"), icon: Users },
+    { id: "listeler", label: t("Listeler"), icon: Users, count: lists.data?.length },
     { id: "dns", label: t("DNS kayıtları"), icon: Globe },
     { id: "istemci", label: t("İstemci ayarları"), icon: Smartphone },
     { id: "ayarlar", label: t("Ayarlar"), icon: SlidersHorizontal },
