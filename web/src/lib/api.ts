@@ -271,6 +271,20 @@ export interface ComponentStatus {
   running: boolean;
 }
 
+/** Kurulu bir Node.js ana sürümünün yama güncellemesi durumu. */
+export interface NodeVersionInfo {
+  major: string;
+  installed: string;
+  /** En son yama sürümü; öğrenilemediyse null. */
+  latest: string | null;
+  update_available: boolean;
+  /** Bekleyen güncellemelerden biri güvenlik düzeltmesi içeriyor. */
+  security: boolean;
+  /** Bu sürümü kullanan Node.js sitesi sayısı. */
+  sites: number;
+  checked_at: number | null;
+}
+
 export type SiteKind = "php" | "static" | "proxy" | "node" | "python";
 
 export interface NodeSettings {
@@ -703,7 +717,25 @@ export interface WordPressExtension {
   auto_update: string;
 }
 
+/** WordPress uç adresi; alt klasördeki kurulumlar `?path=` ile seçilir (kök kurulumda boş). */
+export function wordpressUrl(siteId: number, suffix: string, path: string): string {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  return `/sites/${siteId}/wordpress${suffix}${query}`;
+}
+
+/** Sitenin belge kökü altında bulunan bir WordPress kurulumu. */
+export interface WordPressInstall {
+  /** Belge köküne göre klasör; kök kurulumda boş. */
+  path: string;
+  version: string;
+  /** Tahmini adres. */
+  url: string;
+  is_root: boolean;
+}
+
 export interface WordPressStatus {
+  /** Kurulumun klasörü; kök kurulumda boş. */
+  path: string;
   installed: boolean;
   can_install: boolean;
   database_ready: boolean;

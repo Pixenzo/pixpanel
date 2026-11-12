@@ -237,6 +237,62 @@ UB=$(api GET /users | jget "next((u['id'] for u in d if u['username']=='$OTHER')
 [ -n "$UB" ] && api DELETE /users/$UB >/dev/null
 rm -f $JB
 
+say "Alt klasördeki kurulumlar"
+INST=/sites/$S/wordpress/installs
+SUB=$WPR/blog
+wps() { runuser -u "$PX_USER" -- php8.3 /usr/local/lib/pixpanel/wp-cli.phar --no-color --path=$SUB "$@" 2>/dev/null; }
+check "tek kurulum varken yalnızca kök listelenir" "$(api GET $INST | jget '[(i["path"], i["is_root"]) for i in d]')" "[('', True)]"
+check "oturumsuz istek" "$(curl -sk -o /dev/null -w '%{http_code}' "$B$INST")" 401
+check "PHP olmayan sitede liste boş" "$(api GET /sites/$STATIC/wordpress/installs | jget 'd')" "[]"
+# Aynı veritabanında farklı tablo önekiyle ikinci bir kurulum.
+runuser -u "$PX_USER" -- mkdir -p $SUB
+wps core download --locale=en_US >/dev/null
+wps config create --dbname=wp_wp_e2e_test --dbuser=wp_wp_e2e_test --dbpass="$DBPASS" --dbhost=localhost --dbprefix=blog_ >/dev/null
+wps core install --url=http://$DOMAIN/blog --title="Alt Klasor" --admin_user=blogyonetici --admin_email=blog@ornek.com --admin_password="$WP_PASS" --skip-email >/dev/null
+R=$(api GET $INST)
+check "alt klasör kurulumu listelenir (kök önce)" "$(jget '[(i["path"], i["is_root"]) for i in d]' <<<"$R")" "[('', True), ('blog', False)]"
+check "sürüm ve tahmini adres" "$(jget '(d[1]["version"] != "", d[1]["url"], d[0]["url"])' <<<"$R")" "(True, 'http://$DOMAIN/blog', 'http://$DOMAIN')"
+# Taramanın dışında kalması gerekenler: sembolik bağ, çok derin klasör, wp-content içi, sürüm dosyasız wp-config.
+runuser -u "$PX_USER" -- ln -s $SUB $WPR/blog-link
+runuser -u "$PX_USER" -- mkdir -p $WPR/x/y/z/w/wp-includes $WPR/wp-content/sahte/wp-includes $WPR/artakalan
+for d in x/y/z/w wp-content/sahte; do
+  runuser -u "$PX_USER" -- sh -c "echo '<?php' > $WPR/$d/wp-config.php; echo \"\\\$wp_version = '6.0';\" > $WPR/$d/wp-includes/version.php"
+done
+runuser -u "$PX_USER" -- sh -c "echo '<?php' > $WPR/artakalan/wp-config.php"
+check "sembolik bağ, derin klasör, wp-content ve sürüm dosyasız klasör listelenmez" "$(api GET $INST | jget '[i["path"] for i in d]')" "['', 'blog']"
+runuser -u "$PX_USER" -- rm -rf $WPR/blog-link $WPR/x $WPR/wp-content/sahte $WPR/artakalan
+
+R=$(api GET "/sites/$S/wordpress?path=blog")
+check "alt klasörün durumu" "$(jget '(d["path"], d["installed"], d["can_install"], d["title"], d["url"])' <<<"$R")" "('blog', True, False, 'Alt Klasor', 'http://$DOMAIN/blog')"
+check "kökün durumu değişmedi" "$(api GET /sites/$S/wordpress | jget '(d["path"], d["title"])')" "('', 'Sınama Sitesi')"
+for bad in '../' '..%2F..' '/etc' 'blog/../..' 'blog/..' 'yok' 'wp-content' '--help' 'blog%00' 'a/b/c/d' 'blog%20x'; do
+  check "geçersiz kurulum yolu reddedilir: $bad" "$(code GET "/sites/$S/wordpress?path=$bad")" 400
+done
+check "geçersiz yol güncellemeyi başlatmaz" "$(code POST "/sites/$S/wordpress/update?path=../x" -d '{"what":"all"}')" 400
+check "geçersiz yol girişte reddedilir" "$(code POST "/sites/$S/wordpress/login?path=/etc" )" 400
+check "geçersiz yol eklentide reddedilir" "$(code POST "/sites/$S/wordpress/plugins/$PLUGIN?path=yok" -d '{"action":"activate"}')" 400
+check "geçersiz yol denetimde reddedilir" "$(code GET "/sites/$S/wordpress/security?path=yok")" 400
+
+BP=$(jget 'd["plugins"][0]["name"]' <<<"$R")
+check "alt klasörde eklenti etkinleştirilir" "$(api POST "/sites/$S/wordpress/plugins/$BP?path=blog" -d '{"action":"activate"}' | jget "next(p['status'] for p in d['plugins'] if p['name']=='$BP')")" active
+check "kökteki eklenti etkilenmedi" "$(api GET /sites/$S/wordpress | jget "next(p['status'] for p in d['plugins'] if p['name']=='$BP')")" inactive
+api POST "/sites/$S/wordpress/plugins/$BP?path=blog" -d '{"action":"deactivate"}' >/dev/null
+check "alt klasörde bakım kipi" "$(api PUT "/sites/$S/wordpress/settings?path=blog" -d '{"maintenance":true}' | jget '(d["path"], d["maintenance"])')" "('blog', True)"
+check "kökün bakım kipi değişmedi" "$(api GET /sites/$S/wordpress | jget 'd["maintenance"]')" False
+check "kök site bakımda değil" "$(site / -o /dev/null -w '%{http_code}')" 200
+api PUT "/sites/$S/wordpress/settings?path=blog" -d '{"maintenance":false}' >/dev/null
+URL=$(api POST "/sites/$S/wordpress/login?path=blog" | jget 'd["url"]')
+has "alt klasör giriş adresi" "$URL" "http://$DOMAIN/blog/?pixpanel_login="
+check "giriş eklentisi alt klasöre yazıldı" "$([ -f $SUB/wp-content/mu-plugins/pixpanel-login.php ] && echo var)" var
+R=$(api GET "/sites/$S/wordpress/security?path=blog")
+check "alt klasörün güvenlik denetimi" "$(jget '(d["total"], len(d["items"]))' <<<"$R")" "(8, 8)"
+BJOB=$(api POST "/sites/$S/wordpress/update?path=blog" -d '{"what":"plugins"}' | jget 'd["job_id"]')
+check "alt klasör güncelleme görevi" "$(wait_job "$BJOB")" success
+has "geri dönüş yalnızca kökte" "$(api GET "/jobs/$BJOB" | jget 'd["log"]')" "Alt klasördeki kurulumlarda otomatik geri dönüş"
+check "denetim günlüğünde klasör yazılır" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "SELECT count(*) >= 1 FROM audit_log WHERE action='wordpress.update' AND target='$DOMAIN' AND detail LIKE 'path=blog %'")" 1
+check "kök kurulum güncellemeden sonra sağlam" "$(site / -o /dev/null -w '%{http_code}')" 200
+runuser -u "$PX_USER" -- rm -rf $SUB
+
 say "Temizlik"
 check "site sil" "$(code DELETE "/sites/$S?delete_files=true")" 200
 D=$(api GET /databases | jget 'next(x["id"] for x in d["databases"] if x["name"]=="wp_wp_e2e_test")')

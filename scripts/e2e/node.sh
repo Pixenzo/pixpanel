@@ -94,6 +94,95 @@ check "kuralları kaldır" "$(code PATCH /sites/$ST -d '{"proxy_rules":[]}')" 20
 check "kural kalkınca 404" "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: statik.test' http://127.0.0.1/api/x)" 404
 docker rm -f pxwho >/dev/null 2>&1
 
+say "Node.js sürüm güncelleme"
+VERS=$(api GET /system/node/versions)
+check "sürüm listesi alanları" "$(jget 'sorted(d[0].keys())' <<<"$VERS")" "['checked_at', 'installed', 'latest', 'major', 'security', 'sites', 'update_available']"
+check "kurulu sürüm tam numara olarak listelenir" "$(jget 'next(v["installed"] for v in d if v["major"]=="22").count(".")' <<<"$VERS")" 2
+check "bu sınamanın sitesi 22 sürümünü kullanıyor sayılır" "$(jget 'next(v["sites"] for v in d if v["major"]=="22") >= 1' <<<"$VERS")" True
+check "oturumsuz istek" "$(curl -sk -o /dev/null -w '%{http_code}' "$B/system/node/versions")" 401
+check "geçersiz ana sürüm" "$(code POST /system/node/versions/abc/update)" 400
+check "yol kaçışlı ana sürüm" "$(code POST '/system/node/versions/..%2Fx/update')" 400
+check "kurulu olmayan ana sürüm" "$(code POST /system/node/versions/7/update)" 400
+
+# Gerçek güncelleme: 20 sürümü bu sınamaya aittir. Başkası kullanıyorsa dokunulmaz.
+N20=/opt/pixpanel/node/20
+USES20=$(api GET /sites | jget 'len([s for s in d if s["kind"]=="node" and s["node"]["version"]=="20"])')
+if [ "$USES20" != 0 ]; then
+  echo "  ATLANDI Node.js 20'yi kullanan site var; güncelleme sınaması yapılmadı"
+else
+  WAS20=0; [ -x $N20/bin/node ] && WAS20=1
+  if [ $WAS20 = 0 ]; then
+    check "Node.js 20 kurulumu" "$(wait_job "$(api POST /components/node-20/install | jget 'd["job_id"]')")" success
+  fi
+  # Eski bir yama sürümü (resmî derleme, özeti listeyle doğrulanır) yerine konur.
+  OLDV=20.10.0
+  OLDF=node-v$OLDV-linux-x64.tar.xz
+  curl -fsSL -o /tmp/px-node-old.tar.xz https://nodejs.org/dist/v$OLDV/$OLDF
+  EXPECT=$(curl -fsSL https://nodejs.org/dist/v$OLDV/SHASUMS256.txt | grep " $OLDF\$" | cut -d' ' -f1)
+  check "eski derlemenin özeti" "$(sha256sum /tmp/px-node-old.tar.xz | cut -d' ' -f1)" "$EXPECT"
+  downgrade() { rm -rf $N20; mkdir -p $N20; tar -xJf /tmp/px-node-old.tar.xz -C $N20 --strip-components=1 --no-same-owner; }
+  downgrade
+  check "kurulu eski yama görünür; güncelleme ve güvenlik düzeltmesi var" "$(api GET /system/node/versions | jget 'next((v["installed"], v["update_available"], v["security"], v["sites"]) for v in d if v["major"]=="20")')" "('$OLDV', True, True, 0)"
+  H=$(api POST /health/check)
+  check "sağlık merkezi güvenlik güncellemesini bildirir" "$(jget "next((f['severity'], f['fix']) for f in d['report']['findings'] if f['key']=='node.update:20')" <<<"$H")" "('warning', 'Güncelle')"
+
+  api DELETE "/sites/$(api GET /sites | jget 'next((s["id"] for s in d if s["domain"]=="node-guncelle.test"), "")')?delete_files=true" >/dev/null 2>&1
+  S20=$(api POST /sites -d '{"domain":"node-guncelle.test","kind":"node","node_version":"20"}' | jget 'd["id"]')
+  cat > /home/admin/sites/node-guncelle.test/server.js <<'XEOF'
+const http = require("node:http");
+// Sınama: PX_CRASH tanımlıysa yalnızca eski yama sürümünde ayakta kalır.
+if (process.env.PX_CRASH && process.version !== "v20.10.0") process.exit(1);
+http.createServer((req, res) => res.end(process.version)).listen(process.env.PORT, process.env.HOST);
+XEOF
+  chown admin:www-data /home/admin/sites/node-guncelle.test/server.js
+  check "ayar kaydı" "$(code PATCH /sites/$S20 -d '{"node":{"version":"20","command":"node server.js"}}')" 200
+  sleep 2
+  check "güncellemeden önce eski sürümle yayında" "$(site node-guncelle.test /)" "v$OLDV"
+  check "sürümü kullanan site sayılır" "$(api GET /system/node/versions | jget 'next(v["sites"] for v in d if v["major"]=="20")')" 1
+  PID1=$(systemctl show -p MainPID --value pixpanel-node-$S20)
+
+  UJ=$(api POST /system/node/versions/20/update | jget 'd["job_id"]')
+  check "aynı sürümde ikinci güncelleme başlatılamaz" "$(code POST /system/node/versions/20/update)" 409
+  check "güncelleme görevi" "$(wait_job "$UJ")" success
+  ULOG=$(api GET "/jobs/$UJ" | jget 'd["log"]')
+  has "sağlama toplamı doğrulandı" "$ULOG" "Sağlama toplamı doğrulandı"
+  has "kullanan servis yeniden başlatıldı" "$ULOG" "node-guncelle.test: servis yeniden başlatılıyor"
+  check "yeni yama sürümü kuruldu" "$([ "$($N20/bin/node --version)" != "v$OLDV" ] && echo yeni)" yeni
+  check "site yeni sürümle yayında" "$([ "$(site node-guncelle.test /)" = "$($N20/bin/node --version)" ] && echo evet)" evet
+  check "servis yeni süreçle çalışıyor" "$([ "$(systemctl show -p MainPID --value pixpanel-node-$S20)" != "$PID1" ] && echo evet)" evet
+  check "güncelleme sonrası güncel görünür" "$(api GET /system/node/versions | jget 'next((v["update_available"], v["security"]) for v in d if v["major"]=="20")')" "(False, False)"
+  check "geçici klasör kalmadı" "$(ls /opt/pixpanel/node | grep -c '\.\(old\|new\|failed\)$')" 0
+  check "denetim günlüğüne yazıldı" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "SELECT count(*) >= 1 FROM audit_log WHERE action='node.update' AND target='20'")" 1
+  H=$(api POST /health/check)
+  check "güncellemeden sonra bulgu kalkar" "$(jget "next((f['key'] for f in d['report']['findings'] if f['key']=='node.update:20'), 'yok')" <<<"$H")" yok
+  NJ=$(api POST /system/node/versions/20/update | jget 'd["job_id"]')
+  check "güncel sürümde yeniden güncelleme bir şey yapmaz" "$(wait_job "$NJ")" success
+  has "zaten güncel iletisi" "$(api GET "/jobs/$NJ" | jget 'd["log"]')" "yapılacak bir şey yok"
+
+  # Yeni sürümde çöken uygulama: güncelleme başarısız sayılır ve eski sürüme dönülür.
+  downgrade
+  check "çökme denemesi için ayar" "$(code PATCH /sites/$S20 -d '{"node":{"version":"20","command":"node server.js","env":[{"key":"PX_CRASH","value":"1"}]}}')" 200
+  sleep 2
+  check "eski sürümle ayakta" "$(site node-guncelle.test /)" "v$OLDV"
+  RJ=$(api POST /system/node/versions/20/update | jget 'd["job_id"]')
+  check "yeni sürümle çöken uygulama güncellemeyi başarısız sayar" "$(wait_job "$RJ")" failed
+  RLOG=$(api GET "/jobs/$RJ" | jget 'd["log"]')
+  has "eski sürüme dönüldü" "$RLOG" "eski sürüme ($OLDV) döndürüldü"
+  check "eski sürüm geri kondu" "$($N20/bin/node --version)" "v$OLDV"
+  sleep 4
+  check "site eski sürümle yeniden yayında" "$(site node-guncelle.test /)" "v$OLDV"
+  check "geri dönüşten sonra geçici klasör kalmadı" "$(ls /opt/pixpanel/node | grep -c '\.\(old\|new\|failed\)$')" 0
+
+  check "sınama sitesini sil" "$(code DELETE "/sites/$S20?delete_files=true")" 200
+  if [ $WAS20 = 1 ]; then
+    # Önceden kuruluydu: en son yama sürümüne geri getirilir.
+    check "Node.js 20 eski hâline getirilir" "$(wait_job "$(api POST /system/node/versions/20/update | jget 'd["job_id"]')")" success
+  else
+    rm -rf $N20
+  fi
+  rm -f /tmp/px-node-old.tar.xz
+fi
+
 say "Temizlik"
 check "siteyi sil" "$(code DELETE "/sites/$S?delete_files=true")" 200
 check "servis kaldırıldı" "$(systemctl list-unit-files "pixpanel-node-$S.service" --no-legend | wc -l) $(ls /etc/pixpanel/node/ 2>/dev/null | grep -c "^$S\.")" "0 0"

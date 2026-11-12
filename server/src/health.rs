@@ -804,7 +804,7 @@ pub async fn update_wordpress_nightly(state: &AppState, last_day: &mut i64) {
     for id in pending {
         let Ok(Some(site)) = crate::hosting::sites::load(&state.db, id) else { continue };
         let domain = site.domain.clone();
-        let outcome = match crate::wordpress::start_update_job(state, None, site, "all".into()) {
+        let outcome = match crate::wordpress::start_update_job(state, None, site, String::new(), "all".into()) {
             Ok(job_id) => wait_for_job(state, job_id).await,
             Err(err) => Err(err.to_string()),
         };
@@ -873,6 +873,36 @@ fn check_wordpress(state: &AppState, batch: &mut Batch, sites: &[Site]) {
             )
             .subject(&site.domain)
             .link(format!("/sites/{}/wordpress", site.id))
+            .fix("Güncelle"),
+        );
+    }
+}
+
+/// Kurulu Node.js sürümlerinin yama güncellemeleri. Sürüm listesi saatlik önbelleğe alınır; ağ
+/// hatasında güncelleme durumu bilinmez ve bulgu üretilmez.
+async fn check_node_versions(state: &AppState, batch: &mut Batch) {
+    let Ok(versions) = crate::hosting::node_update::versions(&state.db).await else { return };
+    for info in versions {
+        batch.checks += 1;
+        if !info.update_available {
+            continue;
+        }
+        let latest = info.latest.as_deref().unwrap_or("?");
+        let (severity, title) = if info.security {
+            (Severity::Warning, format!("Node.js {} güvenlik güncellemesi bekliyor ({} → {latest})", info.major, info.installed))
+        } else {
+            (Severity::Info, format!("Node.js {} için yeni yama sürümü var ({} → {latest})", info.major, info.installed))
+        };
+        let uses = if info.sites > 0 { format!(" {} site bu sürümü kullanıyor; güncellemede servisleri sırayla yeniden başlatılır.", info.sites) } else { String::new() };
+        batch.push(
+            Finding::new(
+                "node.update",
+                &info.major,
+                severity,
+                title,
+                format!("Node.js yama sürümleri güvenlik düzeltmeleri içerebilir.{uses} Yeni sürüm ayağa kalkmazsa panel eski sürüme döner."),
+            )
+            .link("/components")
             .fix("Güncelle"),
         );
     }
@@ -958,6 +988,7 @@ pub async fn run_checks(state: &AppState) -> Report {
     refresh_updates(&monitor).await;
     check_updates(state, &mut batch);
     check_wordpress(state, &mut batch, &sites);
+    check_node_versions(state, &mut batch).await;
 
     // Site kartları için sorunlar, benzer öneriler birleştirilmeden önce ayrılır.
     *monitor.site_issues.write().unwrap_or_else(|p| p.into_inner()) = site_issues_from(&batch.findings);
@@ -1224,7 +1255,7 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
             let id: i64 = target.parse().map_err(|_| AppError::bad("Geçersiz site"))?;
             let site = crate::hosting::sites::load(&state.db, id)?.ok_or(AppError::NotFound)?;
             let domain = site.domain.clone();
-            crate::wordpress::start_update_job(state, user_id, site, "all".into())?;
+            crate::wordpress::start_update_job(state, user_id, site, String::new(), "all".into())?;
             Ok(format!("{domain} güncelleniyor; önce yedeği alınacak."))
         }
         "disk.full" => {
@@ -1237,6 +1268,10 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
             } else {
                 "Silinebilecek önbellek ya da eski günlük kalmamış; büyük dosyaları Dosyalar sayfasından inceleyin.".to_string()
             })
+        }
+        "node.update" => {
+            crate::hosting::node_update::start_job(state, user_id, target).await?;
+            Ok(format!("Node.js {target} güncelleniyor; sürümü kullanan servisler sırayla yeniden başlatılacak."))
         }
         "updates.pending" => {
             start_upgrade_job(state, user_id)?;

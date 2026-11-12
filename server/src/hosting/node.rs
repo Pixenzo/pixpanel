@@ -420,6 +420,11 @@ pub async fn status(site_id: i64) -> AppResult<Status> {
     })
 }
 
+/// Sitenin servisi şu an çalışıyor mu?
+pub async fn is_running(site_id: i64) -> bool {
+    crate::sys::services::is_active(&unit_name(site_id)).await
+}
+
 pub async fn action(site_id: i64, action: &str) -> AppResult<()> {
     if !matches!(action, "start" | "stop" | "restart") {
         return Err(AppError::bad("Geçersiz işlem"));

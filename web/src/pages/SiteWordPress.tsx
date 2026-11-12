@@ -8,8 +8,8 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useFeedback } from "../components/feedback";
 import { Badge, Button, EmptyState, ErrorBlock, IconButton, Input, LoadingBlock, Mono, Panel, Select, Status, Switch, Table, Td, Th } from "../components/ui";
-import type { Site, WordPressExtension, WordPressStatus } from "../lib/api";
-import { api, errorMessage } from "../lib/api";
+import type { Site, WordPressExtension, WordPressInstall, WordPressStatus } from "../lib/api";
+import { api, errorMessage, wordpressUrl } from "../lib/api";
 import { generatePassword } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
@@ -157,11 +157,13 @@ function InstallProgress({ jobId, credentials, onClose }: { jobId: number; crede
 
 function ExtensionTable({
   site,
+  path,
   kind,
   items,
   onChanged,
 }: {
   site: Site;
+  path: string;
   kind: "plugins" | "themes";
   items: WordPressExtension[];
   onChanged: (status: WordPressStatus) => void;
@@ -169,7 +171,7 @@ function ExtensionTable({
   const feedback = useFeedback();
   const action = useMutation({
     mutationFn: ({ name, action }: { name: string; action: string }) =>
-      api.post<WordPressStatus>(`/sites/${site.id}/wordpress/${kind}/${encodeURIComponent(name)}`, { action }),
+      api.post<WordPressStatus>(wordpressUrl(site.id, `/${kind}/${encodeURIComponent(name)}`, path), { action }),
     onSuccess: onChanged,
     onError: (error) => feedback.error(error),
   });
@@ -267,7 +269,7 @@ function ExtensionTable({
   );
 }
 
-function Manage({ site, status, onChanged }: { site: Site; status: WordPressStatus; onChanged: (status: WordPressStatus) => void }) {
+function Manage({ site, path, status, onChanged }: { site: Site; path: string; status: WordPressStatus; onChanged: (status: WordPressStatus) => void }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [updateJob, setUpdateJob] = useState<number | null>(null);
@@ -276,16 +278,16 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
   const updates = pluginUpdates + themeUpdates + (status.core_update ? 1 : 0);
 
   const login = useMutation({
-    mutationFn: () => api.post<{ url: string }>(`/sites/${site.id}/wordpress/login`),
+    mutationFn: () => api.post<{ url: string }>(wordpressUrl(site.id, "/login", path)),
     onError: (error) => feedback.error(error),
   });
   const update = useMutation({
-    mutationFn: () => api.post<{ job_id: number }>(`/sites/${site.id}/wordpress/update`, { what: "all" }),
+    mutationFn: () => api.post<{ job_id: number }>(wordpressUrl(site.id, "/update", path), { what: "all" }),
     onSuccess: (result) => setUpdateJob(result.job_id),
     onError: (error) => feedback.error(error),
   });
   const settings = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.put<WordPressStatus>(`/sites/${site.id}/wordpress/settings`, body),
+    mutationFn: (body: Record<string, unknown>) => api.put<WordPressStatus>(wordpressUrl(site.id, "/settings", path), body),
     onSuccess: onChanged,
     onError: (error) => feedback.error(error),
   });
@@ -324,6 +326,11 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
               </span>
               {status.core_update ? <Badge tone="warn">{t("{version} sürümü var", { version: status.core_update })}</Badge> : <Status tone="ok">{t("Güncel")}</Status>}
               {status.maintenance && <Badge tone="warn">{t("Bakım kipinde")}</Badge>}
+              {path && (
+                <span>
+                  {t("Klasör")}: <Mono>/{path}</Mono>
+                </span>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
@@ -347,9 +354,10 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
         )}
       </Panel>
 
-      <StagingPanel site={site} />
+      {/* Hazırlık ortamı ve geri dönüş yalnızca sitenin kök kurulumunda çalışır. */}
+      {!path && <StagingPanel site={site} />}
 
-      <SecurityPanel site={site} />
+      <SecurityPanel site={site} path={path} />
 
       <Panel flush title={t("Bakım ve güncelleme")}>
         <ul className="divide-y divide-line">
@@ -392,21 +400,45 @@ function Manage({ site, status, onChanged }: { site: Site; status: WordPressStat
       </Panel>
 
       <Panel flush title={t("Eklentiler")}>
-        <ExtensionTable site={site} kind="plugins" items={status.plugins} onChanged={onChanged} />
+        <ExtensionTable site={site} path={path} kind="plugins" items={status.plugins} onChanged={onChanged} />
       </Panel>
       <Panel flush title={t("Temalar")}>
-        <ExtensionTable site={site} kind="themes" items={status.themes} onChanged={onChanged} />
+        <ExtensionTable site={site} path={path} kind="themes" items={status.themes} onChanged={onChanged} />
       </Panel>
     </div>
   );
 }
 
+/** Birden çok kurulum varsa hangisinin yönetileceğini seçtirir. */
+function InstallPicker({ installs, value, onChange }: { installs: WordPressInstall[]; value: string; onChange: (path: string) => void }) {
+  return (
+    <Panel>
+      <div className="max-w-xl">
+        <Select label={t("WordPress kurulumu")} value={value} onChange={(event) => onChange(event.target.value)} hint={t("Bu sitenin klasörlerinde birden çok WordPress bulundu.")}>
+          {installs.map((install) => (
+            <option key={install.path} value={install.path}>
+              {install.is_root ? t("Kök klasör") : `/${install.path}`} (WordPress {install.version})
+            </option>
+          ))}
+        </Select>
+      </div>
+    </Panel>
+  );
+}
+
 export function WordPressSection({ site }: { site: Site }) {
   const queryClient = useQueryClient();
-  const queryKey = ["wordpress", site.id];
   const [installing, setInstalling] = useState<{ jobId: number; credentials: { user: string; password: string } } | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
+  // Sitenin klasörlerindeki kurulumlar; taranamazsa yalnızca kök kurulum varsayılır.
+  const installsQuery = useQuery({ queryKey: ["wordpress-installs", site.id], queryFn: () => api.get<WordPressInstall[]>(wordpressUrl(site.id, "/installs", "")), staleTime: 60000 });
+  const installs = installsQuery.data ?? [];
+  // Kökte WordPress yok ama alt klasörde varsa ilk alt klasördeki kurulum gösterilir.
+  const fallback = installs.length > 0 && !installs.some((install) => install.is_root) ? installs[0].path : "";
+  const path = chosen !== null && installs.some((install) => install.path === chosen) ? chosen : fallback;
+  const queryKey = ["wordpress", site.id, path];
   // Durum, sitede birkaç wp-cli komutu çalıştırılarak toplanır; her değişiklikte yeniden istenmesin.
-  const status = useQuery({ queryKey, queryFn: () => api.get<WordPressStatus>(`/sites/${site.id}/wordpress`), staleTime: 30000 });
+  const status = useQuery({ queryKey, queryFn: () => api.get<WordPressStatus>(wordpressUrl(site.id, "", path)), staleTime: 30000, enabled: !installsQuery.isPending });
   const setStatus = (next: WordPressStatus) => queryClient.setQueryData(queryKey, next);
 
   if (installing) {
@@ -416,24 +448,36 @@ export function WordPressSection({ site }: { site: Site }) {
         credentials={installing.credentials}
         onClose={() => {
           setInstalling(null);
-          void queryClient.invalidateQueries({ queryKey });
+          void queryClient.invalidateQueries({ queryKey: ["wordpress", site.id] });
+          void queryClient.invalidateQueries({ queryKey: ["wordpress-installs", site.id] });
         }}
       />
     );
   }
-  if (status.isPending) return <LoadingBlock />;
+  if (installsQuery.isPending || status.isPending) return <LoadingBlock />;
   if (status.isError) return <ErrorBlock message={errorMessage(status.error)} onRetry={() => void status.refetch()} />;
 
   const data = status.data;
+  const picker = installs.length > 1 ? <InstallPicker installs={installs} value={path} onChange={setChosen} /> : null;
   if (data.installed && data.problem) {
     return (
-      <Panel title="WordPress">
-        <p className="font-medium">{t("WordPress dosyaları var ama site çalışır durumda değil")}</p>
-        <p className="mt-1 text-ink-2">{data.problem}</p>
-      </Panel>
+      <div className="flex flex-col gap-5">
+        {picker}
+        <Panel title="WordPress">
+          <p className="font-medium">{t("WordPress dosyaları var ama site çalışır durumda değil")}</p>
+          <p className="mt-1 text-ink-2">{data.problem}</p>
+        </Panel>
+      </div>
     );
   }
-  if (data.installed) return <Manage site={site} status={data} onChanged={setStatus} />;
+  if (data.installed) {
+    return (
+      <div className="flex flex-col gap-5">
+        {picker}
+        <Manage key={path} site={site} path={path} status={data} onChanged={setStatus} />
+      </div>
+    );
+  }
   if (!data.database_ready) {
     return (
       <Panel title="WordPress">
