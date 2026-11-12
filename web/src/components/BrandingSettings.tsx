@@ -1,4 +1,5 @@
-// Ayarlar sayfasındaki "Marka" bölümü: panelin adı, logosu ve giriş sayfası metni.
+// Marka formu: Ayarlar'daki sunucu geneli marka ve bayinin kendi markası aynı bileşenden geçer.
+// Ad, logo, giriş sayfası metni, destek bağlantısı ve (yalnız bayi markasında) panel alan adı.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent, FormEvent } from "react";
@@ -15,22 +16,46 @@ const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
 /// Sunucudaki sınırla uyumlu: base64 kodlaması dosyayı üçte bir büyütür.
 const MAX_LOGO_FILE_BYTES = 140 * 1024;
 
-function BrandingForm({ initial }: { initial: Branding }) {
+/** Formun değerleri; `panel_domain` yalnızca bayi markasında vardır. */
+export interface BrandingValues extends Branding {
+  panel_domain: string;
+}
+
+export function BrandingForm({
+  initial,
+  onSubmit,
+  onSaved,
+  withDomain,
+}: {
+  initial: BrandingValues;
+  /** Değerleri sunucuya yazar. */
+  onSubmit: (values: BrandingValues) => Promise<unknown>;
+  /** Kayıttan sonra çağrılır (önbellek tazeleme gibi). */
+  onSaved: () => void;
+  /** Panel alan adı alanını göster (bayi markası). */
+  withDomain?: boolean;
+}) {
   const feedback = useFeedback();
-  const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(initial.name);
   const [logo, setLogo] = useState(initial.logo);
   const [loginMessage, setLoginMessage] = useState(initial.login_message);
+  const [supportUrl, setSupportUrl] = useState(initial.support_url);
+  const [panelDomain, setPanelDomain] = useState(initial.panel_domain);
   const [logoError, setLogoError] = useState<string | null>(null);
 
-  const dirty = name !== initial.name || logo !== initial.logo || loginMessage !== initial.login_message;
+  const dirty =
+    name !== initial.name ||
+    logo !== initial.logo ||
+    loginMessage !== initial.login_message ||
+    supportUrl !== initial.support_url ||
+    (withDomain === true && panelDomain !== initial.panel_domain);
 
   const save = useMutation({
-    mutationFn: () => api.put<Branding>("/branding", { name, logo, login_message: loginMessage }),
-    onSuccess: (saved) => {
-      queryClient.setQueryData(["branding"], saved);
+    mutationFn: () => onSubmit({ name, logo, login_message: loginMessage, support_url: supportUrl, panel_domain: withDomain ? panelDomain : "" }),
+    onSuccess: () => {
       feedback.success(t("Marka ayarları kaydedildi"));
+      onSaved();
     },
   });
 
@@ -101,6 +126,30 @@ function BrandingForm({ initial }: { initial: Branding }) {
         maxLength={300}
       />
 
+      <Input
+        label={t("Destek bağlantısı")}
+        value={supportUrl}
+        onChange={(event) => setSupportUrl(event.target.value)}
+        placeholder="https://destek.ornek.com"
+        hint={t("İsteğe bağlı. https:// ya da mailto: ile başlayan bir adres; yan menünün altında \"Destek\" bağlantısı olarak görünür.")}
+        maxLength={200}
+        inputMode="url"
+        autoComplete="off"
+      />
+
+      {withDomain && (
+        <Input
+          label={t("Panel alan adı")}
+          value={panelDomain}
+          onChange={(event) => setPanelDomain(event.target.value)}
+          placeholder="panel.ornek.com"
+          hint={t("İsteğe bağlı. Müşterileriniz panele bu adresten girerse giriş sayfasında markanız görünür. Alan adının bu sunucuya yönlendirilmesi ve sertifikası ayrıca kurulmalıdır; bir alan adı yalnızca tek bayiye bağlanabilir.")}
+          maxLength={253}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      )}
+
       {save.isError && <ErrorBlock message={errorMessage(save.error)} />}
       <div>
         <Button type="submit" variant="primary" loading={save.isPending} disabled={!dirty}>
@@ -111,12 +160,19 @@ function BrandingForm({ initial }: { initial: Branding }) {
   );
 }
 
+/** Ayarlar sayfasındaki sunucu geneli marka (yalnız yönetici). */
 export function BrandingSettings() {
+  const queryClient = useQueryClient();
   const branding = useBranding();
   return (
     <Panel title={t("Marka")}>
       <p className="mb-4 max-w-[70ch] text-ink-2">{t("Paneli kendi adınız ve logonuzla sunun; müşterileriniz giriş sayfasında ve panelin içinde sizin markanızı görür.")}</p>
-      <BrandingForm key={JSON.stringify(branding)} initial={branding} />
+      <BrandingForm
+        key={JSON.stringify(branding)}
+        initial={{ ...branding, panel_domain: "" }}
+        onSubmit={(values) => api.put<Branding>("/branding", { name: values.name, logo: values.logo, login_message: values.login_message, support_url: values.support_url })}
+        onSaved={() => void queryClient.invalidateQueries({ queryKey: ["branding"] })}
+      />
     </Panel>
   );
 }

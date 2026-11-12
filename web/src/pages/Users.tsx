@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { AccessPanel } from "../components/AccessPanel";
 import { useFeedback } from "../components/feedback";
+import { ResellerBrandSummary } from "../components/ResellerBranding";
 import {
   Badge,
   Button,
@@ -239,6 +240,11 @@ function EditUserModal({ user, onClose }: { user: UserInfo; onClose: () => void 
       {packaged && (
         <div className="mt-5">
           <UsagePanel path={`/users/${user.id}/usage`} title={t("Kullanım")} />
+        </div>
+      )}
+      {user.role === "reseller" && me.role === "admin" && (
+        <div className="mt-5">
+          <ResellerBrandSummary resellerId={user.id} />
         </div>
       )}
       {user.role !== "member" && (

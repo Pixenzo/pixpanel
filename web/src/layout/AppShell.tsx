@@ -6,7 +6,7 @@ import { ChevronDown, LogOut, Menu, Moon, Search, Sun, UserRound } from "lucide-
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
-import { BrandLogo, BrandName } from "../components/Brand";
+import { BrandLogo, BrandName, SupportLink } from "../components/Brand";
 import { CommandPalette } from "../components/CommandPalette";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Button, IconButton, Spinner } from "../components/ui";
@@ -71,7 +71,10 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           );
         })}
       </div>
-      <p className="shrink-0 border-t border-rail-line px-4 sm:px-6 py-3 text-[12.5px] text-rail-ink-2">Pixenzo</p>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-rail-line px-4 sm:px-6 py-3 text-[12.5px] text-rail-ink-2">
+        <p>Pixenzo</p>
+        <SupportLink className="text-rail-ink underline-offset-2 hover:underline" />
+      </div>
     </nav>
   );
 }

@@ -2,6 +2,7 @@
 
 import { brandName, useBranding } from "../lib/branding";
 import { classNames } from "../lib/format";
+import { t } from "../lib/i18n";
 
 /** `onDark`: koyu zemin (yan gezinme) üzerinde kullanılan renkler. */
 export function BrandMark({ className, onDark }: { className?: string; onDark?: boolean }) {
@@ -27,4 +28,17 @@ export function BrandLogo({ className, onDark }: { className?: string; onDark?: 
 /** Panelin görünen adı (yönetici değiştirmediyse PixPanel). */
 export function BrandName() {
   return <>{brandName(useBranding())}</>;
+}
+
+/** Markanın destek bağlantısı; tanımlı değilse hiçbir şey çizilmez. Sunucu yalnızca https: ve mailto:
+ *  kabul eder; burada da aynı beyaz liste uygulanır. */
+export function SupportLink({ className }: { className?: string }) {
+  const { support_url: url } = useBranding();
+  if (!/^(https:\/\/|mailto:)/.test(url)) return null;
+  const external = url.startsWith("https://");
+  return (
+    <a href={url} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})} className={className}>
+      {t("Destek")}
+    </a>
+  );
 }
