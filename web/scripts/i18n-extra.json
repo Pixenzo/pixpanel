@@ -319,7 +319,8 @@
     "pure-ftpd. Site başına, o sitenin klasörüne hapsedilmiş FTP hesapları açılır.",
     "Posta kutularına tarayıcıdan erişim. Panel adresinin /webmail/ yolunda yayınlanır.",
     "Postfix (SMTP), Dovecot (IMAP, filtreler) ve Rspamd (istenmeyen posta süzgeci, DKIM).",
-    "Python uygulamaları (Flask, Django, FastAPI) için sanal ortam desteği. Her site kendi bağımlılıklarını ayrı kurar."
+    "Python uygulamaları (Flask, Django, FastAPI) için sanal ortam desteği. Her site kendi bağımlılıklarını ayrı kurar.",
+    "uv ile kurulan bağımsız Python sürümü. Python siteleri sürümü tek tek seçebilir."
   ],
   "server/src/notify.rs (bildirim olayları, NotificationSettings.tsx içinde t(item.label))": [
     "Yayınlama başarısız olduğunda",

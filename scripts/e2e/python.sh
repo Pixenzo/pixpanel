@@ -71,7 +71,9 @@ check "ortam değişkeni bozulmadan ulaştı; sanal ortam etkin" "$(site_until '
 check "bellek sınırı uygulandı" "$(systemctl show -p MemoryMax --value pixpanel-node-$S)" 268435456
 check "sanal ortam değişkeni elle tanımlanamaz" "$(code PATCH /sites/$S -d "{\"node\":{\"version\":\"$VERSION\",\"command\":\"python app.py\",\"env\":[{\"key\":\"VIRTUAL_ENV\",\"value\":\"/tmp\"}]}}")" 400
 check "satır sonlu komut" "$(code PATCH /sites/$S -d "{\"node\":{\"version\":\"$VERSION\",\"command\":\"python app.py\\nUser=root\"}}")" 400
-check "kurulu olmayan sürüm" "$(code PATCH /sites/$S -d '{"node":{"version":"2.7","command":"python app.py"}}')" 400
+# Dağıtımın Python'unda sürüm alanı bilgi içindir; uydurma değer benimsenmez (sürüm seçimi `python` alanıyladır).
+check "uydurma sürüm bilgisi benimsenmez" "$(api PATCH /sites/$S -d '{"node":{"version":"2.7","command":"python app.py"}}' | jget 'd["node"]["version"]')" "$VERSION"
+check "kurulu olmayan sürüm seçimi" "$(code PATCH /sites/$S -d '{"node":{"version":"2.7","python":"3.10","command":"python app.py"}}')" 400
 
 say "Bağımlılıklar"
 check "requirements.txt yokken" "$(code POST /sites/$S/node/run -d '{"script":"install"}')" 400

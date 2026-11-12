@@ -176,6 +176,7 @@ suite site-perf php-8.3
 suite clone php-8.3 mariadb
 suite branding
 suite python python
+suite python-uv python
 suite dbimport mariadb
 suite db-depth mariadb postgresql
 suite tenancy dns mail mariadb

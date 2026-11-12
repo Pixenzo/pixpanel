@@ -2971,4 +2971,13 @@ export const en: Record<string, string> = {
   "Site klasörünün boyutu": "Size of the site folder",
   "/ay": "/mo",
   "Trafik": "Traffic",
+  "{name} kaldırıldı": "{name} removed",
+  "{name} sürümünü kaldır": "Remove {name}",
+  "Bu sürümü kullanan site varsa kaldırılamaz; önce sitelerin Python sürümünü değiştirin.": "A version that is used by a site cannot be removed; change the Python version of those sites first.",
+  "Python sürümü değişti; sanal ortam yeni sürümle yeniden kuruldu": "Python version changed; the virtual environment was rebuilt with the new version",
+  "Sistem Python'u": "System Python",
+  "Sistem Python'u ({version})": "System Python ({version})",
+  "Sürüm değişince sanal ortam (.venv) yeni sürümle sıfırdan kurulur; bağımlılıklar yeniden kurulmalıdır. Başka sürümleri yönetici Bileşenler sayfasından kurar.": "When the version changes, the virtual environment (.venv) is rebuilt from scratch with the new version and dependencies must be reinstalled. Other versions are installed by the administrator on the Components page.",
+  "Uygulamanızın gereksinimlerini site klasöründeki requirements.txt ya da pyproject.toml dosyasına yazın (ikisi de varsa requirements.txt kullanılır). Paketler yalnızca bu sitenin sanal ortamına kurulur; sunucudaki öteki uygulamaları etkilemez.": "Write your application's requirements to requirements.txt or pyproject.toml in the site folder (requirements.txt is used if both exist). Packages are installed only into this site's virtual environment and do not affect other applications on the server.",
+  "uv ile kurulan bağımsız Python sürümü. Python siteleri sürümü tek tek seçebilir.": "A standalone Python version installed with uv. Python sites can pick their version individually.",
 };

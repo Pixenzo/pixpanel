@@ -352,6 +352,8 @@ pub async fn apply(site_id: i64, domain: &str, user: &SysUser, root: &Path, sett
     let unit = unit_name(site_id);
     exec::run_ok("systemctl", &["daemon-reload"]).await?;
     exec::run_ok("systemctl", &["enable", "--quiet", "--", &unit]).await?;
+    // Ayar art arda değişince systemd'nin "çok sık başlatıldı" sınırı dolabilir; sayaç sıfırlanır.
+    let _ = exec::run("systemctl", &["reset-failed", "--", &unit]).await;
     exec::run_ok("systemctl", &["restart", "--", &unit]).await?;
     Ok(())
 }
@@ -405,6 +407,9 @@ pub async fn action(site_id: i64, action: &str) -> AppResult<()> {
     }
     if !unit_path(site_id).exists() {
         return Err(AppError::bad("Bu sitenin uygulama servisi henüz oluşturulmadı"));
+    }
+    if action != "stop" {
+        let _ = exec::run("systemctl", &["reset-failed", "--", &unit_name(site_id)]).await;
     }
     exec::run_with_timeout("systemctl", &[action, "--", &unit_name(site_id)], Duration::from_secs(60)).await.and_then(|output| {
         if output.success() { Ok(()) } else { Err(AppError::bad(format!("Servis {action} işlemi başarısız: {}", output.stderr.trim()))) }
