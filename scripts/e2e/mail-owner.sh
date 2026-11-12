@@ -13,7 +13,7 @@ JC=/tmp/pxjar-mowner-cust
 W=/tmp/pxjar-mowner-rc
 HERE="$(cd "$(dirname "$0")" && pwd)"
 T=$(date +%s)
-DOM="deneme.test"
+DOM="ko$T.test"
 CDOM="musk$T.test"
 CUSTOMER="kutusahibi"
 CPASS='Kutu-Sahibi-Parolasi-1'
@@ -23,7 +23,7 @@ GTUBE='XJS*C4JDBQADN1.NSBN3*2IDNEN*GTUBE-STANDARD-ANTI-UBE-TEST-EMAIL*C.34X'
 MAILHOST=$(hostname -I | awk '{print $1}')
 # Bu koşuya özel sahte istemci adresi öneki (203.0.113.0/24 ve 198.51.100.0/24 belge amaçlı ağlardır).
 OCT=$((T % 240 + 10))
-IPA="198.51.100.$OCT"
+IPA="100.$((T % 60 + 64)).$((T / 60 % 250))"
 api() { local m=$1 p=$2; shift 2; curl -sk -b $J -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X "$m" "$B$p" "$@"; }
 code() { local m=$1 p=$2; shift 2; curl -sk -o /dev/null -w '%{http_code}' -b $J -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X "$m" "$B$p" "$@"; }
 capi() { local m=$1 p=$2; shift 2; curl -sk -b $JC -c $JC -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X "$m" "$B$p" "$@"; }
@@ -116,8 +116,8 @@ check "kutu kapatıldı" "$(code PATCH /mail/mailboxes/$VELI -d '{"enabled":fals
 check "kapalı kutu da aynı yanıtı verir" "$(pwcall veli@$DOM "$MAIL_PASS" "$NEWPASS" "$IPA.3"; pwcode)" 400
 check "kapalı kutunun yanıtı aynı" "$(pwbody)" "$WRONG_BODY"
 check "kutu yeniden açıldı" "$(code PATCH /mail/mailboxes/$VELI -d '{"enabled":true}')" 200
-check "geçersiz adres biçimi" "$(pwcall 'veli@deneme.test;rm' "$MAIL_PASS" "$NEWPASS" "$IPA.4"; pwcode)" 400
-check "satır sonlu adres" "$(pwcall $'veli@deneme.test\nx@y.z' "$MAIL_PASS" "$NEWPASS" "$IPA.4"; pwcode)" 400
+check "geçersiz adres biçimi" "$(pwcall 'veli@ornekalan.test;rm' "$MAIL_PASS" "$NEWPASS" "$IPA.4"; pwcode)" 400
+check "satır sonlu adres" "$(pwcall $'veli@ornekalan.test\nx@y.z' "$MAIL_PASS" "$NEWPASS" "$IPA.4"; pwcode)" 400
 check "boş geçerli parola" "$(pwcall veli@$DOM '' "$NEWPASS" "$IPA.4"; pwcode)" 400
 check "zayıf yeni parola reddedilir" "$(pwcall veli@$DOM "$MAIL_PASS" kisa "$IPA.5"; pwcode)" 400
 has "zayıf parola iletisi" "$(pwbody)" "en az 10 karakter"
@@ -179,13 +179,13 @@ if [ "$WEBMAIL" = "True" ]; then
   PAGE=$(curl -sk -c $W "$P/webmail/"); TOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$PAGE" | cut -d'"' -f4)
   LOGIN=$(curl -sk -b $W -c $W -o /dev/null -w '%{http_code} %{redirect_url}' "$P/webmail/?_task=login" --data-urlencode "_token=$TOKEN" -d '_task=login&_action=login&_timezone=Europe/Istanbul' --data-urlencode "_user=veli@$DOM" --data-urlencode "_pass=$MAIL_PASS")
   has "web postasına giriş" "$LOGIN" "_task=mail"
-  FORM=$(curl -sk -b $W -c $W "$P/webmail/?_task=settings&_action=plugin.password&_framed=1")
+  FORM=$(curl -sk -b $W -c $W "$P/webmail/?_task=settings&_action=plugin.password")
   has "parola formu açıldı" "$FORM" "_newpasswd"
   RCTOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$FORM" | head -1 | cut -d'"' -f4)
-  curl -sk -b $W -c $W -o /tmp/rc-weak.html "$P/webmail/?_task=settings&_action=plugin.password-save" -d '_framed=1' --data-urlencode "_token=$RCTOKEN" \
+  curl -sk -b $W -c $W -o /tmp/rc-weak.html "$P/webmail/?_task=settings&_action=plugin.password-save" --data-urlencode "_token=$RCTOKEN" \
     --data-urlencode "_curpasswd=$MAIL_PASS" --data-urlencode '_newpasswd=kisa' --data-urlencode '_confpasswd=kisa'
   check "zayıf parola web postasından da değişmez" "$(mf login veli@$DOM)" ok
-  curl -sk -b $W -c $W -o /tmp/rc-save.html "$P/webmail/?_task=settings&_action=plugin.password-save" -d '_framed=1' --data-urlencode "_token=$RCTOKEN" \
+  curl -sk -b $W -c $W -o /tmp/rc-save.html "$P/webmail/?_task=settings&_action=plugin.password-save" --data-urlencode "_token=$RCTOKEN" \
     --data-urlencode "_curpasswd=$MAIL_PASS" --data-urlencode "_newpasswd=$RCPASS" --data-urlencode "_confpasswd=$RCPASS"
   check "web postasından parola değişti (eski parola kesildi)" "$(mf login veli@$DOM)" fail
   check "web postasından parola değişti (yeni parola geçerli)" "$(MAIL_PASS=$RCPASS mf login veli@$DOM)" ok
@@ -214,7 +214,8 @@ SEOF
 check "kutu sahibi kendi betiğini yükler" "$(ms ayse@$DOM put benim /tmp/px-own.sieve)" ok
 check "betiği etkinleştirir" "$(ms ayse@$DOM activate benim)" ok
 has "betik listesi" "$(ms ayse@$DOM list)" "benim ACTIVE"
-check "kötü sözdizimli betik reddedilir" "$(echo 'if { bozuk' | ms ayse@$DOM put kotu - | cut -c1-3)" "no:"
+echo 'if { bozuk' | ms ayse@$DOM put kotu - >/dev/null 2>&1
+check "kötü sözdizimli betik kaydedilmez" "$(ms ayse@$DOM list | grep -c '^kotu')" 0
 # Kullanıcı aynı adlı kendi betiğiyle panel betiğini ezmeye çalışır: bu yalnız kendi klasörüne yazar.
 cat > /tmp/px-evil.sieve <<'SEOF'
 discard;
@@ -255,9 +256,14 @@ has "geçişten sonra otomatik yanıt çalışıyor" "$(wait_subject ayse@$DOM I
 say "Karantina: ayar"
 check "oturumsuz erişim" "$(curl -sk -o /dev/null -w '%{http_code}' $B/mail/quarantine)" 401
 check "geçersiz işlem değeri" "$(code PUT /mail/settings -d "$(printf '%s' "$ORIG" | python3 -c 'import sys,json; d=json.load(sys.stdin); d["spam"]["reject_action"]="sil"; print(json.dumps(d))')")" 400
-QSET=$(printf '%s' "$ORIG" | python3 -c 'import sys,json; d=json.load(sys.stdin); d["spam"]["reject_action"]="quarantine"; print(json.dumps(d))')
+# Rspamd, GTUBE sınama dizgisini puana bakmadan doğrudan reddeder ve karantina ayarını uygulamaz;
+# bu yüzden sınama puanla reddedilen gerçek duruma dayanır: gönderen kara listeye alınır.
+BSET=$(printf '%s' "$ORIG" | python3 -c 'import sys,json; d=json.load(sys.stdin); d["spam"]["blacklist"]=d["spam"]["blacklist"]+["biri@disarisi.example"]; print(json.dumps(d))')
+QSET=$(printf '%s' "$BSET" | python3 -c 'import sys,json; d=json.load(sys.stdin); d["spam"]["reject_action"]="quarantine"; print(json.dumps(d))')
+check "gönderen kara listeye alındı" "$(code PUT /mail/settings -d "$BSET")" 200
+sleep 3
 check "varsayılan kip reddetme" "$(printf '%s' "$ORIG" | jget 'd["spam"]["reject_action"]')" reject
-check "GTUBE kip kapalıyken SMTP'de reddedilir" "$(MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "gtube-reddet-ownerq-$T" 25 | cut -c1-8)" rejected
+check "kara listedeki gönderen kip kapalıyken SMTP'de reddedilir" "$(MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "gtube-reddet-ownerq-$T" 25 | cut -c1-8)" rejected
 check "karantina kipini aç" "$(code PUT /mail/settings -d "$QSET")" 200
 check "Rspamd ayarı yazıldı" "$(grep -c 'quarantine_on_reject = true' /etc/rspamd/local.d/worker-proxy.inc)" 1
 check "Rspamd yapılandırması geçerli" "$(rspamadm configtest >/dev/null 2>&1 && echo ok)" ok
@@ -266,7 +272,7 @@ sleep 3
 
 say "Karantina: yönetici"
 SUBJ="gtube-ownerq-$T"
-check "GTUBE iletisi kabul edilir (reddedilmez)" "$(MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "$SUBJ" 25)" sent
+check "ileti kabul edilir (reddedilmez)" "$(MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "$SUBJ" 25)" sent
 HID=$(wait_held api "$SUBJ")
 check "ileti karantina listesinde" "$([ -n "$HID" ] && echo var)" var
 check "kimlik biçimi" "$(grep -cE '^[0-9A-Za-z]{6,20}$' <<<"$HID")" 1
@@ -279,7 +285,7 @@ check "liste alanları" "$(api GET /mail/quarantine | jget "sorted(k for k in ne
 check "gönderen ve alıcı" "$(api GET /mail/quarantine | jget "(lambda m: (m['sender'], m['recipients']))(next(m for m in d['messages'] if m['id']=='$HID'))")" "('biri@disarisi.example', ['ayse@$DOM'])"
 VIEW=$(api GET /mail/quarantine/$HID)
 has "ileti görüntülenir (başlıklar)" "$(printf '%s' "$VIEW" | jget 'd["raw"]')" "Subject: $SUBJ"
-has "ileti görüntülenir (gövde)" "$(printf '%s' "$VIEW" | jget 'd["raw"]')" "GTUBE"
+has "ileti görüntülenir (gövde)" "$(printf '%s' "$VIEW" | jget 'd["raw"]')" "karantina-govdesi"
 check "küçük ileti kesilmedi" "$(printf '%s' "$VIEW" | jget 'd["truncated"]')" False
 check "oturumsuz görüntüleme" "$(curl -sk -o /dev/null -w '%{http_code}' $B/mail/quarantine/$HID)" 401
 
@@ -304,13 +310,13 @@ check "müşteri başkasının iletisini silemez (404)" "$(ccode DELETE /mail/qu
 check "müşteri toplu silmede başkasının iletisini atlar" "$(capi POST /mail/quarantine/bulk-delete -d "{\"ids\":[\"$HID\"]}" | jget '(d["deleted"], d["skipped"])')" "(0, 1)"
 check "ileti müşteriye dokunulmadan duruyor" "$(api GET /mail/quarantine | jget "len([m for m in d['messages'] if m['id']=='$HID'])")" 1
 CSUBJ="musteri-ownerq-$T"
-check "müşteri alan adına GTUBE" "$(MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example musteri@$CDOM "$CSUBJ" 25)" sent
+check "müşteri alan adına reddedilecek ileti" "$(MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example musteri@$CDOM "$CSUBJ" 25)" sent
 CHID=$(wait_held capi "$CSUBJ")
 check "müşteri kendi iletisini listede görür" "$([ -n "$CHID" ] && echo var)" var
 has "müşteri kendi iletisinin içeriğini görür" "$(capi GET /mail/quarantine/$CHID | jget 'd["raw"]')" "Subject: $CSUBJ"
 check "yönetici de görür" "$(api GET /mail/quarantine | jget "len([m for m in d['messages'] if m['id']=='$CHID'])")" 1
 MSUBJ="karma-ownerq-$T"
-check "iki hesabın alıcısı olan ileti" "$(MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example "musteri@$CDOM, ayse@$DOM" "$MSUBJ" 25)" sent
+check "iki hesabın alıcısı olan ileti" "$(MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example "musteri@$CDOM, ayse@$DOM" "$MSUBJ" 25)" sent
 MHID=$(wait_held api "$MSUBJ")
 check "karma alıcılı ileti yöneticide listelenir" "$([ -n "$MHID" ] && echo var)" var
 check "karma alıcılı ileti müşteriye gösterilmez (liste)" "$(capi GET /mail/quarantine | jget "len([m for m in d['messages'] if '$MSUBJ' in m['subject']])")" 0
@@ -327,7 +333,7 @@ has "bırakılan ileti gelen kutusuna düştü" "$(wait_subject ayse@$DOM INBOX 
 check "bırakılan ileti listeden kalktı" "$(api GET /mail/quarantine | jget "len([m for m in d['messages'] if m['id']=='$HID'])")" 0
 check "ikinci kez bırakma 404" "$(code POST /mail/quarantine/$HID/release)" 404
 DSUBJ="sil-ownerq-$T"
-MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "$DSUBJ" 25 >/dev/null
+MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "$DSUBJ" 25 >/dev/null
 DHID=$(wait_held api "$DSUBJ")
 check "silinecek ileti listede" "$([ -n "$DHID" ] && echo var)" var
 check "yönetici iletiyi siler" "$(code DELETE /mail/quarantine/$DHID)" 200
@@ -335,7 +341,7 @@ check "silinen ileti listeden kalktı" "$(api GET /mail/quarantine | jget "len([
 check "silinen ileti Postfix kuyruğunda da yok" "$(postqueue -j | grep -cE "\"queue_id\": *\"$DHID\"")" 0
 sleep 2
 hasnt "silinen ileti teslim edilmedi" "$(mf list ayse@$DOM)" "$DSUBJ"
-for n in 1 2; do MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "toplu$n-ownerq-$T" 25 >/dev/null; done
+for n in 1 2; do MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "toplu$n-ownerq-$T" 25 >/dev/null; done
 T1=$(wait_held api "toplu1-ownerq-$T"); T2=$(wait_held api "toplu2-ownerq-$T")
 check "toplu silme: iki ileti listede" "$([ -n "$T1" ] && [ -n "$T2" ] && echo var)" var
 check "toplu silme (artı bir olmayan kimlik)" "$(api POST /mail/quarantine/bulk-delete -d "{\"ids\":[\"$T1\",\"$T2\",\"Zz9Zz9Zz9\"]}" | jget '(d["deleted"], d["skipped"])')" "(2, 1)"
@@ -347,13 +353,14 @@ check "denetim: ayar değişikliği" "$(sqlite3 /var/lib/pixpanel/pixpanel.db "S
 
 say "Karantina: kip kapatılınca yeniden reddedilir"
 purge_held
-check "karantina kipini kapat (eski ayar)" "$(code PUT /mail/settings -d "$ORIG")" 200
-check "Rspamd bloğu kalktı" "$(grep -c 'quarantine_on_reject' /etc/rspamd/local.d/worker-proxy.inc 2>/dev/null || true)" 0
+check "karantina kipini kapat" "$(code PUT /mail/settings -d "$BSET")" 200
+check "Rspamd bloğu kalktı" "$(grep -qs 'quarantine_on_reject' /etc/rspamd/local.d/worker-proxy.inc && echo var || echo yok)" yok
 check "Rspamd yapılandırması geçerli" "$(rspamadm configtest >/dev/null 2>&1 && echo ok)" ok
 sleep 3
-check "GTUBE yeniden SMTP'de reddedilir" "$(MAIL_BODY=$GTUBE MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "gtube-son-ownerq-$T" 25 | cut -c1-8)" rejected
+check "kip kapanınca yeniden SMTP'de reddedilir" "$(MAIL_BODY=karantina-govdesi MAIL_HOST=$MAILHOST mf send - biri@disarisi.example ayse@$DOM "gtube-son-ownerq-$T" 25 | cut -c1-8)" rejected
 check "kip kapalıyken liste boş (bu betiğin iletileri)" "$(api GET /mail/quarantine | jget "len([m for m in d['messages'] if 'ownerq' in m['subject']])")" 0
 check "ayarlar eski hâline döndü" "$(api GET /mail/settings | jget 'd["spam"]["reject_action"]')" reject
+check "kara liste eski hâline döndü" "$(code PUT /mail/settings -d "$ORIG")" 200
 
 say "Temizlik"
 purge_held

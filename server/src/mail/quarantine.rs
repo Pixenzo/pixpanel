@@ -128,6 +128,9 @@ pub async fn purge_expired(now: i64) -> AppResult<usize> {
 pub async fn release(id: &str) -> AppResult<()> {
     validate_id(id)?;
     exec::run_ok("postsuper", &["-H", id]).await?;
+    // Bırakılan ileti ertelenmiş kuyruğa düşer ve bir sonraki kuyruk turunu (dakikalar) bekler;
+    // hemen teslim edilmesi istenir.
+    let _ = exec::run("postqueue", &["-i", id]).await;
     Ok(())
 }
 
