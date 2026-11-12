@@ -163,6 +163,39 @@ has "taşınan site yayında" "$(curl -s -H "Host: $STATIC" http://127.0.0.1/)" 
 has "alt klasörler geldi" "$(curl -s -H "Host: $STATIC" http://127.0.0.1/alt/sayfa.html)" "alt-dosya"
 check "parola görev günlüğünde yok" "$(joblog "$JOB" | grep -cF "$OLDPASS")" 0
 
+say "WordPress dışı uygulamanın veritabanı (bilgiler elle)"
+RDB=pxmig_duz; RDBPASS='Eski"Db\Parola#7'
+mariadb -e "DROP DATABASE IF EXISTS $RDB; CREATE DATABASE $RDB; DROP USER IF EXISTS '$RDB'@'localhost'; CREATE USER '$RDB'@'localhost' IDENTIFIED BY 'Eski\"Db\\\\Parola#7'; GRANT ALL ON $RDB.* TO '$RDB'@'localhost'; CREATE TABLE $RDB.notlar (id INT PRIMARY KEY, metin VARCHAR(50)); INSERT INTO $RDB.notlar VALUES (1, 'tasinan-kayit');"
+printf 'APP_NAME=Eski\nDB_HOST=localhost\nDB_DATABASE=%s\nDB_USERNAME=%s\nDB_PASSWORD="gizli-eski"\nSON=1\n' $RDB $RDB > /home/$OLDUSER/public_html/.env
+chown $OLDUSER: /home/$OLDUSER/public_html/.env
+HK=$(jget 'd["host_key"]' <<<"$R")
+rdb() { python3 -c "
+import json, sys
+d = {'host': '$ADDR', 'username': '$OLDUSER', 'path': '~/public_html', 'password': '$OLDPASS', 'host_key': sys.argv[1], 'database': True, 'remote_database': json.loads(sys.argv[2])}
+print(json.dumps(d))" "$HK" "$1"; }
+check "veritabanı adı boşsa reddedilir" "$(status $JC POST /sites/$T/migrate -d "$(rdb '{"name":"","user":"x"}')")" 400
+JOB=$(call $JC POST /sites/$T/migrate -d "$(rdb '{"name":"pxmig_duz","user":"pxmig_duz","password":"yanlis"}')" | jget 'd["job_id"]')
+check "yanlış veritabanı parolasında görev başarısız" "$(wait_job "$JOB")" failed
+check "yarım kalan veritabanı geri alındı" "$(call $JC GET /databases | jget "len([x for x in d['databases'] if '_db_' in x['name']])")" 0
+JOB=$(call $JC POST /sites/$T/migrate -d "$(rdb '{"name":"pxmig_duz;id","user":"pxmig_duz","password":"x"}')" | jget 'd["job_id"]')
+check "kabuk karakterli veritabanı adı çalıştırılmaz" "$(wait_job "$JOB") $(call $JC GET /databases | jget "len([x for x in d['databases'] if '_db_' in x['name']])")" "failed 0"
+JOB=$(call $JC POST /sites/$T/migrate -d "$(rdb "$(python3 -c "import json; print(json.dumps({'name':'pxmig_duz','user':'pxmig_duz','password':'Eski\"Db\\\\Parola#7','host':'localhost'}))")")" | jget 'd["job_id"]')
+RESULT=$(wait_job "$JOB")
+check "veritabanlı taşıma görevi" "$RESULT" success
+[ "$RESULT" = success ] || joblog "$JOB" | tail -25 | sed 's/^/        /'
+PLAINDB=$(call $JC GET /databases | jget "next((x['name'] for x in d['databases'] if '_db_' in x['name']), '')")
+has "yeni veritabanı hesabın adıyla açıldı" "$PLAINDB" "${C}_db_"
+check "kayıtlar taşındı" "$(mariadb -N -e "SELECT metin FROM \`$PLAINDB\`.notlar WHERE id=1")" "tasinan-kayit"
+TDIR=/home/$C/sites/$STATIC/public
+check ".env yeni veritabanına çevrildi" "$(grep -c "^DB_DATABASE=$PLAINDB$" $TDIR/.env) $(grep -c 'gizli-eski' $TDIR/.env) $(grep -c '^SON=1$' $TDIR/.env)" "1 0 1"
+NOTE=/home/$C/tmp/veritabani-$PLAINDB.txt
+check "bağlantı bilgileri dosyası yalnız hesabın" "$(stat -c '%a %U' $NOTE 2>/dev/null)" "600 $C"
+NEWPASS=$(sed -n 's/^Parola: //p' $NOTE 2>/dev/null)
+check "dosyadaki parola çalışıyor" "$(mariadb -u "$PLAINDB" -p"$NEWPASS" -N -e "SELECT COUNT(*) FROM \`$PLAINDB\`.notlar" 2>/dev/null)" 1
+check ".env içindeki parola da aynı" "$(grep -c "^DB_PASSWORD=$NEWPASS$" $TDIR/.env)" 1
+check "parolalar görev günlüğünde yok" "$(joblog "$JOB" | grep -cF -e "$NEWPASS" -e 'Parola#7' -e "$OLDPASS")" 0
+mariadb -e "DROP DATABASE IF EXISTS $RDB; DROP USER IF EXISTS '$RDB'@'localhost';"
+
 say "Temizlik"
 cleanup_remote
 for name in $SRC $DST $STATIC; do id=$(site_id $name); [ -n "$id" ] && api DELETE "/sites/$id?delete_files=true" >/dev/null; done

@@ -2648,4 +2648,10 @@ export const en: Record<string, string> = {
   "WordPress hazırlık ortamı açtı": "Created a WordPress staging site",
   "Hazırlık ortamını canlıya aktardı": "Pushed staging to live",
   "Hazırlık ortamını canlıdan yeniledi": "Refreshed staging from live",
+  "Klasörde WordPress bulunamadı. Uygulama MySQL ya da MariaDB kullanıyorsa eski sunucudaki bağlantı bilgilerini yazın; veritabanı bu hesapta açılan yeni bir veritabanına yüklenir.": "No WordPress was found in the folder. If the application uses MySQL or MariaDB, enter its connection details on the old server; the database is loaded into a new database created in this account.",
+  "Veritabanı sunucusu": "Database host",
+  "Veritabanı kullanıcısı": "Database user",
+  "Veritabanı parolası": "Database password",
+  "Bu bilgiler uygulamanın ayar dosyasında yazar (ör. .env ya da config.php). Yeni veritabanının bilgileri taşıma bitince hesabın tmp klasörüne yazılır; yayın klasöründeki .env kendiliğinden güncellenir.": "These details are in the application's configuration file (e.g. .env or config.php). When the migration finishes, the new database's details are written to the account's tmp folder; a .env in the public folder is updated automatically.",
+  "Yalnızca dosyalar taşınır. Site veritabanı kullanıyorsa dökümünü Veritabanları sayfasından içe aktarın.": "Only the files are migrated. If the site uses a database, import its dump from the Databases page.",
 };

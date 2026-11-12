@@ -496,8 +496,91 @@ async fn pull_database(ctx: &JobCtx, workspace: &Workspace, source: &Source, rem
     imported
 }
 
+/// `.env` dosyasındaki bir anahtarın değerini değiştirir (anahtar yoksa metne dokunmaz).
+fn replace_env(text: &str, key: &str, value: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let matches = body.trim_start().strip_prefix(key).is_some_and(|rest| rest.trim_start().starts_with('='));
+        if matches {
+            out.push_str(&format!("{key}={value}"));
+            out.push_str(&line[body.len()..]);
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+/// `.env` metnindeki bir anahtarın değeri (tırnaklar atılır).
+fn env_value(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let rest = line.trim_start().strip_prefix(key)?.trim_start().strip_prefix('=')?;
+        Some(rest.trim().trim_matches(['"', '\'']).to_string())
+    })
+}
+
+/// WordPress dışındaki uygulamanın veritabanını taşır: bu hesapta yeni bir veritabanı açılır,
+/// karşıdaki dökülüp yüklenir. Yayın klasöründe eski veritabanını gösteren bir `.env` varsa yeni
+/// bilgilerle güncellenir; bağlantı bilgileri ayrıca hesabın `tmp` klasörüne yazılır (parola
+/// görev günlüğüne düşmez).
+async fn adopt_plain_database(ctx: &JobCtx, state: &AppState, site: &Site, workspace: &Workspace, source: &Source, remote: &ConfigDatabase) -> AppResult<()> {
+    let user = &workspace.user;
+    ctx.log(format!("Veritabanı taşınıyor: {}", remote.name));
+    let (database, db_user, db_password) = wordpress::create_site_database(state, site, "db").await?;
+    if let Err(err) = pull_database(ctx, workspace, source, remote, &database).await {
+        wordpress::drop_database(state, &database, true).await;
+        return Err(err);
+    }
+    ctx.log(format!("Veritabanı yüklendi: {database} (kullanıcı: {db_user})"));
+
+    let docroot = site.docroot();
+    let mut updated_env = false;
+    let env = runas::output(runas::command(user, &docroot, "cat", &["--", ".env"]), QUICK).await;
+    if let Ok(env) = env {
+        if env.success() && env_value(&env.stdout, "DB_DATABASE").as_deref() == Some(remote.name.as_str()) {
+            let mut text = env.stdout.clone();
+            for (key, value) in [("DB_DATABASE", database.as_str()), ("DB_USERNAME", db_user.as_str()), ("DB_PASSWORD", db_password.as_str()), ("DB_HOST", "127.0.0.1"), ("DB_PORT", "3306")] {
+                text = replace_env(&text, key, value);
+            }
+            if write_file(user, &docroot, ".env", &text).await.is_ok() {
+                updated_env = true;
+                ctx.log(".env dosyasındaki veritabanı ayarları yeni veritabanına çevrildi.");
+            }
+        }
+    }
+
+    let tmp = user.tmp_dir();
+    std::fs::create_dir_all(&tmp).ok();
+    let _ = std::os::unix::fs::chown(&tmp, Some(user.uid), Some(user.gid));
+    let note_name = format!("veritabani-{database}.txt");
+    let note = format!("Veritabanı: {database}\nKullanıcı: {db_user}\nParola: {db_password}\nSunucu: localhost\n");
+    match write_file(user, &tmp, &note_name, &note).await {
+        Ok(()) => {
+            let _ = runas::output(runas::command(user, &tmp, "chmod", &["600", "--", &note_name]), QUICK).await;
+            let hint = if updated_env { "Uygulama başka bir ayar dosyası kullanıyorsa oradan güncelleyin; işiniz bitince dosyayı silin." } else { "Uygulamanın ayar dosyasını bu bilgilerle güncelleyin, ardından dosyayı silin." };
+            ctx.log(format!("Yeni veritabanının bağlantı bilgileri hesabın tmp/{note_name} dosyasına yazıldı. {hint}"));
+        }
+        Err(_) => ctx.log("UYARI: bağlantı bilgileri dosyaya yazılamadı; Veritabanları sayfasından kullanıcıya yeni bir parola verin."),
+    }
+    Ok(())
+}
+
+/// Dosyayı hesabın kullanıcısı olarak yazar (içerik `tee`nin girdisinden verilir).
+async fn write_file(user: &SysUser, dir: &Path, name: &str, content: &str) -> AppResult<()> {
+    let mut cmd = runas::command(user, dir, "tee", &["--", name]);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
+    let mut child = cmd.spawn().map_err(|err| AppError::internal(format!("dosya yazılamadı: {err}")))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(content.as_bytes()).await.map_err(|err| AppError::internal(err.to_string()))?;
+        let _ = stdin.shutdown().await;
+    }
+    let status = tokio::time::timeout(QUICK, child.wait()).await.map_err(|_| AppError::internal("dosya yazma zaman aşımına uğradı"))??;
+    if status.success() { Ok(()) } else { Err(AppError::internal("dosya yazılamadı")) }
+}
+
 /// Taşıma görevinin gövdesi.
-pub async fn run(ctx: &JobCtx, state: &AppState, site: &Site, source: &Source, host_key: &str, with_database: bool) -> AppResult<()> {
+pub async fn run(ctx: &JobCtx, state: &AppState, site: &Site, source: &Source, host_key: &str, with_database: bool, manual: Option<ConfigDatabase>) -> AppResult<()> {
     let user = account(site)?;
     let keys = parse_host_keys(host_key);
     if keys.is_empty() {
@@ -507,7 +590,9 @@ pub async fn run(ctx: &JobCtx, state: &AppState, site: &Site, source: &Source, h
     let workspace = Workspace::create(&user, source, address, &known_hosts(&keys))?;
     pull_files(ctx, &workspace, source, site).await?;
 
-    if with_database {
+    if let Some(remote) = manual {
+        adopt_plain_database(ctx, state, site, &workspace, source, &remote).await?;
+    } else if with_database {
         match wordpress::config_database(site).await? {
             None => ctx.log("Taşınan dosyalarda wp-config.php bulunamadı; veritabanı taşınmadı."),
             Some(remote) => {
@@ -573,6 +658,16 @@ mod tests {
         assert!(fingerprint(&keys[0].0, &keys[0].1).starts_with("ED25519 SHA256:"));
         // İstemcinin geri gönderdiği metin aynı ayrıştırıcıdan geçer.
         assert_eq!(parse_host_keys(&known_hosts(&keys)), keys);
+    }
+
+    #[test]
+    fn env_file_is_rewritten() {
+        let text = "APP_NAME=Site\nDB_DATABASE=eski\n  DB_PASSWORD = \"gizli\"\r\nDB_PASSWORD_EXTRA=1\nSON=1";
+        assert_eq!(env_value(text, "DB_DATABASE").as_deref(), Some("eski"));
+        assert_eq!(env_value(text, "DB_PASSWORD").as_deref(), Some("gizli"));
+        assert_eq!(env_value(text, "YOK"), None);
+        let out = replace_env(&replace_env(text, "DB_DATABASE", "yeni"), "DB_PASSWORD", "Abc123");
+        assert_eq!(out, "APP_NAME=Site\nDB_DATABASE=yeni\nDB_PASSWORD=Abc123\r\nDB_PASSWORD_EXTRA=1\nSON=1");
     }
 
     #[test]

@@ -377,9 +377,9 @@ fn valid_locale(value: &str) -> bool {
 
 /// Alan adından veritabanı adı türetir: `blog.ornek.com` → `wp_blog_ornek_com`.
 /// Müşteri hesaplarında ad, öteki veritabanları gibi hesap adıyla başlar.
-fn database_name(prefix: &str, domain: &str, taken: &[String]) -> String {
+fn database_name(prefix: &str, label: &str, domain: &str, taken: &[String]) -> String {
     let slug: String = domain.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect();
-    let base: String = format!("{prefix}wp_{slug}").chars().take(40).collect();
+    let base: String = format!("{prefix}{label}_{slug}").chars().take(40).collect();
     let base = base.trim_end_matches('_').to_string();
     if !taken.contains(&base) {
         return base;
@@ -389,6 +389,12 @@ fn database_name(prefix: &str, domain: &str, taken: &[String]) -> String {
 
 /// Kurulum için veritabanı ve tam yetkili kullanıcı açar; (ad, kullanıcı, parola) döner.
 async fn create_database(state: &AppState, site: &Site) -> AppResult<(String, String, String)> {
+    create_site_database(state, site, "wp").await
+}
+
+/// Site için adı alan adından türetilen bir MariaDB veritabanı ve tam yetkili kullanıcı açar;
+/// (ad, kullanıcı, parola) döner. `label` adın önekidir (`wp`, `db`).
+pub async fn create_site_database(state: &AppState, site: &Site, label: &str) -> AppResult<(String, String, String)> {
     let engine = Engine::Mariadb;
     engine.require_installed()?;
     let _guard = state.sys_lock.lock().await;
@@ -400,7 +406,7 @@ async fn create_database(state: &AppState, site: &Site) -> AppResult<(String, St
         let rows = stmt.query_map([], |row| row.get(0))?;
         rows.collect()
     })?;
-    let name = database_name(&prefix, &site.domain, &taken);
+    let name = database_name(&prefix, label, &site.domain, &taken);
     dbms::validate_name(&name, "Veritabanı adı")?;
     let password = auth::random_password(24);
 
@@ -435,7 +441,7 @@ async fn create_database(state: &AppState, site: &Site) -> AppResult<(String, St
 }
 
 /// Yarım kalan kurulumun veritabanını ve (bu kurulum oluşturduysa) kullanıcısını geri alır.
-async fn drop_database(state: &AppState, name: &str, drop_user: bool) {
+pub async fn drop_database(state: &AppState, name: &str, drop_user: bool) {
     if drop_user {
         let _ = dbms::drop_user(Engine::Mariadb, name, "localhost").await;
     }
@@ -1034,10 +1040,10 @@ define( 'DB_HOST', 'localhost:3307' );
 
     #[test]
     fn database_name_is_derived_from_domain() {
-        assert_eq!(database_name("", "blog.ornek.com", &[]), "wp_blog_ornek_com");
-        assert_eq!(database_name("musteri_", "Ornek.com", &[]), "musteri_wp_ornek_com");
-        assert_eq!(database_name("", "ornek.com", &["wp_ornek_com".into()]), "wp_ornek_com_2");
-        let long = database_name("", "cok-uzun-bir-alan-adi-ornegi.sirket-adi.com.tr", &[]);
+        assert_eq!(database_name("", "wp", "blog.ornek.com", &[]), "wp_blog_ornek_com");
+        assert_eq!(database_name("musteri_", "wp", "Ornek.com", &[]), "musteri_wp_ornek_com");
+        assert_eq!(database_name("", "wp", "ornek.com", &["wp_ornek_com".into()]), "wp_ornek_com_2");
+        let long = database_name("", "wp", "cok-uzun-bir-alan-adi-ornegi.sirket-adi.com.tr", &[]);
         assert!(long.len() <= 40 && dbms::validate_name(&long, "ad").is_ok(), "{long}");
     }
 

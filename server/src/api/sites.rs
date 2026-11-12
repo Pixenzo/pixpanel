@@ -243,6 +243,18 @@ struct MigrateBody {
     host_key: String,
     #[serde(default)]
     database: bool,
+    /// WordPress dışındaki uygulamalar için karşı sunucudaki veritabanının bağlantı bilgileri.
+    remote_database: Option<RemoteDatabase>,
+}
+
+#[derive(Deserialize)]
+struct RemoteDatabase {
+    name: String,
+    user: String,
+    #[serde(default)]
+    password: String,
+    #[serde(default)]
+    host: String,
 }
 
 impl MigrateBody {
@@ -269,7 +281,7 @@ async fn migrate_probe(State(state): State<AppState>, user: AuthUser, Path(id): 
 }
 
 /// Başka sunucudaki siteyi bu siteye çeker (arka plan görevi).
-async fn migrate(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<MigrateBody>) -> AppResult<Json<serde_json::Value>> {
+async fn migrate(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(mut body): Json<MigrateBody>) -> AppResult<Json<serde_json::Value>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
     if site.status != "active" {
@@ -279,8 +291,22 @@ async fn migrate(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
         return Err(AppError::bad("Ters vekil sitelerinin dosyası yoktur; taşıma yapılamaz"));
     }
     let source = body.source()?;
+    let manual = match body.remote_database.take().filter(|_| body.database) {
+        Some(remote) => {
+            let fits = |value: &str, max: usize| !value.is_empty() && value.len() <= max && !value.chars().any(char::is_control);
+            if !fits(remote.name.trim(), 64) || !fits(remote.user.trim(), 80) || remote.password.len() > 256 || remote.host.len() > 255 {
+                return Err(AppError::bad("Karşı sunucudaki veritabanının adı ve kullanıcısı gerekli"));
+            }
+            let host = if remote.host.trim().is_empty() { "localhost".to_string() } else { remote.host.trim().to_string() };
+            Some(crate::wordpress::ConfigDatabase { name: remote.name.trim().to_string(), user: remote.user.trim().to_string(), password: remote.password, host })
+        }
+        None => None,
+    };
     let with_database = body.database;
-    if with_database {
+    if manual.is_some() {
+        crate::dbms::Engine::Mariadb.require_installed()?;
+        crate::quota::check(&state.db, site.user_id, crate::quota::Resource::Database)?;
+    } else if with_database {
         if site.kind != "php" {
             return Err(AppError::bad("Veritabanı yalnızca PHP sitelerine (WordPress) taşınabilir"));
         }
@@ -292,7 +318,7 @@ async fn migrate(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
     let title = format!("Site taşıma: {} → {}", source.host, site.domain);
     let host_key = body.host_key;
     let job_id = state.jobs.start("site.migrate", &title, Some(user.id), move |ctx| async move {
-        crate::migrate::run(&ctx, &job_state, &site, &source, &host_key, with_database).await
+        crate::migrate::run(&ctx, &job_state, &site, &source, &host_key, with_database, manual).await
     })?;
     Ok(Json(json!({ "job_id": job_id })))
 }

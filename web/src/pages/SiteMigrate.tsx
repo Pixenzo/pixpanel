@@ -36,6 +36,11 @@ function MigrateModal({ site, onClose }: { site: Site; onClose: () => void }) {
   const [path, setPath] = useState("");
   const [found, setFound] = useState<Probe | null>(null);
   const [withDatabase, setWithDatabase] = useState(true);
+  // WordPress bulunamadığında veritabanının bağlantı bilgileri elle yazılır.
+  const [dbName, setDbName] = useState("");
+  const [dbUser, setDbUser] = useState("");
+  const [dbPassword, setDbPassword] = useState("");
+  const [dbHost, setDbHost] = useState("localhost");
   const [jobId, setJobId] = useState<number | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
@@ -52,6 +57,7 @@ function MigrateModal({ site, onClose }: { site: Site; onClose: () => void }) {
     onSuccess: (response) => {
       setFound(response);
       setWithDatabase(response.wordpress !== null && response.can_dump);
+      setDbName("");
     },
   });
 
@@ -60,10 +66,14 @@ function MigrateModal({ site, onClose }: { site: Site; onClose: () => void }) {
       api.post<{ job_id: number }>(`/sites/${site.id}/migrate`, {
         ...connection(),
         host_key: found?.host_key ?? "",
-        database: withDatabase && found?.wordpress != null,
+        database: withDatabase && (found?.wordpress != null || manualDatabase),
+        ...(manualDatabase ? { remote_database: { name: dbName.trim(), user: dbUser.trim(), password: dbPassword, host: dbHost.trim() } } : {}),
       }),
     onSuccess: (response) => setJobId(response.job_id),
   });
+
+  // Elle yazılan veritabanı yalnızca WordPress bulunamadıysa ve karşıda döküm aracı varsa taşınır.
+  const manualDatabase = found != null && found.wordpress === null && found.can_dump && withDatabase;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -99,7 +109,7 @@ function MigrateModal({ site, onClose }: { site: Site; onClose: () => void }) {
   }
 
   if (found) {
-    const canStart = found.path_found;
+    const canStart = found.path_found && (!manualDatabase || (dbName.trim() !== "" && dbUser.trim() !== ""));
     return (
       <Modal
         open
@@ -171,9 +181,30 @@ function MigrateModal({ site, onClose }: { site: Site; onClose: () => void }) {
               )}
             </div>
           )}
-          {found.path_found && !found.wordpress && site.kind === "php" && (
+          {found.path_found && !found.wordpress && found.can_dump && (
+            <div className="rounded-xl border border-line bg-sunken/50 p-4">
+              <Checkbox
+                label={t("Veritabanını da taşı")}
+                hint={t("Klasörde WordPress bulunamadı. Uygulama MySQL ya da MariaDB kullanıyorsa eski sunucudaki bağlantı bilgilerini yazın; veritabanı bu hesapta açılan yeni bir veritabanına yüklenir.")}
+                checked={withDatabase}
+                onChange={(event) => setWithDatabase(event.target.checked)}
+              />
+              {withDatabase && (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Input label={t("Veritabanı adı")} value={dbName} onChange={(event) => setDbName(event.target.value)} className="font-mono text-[13.5px]" spellCheck={false} autoComplete="off" />
+                  <Input label={t("Veritabanı sunucusu")} value={dbHost} onChange={(event) => setDbHost(event.target.value)} className="font-mono text-[13.5px]" spellCheck={false} autoComplete="off" />
+                  <Input label={t("Veritabanı kullanıcısı")} value={dbUser} onChange={(event) => setDbUser(event.target.value)} className="font-mono text-[13.5px]" spellCheck={false} autoComplete="off" />
+                  <Input label={t("Veritabanı parolası")} type="password" value={dbPassword} onChange={(event) => setDbPassword(event.target.value)} autoComplete="off" />
+                  <p className="text-[13px] text-ink-3 sm:col-span-2">
+                    {t("Bu bilgiler uygulamanın ayar dosyasında yazar (ör. .env ya da config.php). Yeni veritabanının bilgileri taşıma bitince hesabın tmp klasörüne yazılır; yayın klasöründeki .env kendiliğinden güncellenir.")}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          {found.path_found && !found.wordpress && !found.can_dump && (
             <p className="text-[13.5px] text-ink-2">
-              {t("Klasörde WordPress bulunamadı; yalnızca dosyalar taşınır. Site veritabanı kullanıyorsa dökümünü Veritabanları sayfasından içe aktarın.")}
+              {t("Yalnızca dosyalar taşınır. Site veritabanı kullanıyorsa dökümünü Veritabanları sayfasından içe aktarın.")}
             </p>
           )}
           {start.isError && <ErrorBlock message={errorMessage(start.error)} />}
