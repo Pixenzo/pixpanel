@@ -34,6 +34,7 @@ import { formatBytes, formatDateTime, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { MailLimitsTab } from "./MailLimits";
+import { MailQuarantineTab } from "./MailQuarantine";
 
 // ---- Türler (MailDomain sayfası da kullanır) ----
 
@@ -130,6 +131,8 @@ export interface SpamSettings {
   greylist_score: number;
   whitelist: string[];
   blacklist: string[];
+  /** Reddetme eşiğini aşan iletilere ne yapılacağı: SMTP'de reddet ya da karantinaya al. */
+  reject_action: "reject" | "quarantine";
 }
 
 interface MailService {
@@ -499,6 +502,7 @@ function SpamForm({ settings }: { settings: MailSettings }) {
   const [greylistScore, setGreylistScore] = useState(String(settings.spam.greylist_score));
   const [whitelist, setWhitelist] = useState(settings.spam.whitelist.join("\n"));
   const [blacklist, setBlacklist] = useState(settings.spam.blacklist.join("\n"));
+  const [rejectAction, setRejectAction] = useState<SpamSettings["reject_action"]>(settings.spam.reject_action ?? "reject");
   const [localError, setLocalError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -532,6 +536,7 @@ function SpamForm({ settings }: { settings: MailSettings }) {
         greylist_score: greylist,
         whitelist: linesToList(whitelist),
         blacklist: linesToList(blacklist),
+        reject_action: rejectAction,
       },
     });
   }
@@ -589,6 +594,18 @@ function SpamForm({ settings }: { settings: MailSettings }) {
               required
             />
           </div>
+          <Select
+            label={t("Reddetme eşiğini aşan iletiler")}
+            value={rejectAction}
+            onChange={(event) => setRejectAction(event.target.value as SpamSettings["reject_action"])}
+            hint={t(
+              "Reddet: ileti SMTP'de reddedilir, gönderene bildirilir. Karantinaya al: ileti kabul edilir ama alıcıya teslim edilmez; Karantina sekmesinden bırakılır ya da silinir, 14 gün sonra kendiliğinden silinir.",
+            )}
+            className="max-w-xs"
+          >
+            <option value="reject">{t("Reddet")}</option>
+            <option value="quarantine">{t("Karantinaya al")}</option>
+          </Select>
           <Checkbox
             label={t("Gri liste kullan")}
             hint={t("İlk kez görülen şüpheli gönderenlerden birkaç dakika sonra yeniden denemeleri istenir; gerçek posta sunucuları yeniden dener, istenmeyen posta gönderen çoğu yazılım denemez.")}
@@ -747,13 +764,14 @@ function ActivityTab() {
 
 // ---- Sayfa ----
 
-type MailTab = "domains" | "queue" | "spam" | "limits" | "activity";
+type MailTab = "domains" | "queue" | "spam" | "quarantine" | "limits" | "activity";
 
 /** Sekmenin adres çubuğundaki karşılığı (`?sekme=`). */
 const tabParams: Record<MailTab, string> = {
   domains: "alan-adlari",
   queue: "kuyruk",
   spam: "istenmeyen-posta",
+  quarantine: "karantina",
   limits: "gonderim-siniri",
   activity: "etkinlik",
 };
@@ -767,7 +785,8 @@ export function MailPage() {
   const overview = useQuery({ queryKey: ["mail"], queryFn: () => api.get<MailOverview>("/mail") });
 
   const requested = (Object.keys(tabParams) as MailTab[]).find((tab) => tabParams[tab] === searchParams.get("sekme"));
-  const tab: MailTab = isAdmin && requested ? requested : "domains";
+  // Yönetici dışındaki hesaplar yalnızca alan adlarını ve (kendi alan adlarının) karantinasını görür.
+  const tab: MailTab = requested && (isAdmin || requested === "quarantine") ? requested : "domains";
 
   if (overview.isPending) return <LoadingBlock />;
   if (overview.isError) return <ErrorBlock message={errorMessage(overview.error)} onRetry={() => void overview.refetch()} />;
@@ -803,6 +822,7 @@ export function MailPage() {
     { id: "domains", label: t("Alan adları") },
     { id: "queue", label: t("Kuyruk") },
     { id: "spam", label: t("İstenmeyen posta") },
+    { id: "quarantine", label: t("Karantina") },
     { id: "limits", label: t("Gönderim sınırı") },
     { id: "activity", label: t("Etkinlik") },
   ];
@@ -838,17 +858,16 @@ export function MailPage() {
           </Link>
         </p>
       )}
-      {isAdmin && (
-        <Tabs
-          tabs={tabs}
-          value={tab}
-          label={t("Posta bölümleri")}
-          onChange={(next) => setSearchParams(next === "domains" ? {} : { sekme: tabParams[next] }, { replace: true })}
-        />
-      )}
+      <Tabs
+        tabs={isAdmin ? tabs : tabs.filter((item) => item.id === "domains" || item.id === "quarantine")}
+        value={tab}
+        label={t("Posta bölümleri")}
+        onChange={(next) => setSearchParams(next === "domains" ? {} : { sekme: tabParams[next] }, { replace: true })}
+      />
       {tab === "domains" && <DomainsTab overview={data} isAdmin={isAdmin} showOwner={showOwner} onAdd={() => setCreating(true)} />}
       {tab === "queue" && <QueueTab />}
       {tab === "spam" && <SpamTab />}
+      {tab === "quarantine" && <MailQuarantineTab />}
       {tab === "limits" && <MailLimitsTab />}
       {tab === "activity" && <ActivityTab />}
       {creating && <CreateDomainModal onClose={() => setCreating(false)} overview={data} isAdmin={isAdmin} />}

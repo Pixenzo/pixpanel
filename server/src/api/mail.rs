@@ -1,9 +1,11 @@
 //! Posta yönetimi uçları: alan adları, kutular, takma adlar, kuyruk ve genel ayarlar.
 
+use std::collections::HashSet;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
@@ -43,6 +45,14 @@ pub fn router() -> Router<AppState> {
         .route("/limit-hits", get(limit_hits))
         .route("/setup", post(run_setup))
         .route("/activity", get(activity))
+        // Karantina (Postfix bekletme kuyruğu): yönetici hepsini, diğerleri yalnızca kendi alan adlarının iletilerini görür.
+        .route("/quarantine", get(quarantine_list))
+        .route("/quarantine/bulk-delete", post(quarantine_bulk_delete))
+        .route("/quarantine/{id}", get(quarantine_view).delete(quarantine_delete))
+        .route("/quarantine/{id}/release", post(quarantine_release))
+        // Kutu sahibinin oturumsuz işi: parola değiştirme (adres + geçerli parola ile doğrulanır; Roundcube
+        // `password` eklentisi bu uca bağlanır). Gövde küçük tutulur.
+        .route("/public/password", post(public_password).layer(DefaultBodyLimit::max(mail::owner::MAX_BODY)))
         // Oturum istemeyen uçlar: posta istemcilerinin otomatik ayarı (nginx `autoconfig.`/`autodiscover.`
         // adlarından ve sitelerin `.well-known` yolundan buraya vekil olur). Yalnızca alan adına bakarlar.
         .route("/public/autoconfig", get(public_autoconfig))
@@ -362,8 +372,13 @@ async fn create_mailbox(
         Ok(conn.last_insert_rowid())
     })?;
     mail::sync(&state.db).await?;
+    let created = mail::load_mailbox(&state.db, mailbox_id)?;
+    // Kutunun betik klasörleri (panel betiği ve kutu sahibinin ManageSieve klasörü) baştan açılır.
+    if let Err(err) = mail::apply_sieve(&created).await {
+        tracing::warn!(error = %err, mailbox = %created.address, "yeni kutunun betik klasörleri açılamadı");
+    }
     auth::audit(&state.db, &user, "mail.mailbox.create", &format!("{local}@{}", domain.domain), "");
-    Ok(Json(mail::load_mailbox(&state.db, mailbox_id)?))
+    Ok(Json(created))
 }
 
 /// Kutuyu okur ve isteği yapanın alan adına erişimi olduğunu doğrular.
@@ -603,6 +618,7 @@ async fn save_settings(State(state): State<AppState>, user: AuthUser, Json(body)
     ensure_installed()?;
     let spam = body.spam.normalized()?;
     let _guard = state.sys_lock.lock().await;
+    let previous_action = mail::load_spam(&state.db)?.reject_action;
     let previous_hostname = mail::hostname(&state.db);
     let hostname = mail::set_hostname(&state.db, &body.hostname)?;
     mail::save_spam(&state.db, &spam).await?;
@@ -610,7 +626,8 @@ async fn save_settings(State(state): State<AppState>, user: AuthUser, Json(body)
         // Sunucu adı Postfix ve sertifika seçimini etkiler; temel yapılandırma yeniden yazılır.
         mail::setup(&state.db, &state.cfg).await?;
     }
-    auth::audit(&state.db, &user, "mail.settings", &hostname, "");
+    let detail = if spam.reject_action != previous_action { format!("reddetme eşiğini aşanlar: {}", spam.reject_action) } else { String::new() };
+    auth::audit(&state.db, &user, "mail.settings", &hostname, &detail);
     Ok(Json(Settings { hostname, spam }))
 }
 
@@ -780,4 +797,217 @@ async fn public_autodiscover(State(state): State<AppState>, body: Bytes) -> AppR
     let (local, domain) = mail::autoconfig::parse_email(&raw)?;
     require_mail_domain(&state, &domain)?;
     Ok(xml_response("text/xml; charset=utf-8", mail::autoconfig::render_autodiscover(&format!("{local}@{domain}"), &mail::hostname(&state.db))))
+}
+
+// ---- Kutu sahibi: parola değiştirme (oturumsuz) ----
+
+/// Var olmayan (ya da kapalı) adreste de aynı süreyi harcamak için kullanılan sahte özet;
+/// yanıt süresinden adresin varlığı anlaşılamaz.
+static DUMMY_MAILBOX_HASH: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| auth::hash_password(&auth::random_token(16)).unwrap_or_default());
+
+/// Yanlış parola, var olmayan adres ve kapalı kutu için tek ve aynı ileti.
+const SELF_PASSWORD_DENIED: &str = "Adres ya da geçerli parola hatalı";
+
+#[derive(Deserialize)]
+struct SelfPasswordBody {
+    address: String,
+    current_password: String,
+    new_password: String,
+}
+
+/// Kutu sahibi kendi parolasını değiştirir. Panel hesabı gerekmez; kimlik, adres ve geçerli parolayla
+/// doğrulanır. Brute force koruması: adres başına ve istemci adresi başına başarısız deneme sınırı
+/// (panelin giriş sınırıyla aynı altyapı, 429), başarısız denemeler fail2ban'in panel hapsinin
+/// okuduğu biçimde günlüğe düşer. İstemci adresi gerçek bağlantı adresidir; web postasından gelen
+/// çağrıda ziyaretçinin adresi yalnızca paylaşılan gizli anahtarla kabul edilir.
+async fn public_password(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<SelfPasswordBody>,
+) -> AppResult<Json<Value>> {
+    if !mail::is_installed() {
+        return Err(AppError::NotFound);
+    }
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    let expected_key = crate::dbtools::webmail_api_key();
+    let ip = mail::owner::client_ip(peer, state.cfg.listen_addr, header(mail::owner::KEY_HEADER), header(mail::owner::CLIENT_HEADER), expected_key.as_deref());
+
+    let (local, domain) = mail::owner::parse_address(&body.address).ok_or_else(|| AppError::bad("Geçersiz e-posta adresi"))?;
+    let address = format!("{local}@{domain}");
+    let max = mail::owner::MAX_PASSWORD_LEN;
+    if body.current_password.is_empty() || body.current_password.len() > max || body.new_password.len() > max {
+        return Err(AppError::bad("Parola alanları boş olamaz ve 256 karakteri aşamaz"));
+    }
+
+    let (ip_key, address_key) = (format!("mailbox-ip:{ip}"), format!("mailbox:{address}"));
+    state.throttle.check(&ip_key)?;
+    state.throttle.check(&address_key)?;
+
+    let found = mail::find_enabled_mailbox(&state.db, &local, &domain)?;
+    let hash = found.as_ref().map(|(mailbox, _)| mailbox.password_hash.clone()).unwrap_or_else(|| DUMMY_MAILBOX_HASH.clone());
+    let current = body.current_password.clone();
+    // Argon2 bilerek yavaştır; eşzamansız çalışanları tıkamamak için ayrı iş parçacığında koşar.
+    let valid = tokio::task::spawn_blocking(move || auth::verify_password(&current, &hash)).await.map_err(|err| AppError::internal(err.to_string()))?;
+    let Some((mailbox, owner_id)) = found.filter(|_| valid) else {
+        state.throttle.record_failure(&ip_key);
+        state.throttle.record_failure(&address_key);
+        // Hedef ve alan adı panelin giriş günlüğüyle aynıdır: `pixpanel` hapsi bu satırı okur
+        // (adres `ip=` alanından sonra geldiği için sahte adres başkasını engelletemez).
+        tracing::warn!(target: "pixpanel::api::auth", ip = %ip, username = %address, "başarısız posta kutusu parola denemesi");
+        return Err(AppError::bad(SELF_PASSWORD_DENIED));
+    };
+
+    // Kimlik doğrulandı; yeni parola panelin kutu parola kurallarından geçer.
+    auth::validate_password(&body.new_password)?;
+    if body.new_password == body.current_password {
+        return Err(AppError::bad("Yeni parola eskisiyle aynı olamaz"));
+    }
+    let new_password = body.new_password.clone();
+    let new_hash = tokio::task::spawn_blocking(move || auth::hash_password(&new_password))
+        .await
+        .map_err(|err| AppError::internal(err.to_string()))??;
+
+    let _guard = state.sys_lock.lock().await;
+    // Kutu bu arada değişmiş olabilir; en güncel hâli okunup yalnızca özet değiştirilir.
+    let mut updated = mail::load_mailbox(&state.db, mailbox.id)?;
+    updated.password_hash = new_hash;
+    mail::save_mailbox(&state.db, &updated)?;
+    mail::sync(&state.db).await?;
+    // Eski parolayla açık kalan IMAP oturumları da kapanır.
+    mail::kick(&address).await;
+    state.throttle.clear(&address_key);
+    auth::audit(&state.db, &mail::owner::actor(owner_id, &address, &ip), "mail.mailbox.self_password", &address, "");
+    Ok(Json(json!({ "ok": true })))
+}
+
+// ---- Karantina (Postfix bekletme kuyruğu) ----
+
+/// Kullanıcının karantinada görebildiği alan adları; yönetici için `None` (hepsi).
+fn quarantine_scope(state: &AppState, user: &AuthUser) -> AppResult<Option<HashSet<String>>> {
+    if user.is_admin() {
+        return Ok(None);
+    }
+    Ok(Some(mail::list_domains(&state.db, user)?.into_iter().map(|domain| domain.domain.to_ascii_lowercase()).collect()))
+}
+
+/// Karantinadaki iletiyi bulur; yoksa ya da kullanıcının göremeyeceği bir ileti ise 404
+/// (başka hesabın iletisinin varlığı bile sezdirilmez).
+async fn visible_held(state: &AppState, user: &AuthUser, id: &str) -> AppResult<mail::quarantine::Held> {
+    mail::quarantine::validate_id(id)?;
+    let scope = quarantine_scope(state, user)?;
+    mail::quarantine::list_held()
+        .await?
+        .into_iter()
+        .find(|message| message.id == id && mail::quarantine::visible(message, scope.as_ref()))
+        .ok_or(AppError::NotFound)
+}
+
+#[derive(Serialize)]
+struct QuarantineList {
+    /// Sunucu geneli kip: `reject` ya da `quarantine`.
+    mode: String,
+    retention_days: i64,
+    messages: Vec<mail::quarantine::Summary>,
+    /// Liste en yeni iletilerle sınırlandıysa `true`.
+    truncated: bool,
+}
+
+async fn quarantine_list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<QuarantineList>> {
+    user.require(AREA)?;
+    ensure_installed()?;
+    let scope = quarantine_scope(&state, &user)?;
+    let held: Vec<mail::quarantine::Held> =
+        mail::quarantine::list_held().await?.into_iter().filter(|message| mail::quarantine::visible(message, scope.as_ref())).collect();
+    let truncated = held.len() > mail::quarantine::MAX_LISTED;
+    let history = if held.is_empty() { Vec::new() } else { mail::quarantine::fetch_history().await };
+    let mut messages = Vec::new();
+    for message in held.iter().take(mail::quarantine::MAX_LISTED) {
+        messages.push(mail::quarantine::summarize(message, &history).await);
+    }
+    Ok(Json(QuarantineList {
+        mode: mail::load_spam(&state.db)?.reject_action,
+        retention_days: mail::quarantine::RETENTION_SECS / 86_400,
+        messages,
+        truncated,
+    }))
+}
+
+#[derive(Serialize)]
+struct QuarantineView {
+    id: String,
+    sender: String,
+    recipients: Vec<String>,
+    size: i64,
+    arrived_at: i64,
+    /// İletinin başlıkları ve gövdesinin ilk 64 KB'ı (ham metin).
+    raw: String,
+    truncated: bool,
+}
+
+async fn quarantine_view(State(state): State<AppState>, user: AuthUser, Path(id): Path<String>) -> AppResult<Json<QuarantineView>> {
+    user.require(AREA)?;
+    ensure_installed()?;
+    let held = visible_held(&state, &user, &id).await?;
+    let (raw, truncated) = mail::quarantine::read_message(&held.id, mail::quarantine::VIEW_LIMIT).await?;
+    Ok(Json(QuarantineView { id: held.id, sender: held.sender, recipients: held.recipients, size: held.size, arrived_at: held.arrived_at, raw, truncated }))
+}
+
+fn quarantine_detail(held: &mail::quarantine::Held) -> String {
+    format!("{} → {}", if held.sender.is_empty() { "(boş gönderen)" } else { &held.sender }, held.recipients.join(", "))
+}
+
+/// İletiyi karantinadan bırakır: normal teslimata alınır (alıcının gelen kutusuna düşer).
+async fn quarantine_release(State(state): State<AppState>, user: AuthUser, Path(id): Path<String>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    ensure_installed()?;
+    let held = visible_held(&state, &user, &id).await?;
+    mail::quarantine::release(&held.id).await?;
+    auth::audit(&state.db, &user, "mail.quarantine.release", &held.id, &quarantine_detail(&held));
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn quarantine_delete(State(state): State<AppState>, user: AuthUser, Path(id): Path<String>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    ensure_installed()?;
+    let held = visible_held(&state, &user, &id).await?;
+    mail::quarantine::delete(&held.id).await?;
+    auth::audit(&state.db, &user, "mail.quarantine.delete", &held.id, &quarantine_detail(&held));
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct BulkDeleteBody {
+    ids: Vec<String>,
+}
+
+/// Seçilen iletileri siler. Kullanıcının göremediği ya da artık var olmayan kimlikler sessizce
+/// atlanır (`skipped`); geçersiz biçimli kimlik isteğin tamamını 400 ile reddettirir.
+async fn quarantine_bulk_delete(State(state): State<AppState>, user: AuthUser, Json(body): Json<BulkDeleteBody>) -> AppResult<Json<Value>> {
+    user.require(AREA)?;
+    ensure_installed()?;
+    if body.ids.is_empty() || body.ids.len() > mail::quarantine::MAX_BULK {
+        return Err(AppError::bad(format!("Bir seferde 1 ile {} ileti silinebilir", mail::quarantine::MAX_BULK)));
+    }
+    for id in &body.ids {
+        mail::quarantine::validate_id(id)?;
+    }
+    let scope = quarantine_scope(&state, &user)?;
+    let allowed: HashSet<String> =
+        mail::quarantine::list_held().await?.into_iter().filter(|message| mail::quarantine::visible(message, scope.as_ref())).map(|message| message.id).collect();
+    let (mut deleted, mut skipped) = (0, 0);
+    let mut seen = HashSet::new();
+    for id in &body.ids {
+        if !seen.insert(id.as_str()) {
+            continue;
+        }
+        if allowed.contains(id) && mail::quarantine::delete(id).await.is_ok() {
+            deleted += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    auth::audit(&state.db, &user, "mail.quarantine.bulk_delete", &deleted.to_string(), &format!("{deleted} ileti silindi, {skipped} atlandı"));
+    Ok(Json(json!({ "deleted": deleted, "skipped": skipped })))
 }
