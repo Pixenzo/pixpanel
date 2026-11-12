@@ -157,6 +157,8 @@ export interface UserInfo {
   last_login_at: number | null;
   package_id: number | null;
   package_name: string | null;
+  /** Yalnız bayi satırlarında: müşterilerinin toplam kullanımı. */
+  customer_totals?: CustomerTotals | null;
 }
 
 /** Paketin sınırları; `null` sınırsız demektir. */
@@ -176,6 +178,22 @@ export interface PackageLimits {
   php_workers: number | null;
   /** En çok süreç/iş parçacığı sayısı. */
   processes: number | null;
+  /** Aylık trafik sınırı (GB); hesabın bütün sitelerinin takvim ayındaki toplam aktarımı. */
+  traffic_gb: number | null;
+  /** Sınır dolunca: `notify` (yalnız bildirim) ya da `suspend` (hesabın siteleri askıya alınır); boş = `notify`. */
+  traffic_action: "notify" | "suspend" | null;
+}
+
+/** Bayinin müşterilerinin toplam kullanımı. */
+export interface CustomerTotals {
+  accounts: number;
+  sites: number;
+  databases: number;
+  mail_domains: number;
+  mailboxes: number;
+  disk_bytes: number;
+  /** Bu ayki toplam trafik (bayt). */
+  traffic_bytes: number;
 }
 
 /** Kaynak sınırlarının sunucudaki durumu ve anlık kullanım (yalnız hesabın kaynak sınırı varsa). */
@@ -216,6 +234,10 @@ export interface AccountUsage {
   database_bytes: number | null;
   disk_measured_at: number | null;
   runtime: ResourceRuntime | null;
+  /** Aylık trafik sınırı yüzünden şu an askıda olan site sayısı. */
+  traffic_suspended_sites: number;
+  /** Yalnız bayi hesabında: müşterilerinin toplam kullanımı. */
+  customers: CustomerTotals | null;
 }
 
 export interface AuditEntry {
