@@ -85,6 +85,8 @@ const actionLabels: Record<string, string> = {
   "package.delete": "Paketi sildi",
   "site.clone": "Siteyi kopyaladı",
   "site.migrate": "Başka sunucudan site taşıdı",
+  "branding.reseller.update": "Bayi markasını güncelledi",
+  "branding.reseller.delete": "Bayi markasını kaldırdı",
   "mail.mailbox.import": "Posta kutusuna ileti aktardı",
   "database.copy": "Veritabanını kopyaladı",
   "database.maintenance": "Veritabanı bakımı yaptı",

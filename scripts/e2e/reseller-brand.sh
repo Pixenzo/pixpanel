@@ -99,7 +99,7 @@ check "oturumsuz: sunucu markası" "$(anon)" "Sunucu Markasi"
 check "oturumsuz + bayinin alan adı: bayi markası" "$(anon -H "Host: $DOMAIN")" "Bayi Bir"
 check "oturumsuz + büyük harf ve port" "$(anon -H "Host: PANEL.Bayi.Test:8443")" "Bayi Bir"
 check "oturumsuz + bilinmeyen alan adı: sunucu markası" "$(anon -H 'Host: baska.bayi.test')" "Sunucu Markasi"
-check "oturumlu istekte Host başlığı markayı değiştirmez (oturum önce gelir)" "$(call $JC2 GET /branding -H "Host: $DOMAIN" | jget 'd["name"]')" "Sunucu Markasi"
+check "oturumlu istekte Host başlığı markayı değiştirmez (oturum önce gelir)" "$(curl -sk -H "Cookie: $(awk 'NF>=7 {print $6"="$7}' $JC2 | paste -sd';')" -H "Host: $DOMAIN" $B/branding | jget 'd["name"]')" "Sunucu Markasi"
 check "Host başlığı yetki vermez: bayi uçları yine oturum ister" "$(curl -sk -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" $B/branding/resellers/$R1)" 401
 check "Host ile oturumsuz yazma yine 401" "$(curl -sk -o /dev/null -w '%{http_code}' -H "Host: $DOMAIN" -H 'content-type: application/json' -X PUT $B/branding -d "$(sbody X '' '' '')")" 401
 

@@ -252,7 +252,9 @@
     "Veritabanını kopyaladı",
     "Veritabanı bakımı yaptı",
     "Yavaş sorgu günlüğü ayarını değiştirdi",
-    "Posta kutusuna ileti aktardı"
+    "Posta kutusuna ileti aktardı",
+    "Bayi markasını güncelledi",
+    "Bayi markasını kaldırdı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
