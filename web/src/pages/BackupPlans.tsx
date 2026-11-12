@@ -9,6 +9,7 @@ import { Button, EmptyState, IconButton, Input, Modal, Panel, Select, Status } f
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
+import { DefaultPlanPanel } from "./BackupDefaultPlan";
 import { ScopePicker } from "./BackupScope";
 import type { BackupOverview, Frequency, JobRef, JobStarted, Plan, Scope, Target } from "./BackupShared";
 import {
@@ -442,6 +443,9 @@ export function PlansTab({ overview }: { overview: BackupOverview }) {
 
   return (
     <>
+      <div className="mb-4">
+        <DefaultPlanPanel targets={overview.targets} />
+      </div>
       {overview.plans.length === 0 ? (
         <Panel flush>
           <EmptyState

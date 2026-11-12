@@ -258,6 +258,17 @@ impl Monitor {
         self.report.read().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
+    /// Bekleyen paket güncellemeleri: (toplam, güvenlik).
+    pub fn pending_updates(&self) -> (usize, usize) {
+        let pending = self.updates.read().unwrap_or_else(|p| p.into_inner());
+        (pending.total, pending.security)
+    }
+
+    /// Bekleyen WordPress güncellemesi olan site sayısı.
+    pub fn wordpress_pending_sites(&self) -> usize {
+        self.wordpress.read().unwrap_or_else(|p| p.into_inner()).values().filter(|updates| !updates.is_empty()).count()
+    }
+
     /// Güncellemeler sayfası taze sayım yaptığında Genel bakış da aynı sayıyı göstersin.
     pub fn set_updates(&self, total: usize, security: usize) {
         *self.updates.write().unwrap_or_else(|p| p.into_inner()) = PendingUpdates { checked_at: now(), total, security };
@@ -282,7 +293,7 @@ impl Batch {
 }
 
 /// `systemctl show` çıktısını birim başına alan→değer eşlemesine çevirir.
-fn parse_unit_blocks(output: &str) -> Vec<HashMap<&str, &str>> {
+pub(crate) fn parse_unit_blocks(output: &str) -> Vec<HashMap<&str, &str>> {
     output
         .split("\n\n")
         .map(|block| block.lines().filter_map(|line| line.split_once('=')).collect::<HashMap<_, _>>())
@@ -290,7 +301,7 @@ fn parse_unit_blocks(output: &str) -> Vec<HashMap<&str, &str>> {
         .collect()
 }
 
-fn watched_units() -> Vec<(String, String)> {
+pub(crate) fn watched_units() -> Vec<(String, String)> {
     let mut units: Vec<(String, String)> = WATCHED_SERVICES.iter().map(|(unit, label)| (unit.to_string(), label.to_string())).collect();
     for version in crate::hosting::php::installed_versions() {
         units.push((format!("php{version}-fpm.service"), format!("PHP {version}")));
@@ -578,7 +589,7 @@ async fn check_site_responses(state: &AppState, batch: &mut Batch, sites: &[Site
     }
 }
 
-fn check_backups(state: &AppState, batch: &mut Batch, has_content: bool) -> AppResult<()> {
+fn check_backups(state: &AppState, batch: &mut Batch, has_content: bool, sites: &[Site]) -> AppResult<()> {
     batch.checks += 1;
     let targets = if crate::backup::is_installed() { crate::backup::list_targets(&state.db)? } else { Vec::new() };
     if targets.is_empty() {
@@ -608,6 +619,25 @@ fn check_backups(state: &AppState, batch: &mut Batch, has_content: bool) -> AppR
             )
             .link("/backups")
             .fix("Günlük plan oluştur"),
+        );
+    }
+    // Zamanlanmış plan varken hiçbir plana girmeyen site (plan "tüm siteler" ise hiçbiri kalmaz).
+    let uncovered = crate::backup::defaults::uncovered_sites(&plans, sites);
+    if !uncovered.is_empty() {
+        let mut names = uncovered.iter().take(5).map(|site| site.domain.clone()).collect::<Vec<_>>().join(", ");
+        if uncovered.len() > 5 {
+            names.push_str(&format!(" ve {} site daha", uncovered.len() - 5));
+        }
+        batch.push(
+            Finding::new(
+                "backup.uncovered",
+                "server",
+                Severity::Warning,
+                format!("{} site hiçbir yedek planına girmiyor", uncovered.len()),
+                format!("Bu sitelerin kendiliğinden yedeği alınmıyor: {names}. Tek tıkla varsayılan yedek planına eklenebilirler."),
+            )
+            .link("/backups")
+            .fix("Yedek planına ekle"),
         );
     }
     for plan in plans.iter().filter(|plan| plan.enabled && plan.last_status == "failed") {
@@ -710,6 +740,86 @@ async fn check_security(state: &AppState, batch: &mut Batch) {
             )
             .link("/settings"),
         );
+    }
+}
+
+/// Kara liste denetiminin saklanan sonucunu bulguya çevirir (sorgular günde bir `blacklist` görevinde yapılır).
+fn check_blacklist(state: &AppState, batch: &mut Batch) {
+    if !crate::mail::is_installed() {
+        return;
+    }
+    let outcome = crate::blacklist::load(&state.db);
+    if outcome.checked_at == 0 || now() - outcome.checked_at > crate::blacklist::STALE_AFTER_SECS {
+        return;
+    }
+    batch.checks += 1;
+    for (ip, lists) in outcome.listed() {
+        batch.push(
+            Finding::new(
+                "mail.blacklisted",
+                &ip,
+                Severity::Critical,
+                format!("Posta gönderen adres kara listede: {ip}"),
+                format!(
+                    "{ip} adresi şu listelerde yer alıyor: {}. Gönderdiğiniz postalar spam klasörüne düşer ya da reddedilir. Sunucudan spam çıkıp çıkmadığına (posta kuyruğu, ele geçirilmiş kutular) bakın, sonra listelerin kaldırma sayfalarından çıkarılmayı isteyin.",
+                    lists.join(", ")
+                ),
+            )
+            .link("/mail"),
+        );
+    }
+    let refused = outcome.refused_lists();
+    if !refused.is_empty() {
+        batch.push(
+            Finding::new(
+                "mail.blacklist_refused",
+                "server",
+                Severity::Info,
+                format!("{} sorguyu reddetti", refused.join(", ")),
+                "Kara liste sorgusu reddedildi (genellikle genel bir DNS çözücüsü ya da sorgu sınırı yüzünden). Bu listelerdeki durumunuz denetlenemiyor; sunucunun kendi (özyinelemeli) DNS çözücüsünü kullanın.",
+            )
+            .link("/mail"),
+        );
+    }
+}
+
+/// Servis ölçüm geçmişinden: sık yeniden başlayan ve belleği düzenli büyüyen servisler.
+fn check_service_history(state: &AppState, batch: &mut Batch) {
+    for (unit, label) in crate::svchist::monitored_units() {
+        let Ok(restarts) = crate::svchist::restarts_within(&state.db, &unit, 86400) else { continue };
+        if restarts > crate::svchist::FLAPPING_LIMIT_24H {
+            batch.push(
+                Finding::new(
+                    "service.flapping",
+                    &unit,
+                    Severity::Warning,
+                    format!("{label} son 24 saatte {restarts} kez yeniden başladı"),
+                    format!("{unit} sık sık çöküp yeniden başlıyor. Servisin günlüğüne bakın (bellek yetmiyor ya da yapılandırma hatalı olabilir)."),
+                )
+                .link("/services"),
+            );
+        }
+        let Ok(series) = crate::svchist::memory_series(&state.db, &unit, 7 * 86400) else { continue };
+        let Some(trend) = crate::svchist::memory_trend(&series) else { continue };
+        if crate::svchist::is_leak_suspect(&trend) {
+            let mut finding = Finding::new(
+                "service.memory_leak",
+                &unit,
+                Severity::Warning,
+                format!("{label} belleği yedi gündür düzenli büyüyor"),
+                format!(
+                    "{unit} bellek kullanımı son {:.0} günde yaklaşık {:.0} MB arttı (%{:.0}). Bellek sızıntısı olabilir; servisi yeniden başlatmak belleği boşaltır, sorun sürerse sürümü ya da eklentileri gözden geçirin.",
+                    trend.span_days,
+                    trend.growth_bytes / 1_048_576.0,
+                    trend.growth_ratio * 100.0
+                ),
+            )
+            .link("/services");
+            if unit != "pixpanel.service" {
+                finding = finding.fix("Yeniden başlat");
+            }
+            batch.push(finding);
+        }
     }
 }
 
@@ -979,11 +1089,13 @@ pub async fn run_checks(state: &AppState) -> Report {
         check_site_responses(state, &mut batch, &sites).await;
     }
     let has_content = !sites.is_empty() || crate::backup::all_databases(&state.db).map(|list| !list.is_empty()).unwrap_or(false);
-    if let Err(err) = check_backups(state, &mut batch, has_content) {
+    if let Err(err) = check_backups(state, &mut batch, has_content, &sites) {
         tracing::warn!(error = %err, "yedek denetimi yapılamadı");
     }
     check_security(state, &mut batch).await;
     check_mail_queue(&mut batch).await;
+    check_blacklist(state, &mut batch);
+    check_service_history(state, &mut batch);
     apply_security_updates(state, settings.security_updates).await;
     refresh_updates(&monitor).await;
     check_updates(state, &mut batch);
@@ -1011,6 +1123,7 @@ pub async fn run_checks(state: &AppState) -> Report {
 
     let previous: HashSet<String> = monitor.report().findings.into_iter().map(|finding| finding.key).collect();
     let current: HashSet<String> = batch.findings.iter().map(|finding| finding.key.clone()).collect();
+    crate::weekly::note_run(&state.db, batch.checks);
     let report = Report { checked_at: now(), checks: batch.checks, findings: batch.findings };
     *monitor.report.write().unwrap_or_else(|p| p.into_inner()) = report.clone();
     if previous != current {
@@ -1204,7 +1317,7 @@ pub async fn fix_now(state: &AppState, key: &str, user_id: i64) -> AppResult<Str
 async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResult<String> {
     let (rule, target) = key.split_once(':').ok_or_else(|| AppError::bad("Geçersiz bulgu anahtarı"))?;
     match rule {
-        "service.failed" | "service.stopped" => {
+        "service.failed" | "service.stopped" | "service.memory_leak" => {
             let (unit, label) = watched_units().into_iter().find(|(unit, _)| unit == target).ok_or_else(|| AppError::bad("Bu servis izlenmiyor"))?;
             // Çökmüş birimin hata sayacı temizlenmezse systemd yeniden başlatmayı reddedebilir.
             let _ = exec::run("systemctl", &["reset-failed", "--", &unit]).await;
@@ -1241,6 +1354,10 @@ async fn apply_fix(state: &AppState, key: &str, user_id: Option<i64>) -> AppResu
             let name = plan.name.clone();
             crate::backup::run::start_plan(state, user_id, plan)?;
             Ok(format!("“{name}” yedek planı yeniden başlatıldı."))
+        }
+        "backup.uncovered" => {
+            let (name, added) = crate::backup::defaults::cover_uncovered(state, user_id).await?;
+            Ok(format!("{added} site “{name}” planına eklendi."))
         }
         "backup.unscheduled" => {
             let name = create_daily_backup_plan(state, user_id).await?;

@@ -595,6 +595,8 @@ mod scope_tests {
         assert_eq!(scope_gate("/api/v1/migrate/backup/inspect"), ScopeGate::Deny);
         assert_eq!(scope_gate("/api/v1/migrate/backup/{id}"), ScopeGate::Deny);
         assert_eq!(scope_gate("/api/v1/backup/mine/run"), ScopeGate::Area("backups"));
+        // Veritabanı çöp kutusu, veritabanı alanının parçasıdır (uçlar hesap sınırını kendisi uygular).
+        assert_eq!(scope_gate("/api/v1/databases/trash/{id}/restore"), ScopeGate::Area("databases"));
         for denied in [
             "/api/v1/users",
             "/api/v1/users/{id}/access",
@@ -609,6 +611,12 @@ mod scope_tests {
             "/api/v1/redis/accounts",
             "/api/v1/webhooks",
             "/api/v1/events",
+            // İşletim geçmişi uçları: yönetim alanında, kapsamlı anahtara kapalı.
+            "/api/v1/system/services/{name}/history",
+            "/api/v1/health/weekly-report",
+            "/api/v1/health/weekly-report/send",
+            "/api/v1/health/blacklist/check",
+            "/api/v1/backup/default-plan",
             "/other/sites",
         ] {
             assert_eq!(scope_gate(denied), ScopeGate::Deny, "{denied}");

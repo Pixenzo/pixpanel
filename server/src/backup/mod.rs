@@ -7,6 +7,7 @@
 //!
 //! İlk sürümde yedekleme yalnızca yöneticiye açıktır.
 
+pub mod defaults;
 pub mod restic;
 pub mod run;
 

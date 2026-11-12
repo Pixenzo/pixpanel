@@ -222,6 +222,10 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | PATCH | `/databases/users/{id}` | Kullanıcının parolasını/adresini günceller. | `databases` |
 | DELETE | `/databases/users/{id}` | Kullanıcıyı siler. | `databases` |
 | DELETE | `/databases/{id}` | Veritabanını siler. | `databases` |
+| DELETE | `/databases/{id}` | Veritabanını siler. `?backup=true` ile silmeden önce dökümü alıp 7 gün saklar (yanıtta `trash_id`, `expires_at`); döküm alınamazsa silinmez. | `databases` |
+| GET | `/databases/trash` | Silinmiş, dökümü saklanan (7 gün) veritabanları. | `databases` |
+| POST | `/databases/trash/{id}/restore` | Silinen veritabanını aynı adla geri getirir (görev); kullanıcı yetkileri, kullanıcılar varsa yeniden verilir. | `databases` |
+| DELETE | `/databases/trash/{id}` | Dökümü hemen siler. | `databases` |
 | GET | `/databases/{id}/export` | Dışa aktarır (SQL dökümü indirir). | `databases` |
 | POST | `/databases/{id}/import` | SQL dosyası içe aktarır (görev). | `databases` |
 | POST | `/databases/{id}/copy` | Veritabanını kopyalar (görev). | `databases` |
@@ -364,6 +368,8 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | PUT | `/backup/plans/{id}` | Planı günceller. | Yönetici |
 | DELETE | `/backup/plans/{id}` | Planı siler. | Yönetici |
 | POST | `/backup/plans/{id}/run` | Planı şimdi çalıştırır (görev). | Yönetici |
+| GET | `/backup/default-plan` | Yeni siteler için varsayılan yedek planı ayarı. | Yönetici |
+| PUT | `/backup/default-plan` | Varsayılan planı açar/kapatır; yedek yeri, sıklık ve saklama: `{enabled, target_id, frequency, at_minute, weekday, month_day, keep_daily, keep_weekly, keep_monthly}`. Açıksa yeni site kendiliğinden plana eklenir. | Yönetici |
 
 ## Zamanlanmış görevler (`/cron`)
 
@@ -478,6 +484,7 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | GET | `/system/processes` | Süreçler. | Yönetici |
 | POST | `/system/processes/{pid}/signal` | Sürece sinyal gönderir. | Yönetici |
 | GET | `/system/services` | systemd hizmetleri. | Yönetici |
+| GET | `/system/services/{name}/history` | Servisin bellek, işlemci, görev sayısı ve durum geçmişi (`?range=day\|week\|month`) ile yeniden başlama özeti; yalnızca izlenen servisler. | Yönetici |
 | POST | `/system/services/{name}/{action}` | Hizmeti başlatır/durdurur/yeniden başlatır. | Yönetici |
 | GET | `/system/audit` | Denetim günlüğü. | Yönetici |
 | GET | `/system/updates` | Bekleyen paket güncellemeleri. | Yönetici |
@@ -504,6 +511,11 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | POST | `/health/check` | Denetimi şimdi çalıştırır. | Yönetici |
 | POST | `/health/fix` | Bir bulguyu otomatik düzeltir. | Yönetici |
 | PUT | `/health/settings` | Sağlık denetimi ayarlarını kaydeder. | Yönetici |
+| GET | `/health/weekly-report` | Haftalık özet ayarı, sıradaki ve son gönderim. | Yönetici |
+| PUT | `/health/weekly-report` | Haftalık özeti açar/kapatır, gün (1–7), saat ve ek alıcıyı kaydeder. | Yönetici |
+| POST | `/health/weekly-report/send` | Haftalık özeti şimdi üretir: `{preview: true}` yalnızca metni döner, aksi halde bildirim kanallarına gönderir. | Yönetici |
+| GET | `/health/blacklist` | Posta gönderen IP'lerin son kara liste (DNSBL) sonucu. | Yönetici |
+| POST | `/health/blacklist/check` | Kara liste sorgusunu şimdi çalıştırır (posta bileşeni kuruluysa). | Yönetici |
 | GET | `/components` | Kurulabilir bileşenler ve durumları. | Yönetici |
 | POST | `/components/{id}/install` | Bileşeni kurar (görev). `?force=true`: bellek gibi kurulum uyarısı onaylandı (ClamAV için 2 GB altı bellek). | Yönetici |
 | POST | `/components/{id}/remove` | Bileşeni kaldırır (ayarlar kalır; görev). | Yönetici |

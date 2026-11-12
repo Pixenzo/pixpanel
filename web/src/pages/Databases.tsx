@@ -30,6 +30,7 @@ import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { RemoteAccessStrip } from "./DatabaseRemote";
 import { JobLog } from "./Jobs";
+import { DropDatabaseModal, TrashPanel } from "./DatabaseTrash";
 import { SlowQueries } from "./SlowQueries";
 
 const accessLabels: Record<DbAccess, string> = {
@@ -619,7 +620,8 @@ type Dialog =
   | { kind: "access"; database: DatabaseInfo }
   | { kind: "import"; database: DatabaseInfo }
   | { kind: "copy"; database: DatabaseInfo }
-  | { kind: "maintenance"; database: DatabaseInfo };
+  | { kind: "maintenance"; database: DatabaseInfo }
+  | { kind: "drop"; database: DatabaseInfo };
 
 /** Sayfadaki sekmeler: veritabanı türleri ve (yöneticiye) yavaş sorgu günlüğü. */
 type View = DbEngine | "slow";
@@ -635,12 +637,6 @@ export function DatabasesPage() {
   const overview = useQuery({ queryKey: ["databases"], queryFn: () => api.get<DatabaseOverview>("/databases") });
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["databases"] });
 
-  const dropDatabase = useMutation({
-    mutationFn: (database: DatabaseInfo) => api.delete(`/databases/${database.id}`),
-    onSuccess: (_, database) => feedback.success(t("{name} silindi", { name: database.name })),
-    onError: (error) => feedback.error(error),
-    onSettled: invalidate,
-  });
   const dropUser = useMutation({
     mutationFn: (user: DbUserInfo) => api.delete(`/databases/users/${user.id}`),
     onSuccess: (_, user) => feedback.success(t("{name} silindi", { name: user.name })),
@@ -704,17 +700,6 @@ export function DatabasesPage() {
 
   const databases = data.databases.filter((database) => database.engine === engine.id);
   const users = data.users.filter((user) => user.engine === engine.id);
-
-  async function confirmDropDatabase(database: DatabaseInfo) {
-    const confirmed = await feedback.confirm({
-      title: t("{name} veritabanı silinsin mi?", { name: database.name }),
-      description: t("Bütün tablolar ve veriler kalıcı olarak silinir. Bu işlem geri alınamaz; önce dışa aktarıp yedeğini almak isteyebilirsiniz."),
-      confirmLabel: t("Veritabanını sil"),
-      danger: true,
-      typeToConfirm: database.name,
-    });
-    if (confirmed) dropDatabase.mutate(database);
-  }
 
   async function confirmDropUser(user: DbUserInfo) {
     const confirmed = await feedback.confirm({
@@ -849,7 +834,7 @@ export function DatabasesPage() {
                             <IconButton label={t("Denetle / Onar / İyileştir")} disabled={!engine.running} onClick={() => setDialog({ kind: "maintenance", database })}>
                               <Wrench className="size-4" />
                             </IconButton>
-                            <IconButton label={t("Sil")} onClick={() => void confirmDropDatabase(database)}>
+                            <IconButton label={t("Sil")} onClick={() => setDialog({ kind: "drop", database })}>
                               <Trash2 className="size-4" />
                             </IconButton>
                           </div>
@@ -926,6 +911,7 @@ export function DatabasesPage() {
                 </Table>
               )}
             </Panel>
+            <TrashPanel />
           </div>
         </>
       )}
@@ -955,6 +941,7 @@ export function DatabasesPage() {
       {dialog?.kind === "import" && <ImportModal database={dialog.database} onClose={() => setDialog(null)} />}
       {dialog?.kind === "copy" && <CopyModal database={dialog.database} onClose={() => setDialog(null)} />}
       {dialog?.kind === "maintenance" && <MaintenanceModal database={dialog.database} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "drop" && <DropDatabaseModal database={dialog.database} onClose={() => setDialog(null)} />}
     </>
   );
 }

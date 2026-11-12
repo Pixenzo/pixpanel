@@ -159,6 +159,15 @@ pub fn save_channels(db: &Db, user_id: i64, channels: &Channels) -> AppResult<()
 }
 
 pub async fn send_email(smtp: &SmtpSettings, to: &str, subject: &str, body: &str) -> AppResult<()> {
+    send_message(smtp, to, subject, body, None).await
+}
+
+/// Düz metin + HTML alternatifli e-posta (haftalık özet gibi biçimli iletiler için).
+pub async fn send_email_html(smtp: &SmtpSettings, to: &str, subject: &str, text: &str, html: &str) -> AppResult<()> {
+    send_message(smtp, to, subject, text, Some(html)).await
+}
+
+async fn send_message(smtp: &SmtpSettings, to: &str, subject: &str, body: &str, html: Option<&str>) -> AppResult<()> {
     if !smtp.configured() {
         return Err(AppError::bad("E-posta gönderimi için yöneticinin SMTP sunucusunu tanımlaması gerekiyor"));
     }
@@ -172,12 +181,15 @@ pub async fn send_email(smtp: &SmtpSettings, to: &str, subject: &str, body: &str
     if !smtp.username.is_empty() {
         builder = builder.credentials(Credentials::new(smtp.username.clone(), smtp.password.clone()));
     }
-    let message = Message::builder()
+    let draft = Message::builder()
         .from(smtp.from.parse().map_err(|_| AppError::bad("Gönderen adresi geçersiz"))?)
         .to(to.parse().map_err(|_| AppError::bad("Alıcı adresi geçersiz"))?)
-        .subject(subject)
-        .body(body.to_string())
-        .map_err(|err| failed(&err))?;
+        .subject(subject);
+    let message = match html {
+        Some(html) => draft.multipart(lettre::message::MultiPart::alternative_plain_html(body.to_string(), html.to_string())),
+        None => draft.body(body.to_string()),
+    }
+    .map_err(|err| failed(&err))?;
     builder.build().send(message).await.map_err(|err| failed(&err))?;
     Ok(())
 }

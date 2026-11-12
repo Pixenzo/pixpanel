@@ -110,7 +110,7 @@ Kullanıcının sözü: "profesyonel şık ve premium duran, profesyonel bir web
 - **Görsel dil:** var olan kimlik (IBM Plex, koyu yan gezinme, petrol mavisi vurgu) korunur ve inceltilir: tutarlı boşluk ve köşe ölçeği, sayfa başlıkları, boş durumlar, yükleme iskeletleri, klavye odağı.
 - **Kabul:** her sayfa 390 px genişlikte yatay kaydırma olmadan kullanılabilir; iki sekmeden biri bir kaynağı değiştirince öteki 2 sn içinde güncellenir; bağlantı kopunca arayüz bunu gösterir ve kendiliğinden yeniden bağlanır.
 
-### Ö2. Kendi kendine bakım ("Sağlık merkezi") — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: haftalık özet, riskli işlemden önce yedek, yeni siteye varsayılan yedek planı, kara liste denetimi, müşteriye kendi sitesinin durumu)
+### Ö2. Kendi kendine bakım ("Sağlık merkezi") — İLK SÜRÜM TAMAMLANDI (11.11.2026; 12.11.2026: haftalık özet, yeni siteye varsayılan yedek planı, kara liste denetimi, veritabanı silmeden önce yedek, servis ölçüm geçmişine dayalı denetimler; kalan: site silme ve PHP ana sürüm değişiminde önce yedek, müşteriye kendi sitesinin durumu)
 
 Panelin ayırt edici özelliği: yöneticinin düzenli olarak elle yaptığı denetimleri panel sürekli yapar, güvenli olanları kendisi düzeltir, kalanını tek tıkla düzeltilecek biçimde sunar.
 
@@ -124,7 +124,8 @@ Panelin ayırt edici özelliği: yöneticinin düzenli olarak elle yaptığı de
   - posta: kuyrukta bekleyen iletiler, eksik SPF/DKIM/DMARC, kara listeye girmiş sunucu adresi
   - güvenlik: parolayla root SSH girişi açık, güvenlik duvarı kapalı, iki adımlı doğrulaması olmayan yönetici
 - **Kendiliğinden yapılanlar (her biri ayrı ayrı açılıp kapatılabilir):** sertifika alma/yenileme, servis yeniden başlatma, günlük döndürme, güvenlik güncellemeleri (unattended-upgrades), riskli işlemden önce yedek (PHP sürümü değişimi, güncelleme, geri yükleme), yeni siteye varsayılan yedek planı.
-- **Raporlama:** her kendiliğinden işlem denetim günlüğüne ve bildirim kanalına düşer; haftalık özet e-postası (ne denetlendi, ne düzeltildi, ne bekliyor).
+- **Raporlama:** her kendiliğinden işlem denetim günlüğüne ve bildirim kanalına düşer; haftalık özet e-postası (ne denetlendi, ne düzeltildi, ne bekliyor). — **tamamlandı (12.11.2026):** `weekly.rs`; yapılandırılabilir gün/saat, e-posta (düz metin + HTML) ve mevcut kanallar. Kalan: müşteriye (hesap sahibine) kendi sitelerinin haftalık özeti.
+- **Notlar (12.11.2026):** yeni siteye varsayılan yedek planı `backup/defaults.rs` (zamanlanmış plana zaten giren site için iş yok; hiçbir plana girmeyen site için `backup.uncovered` bulgusu ve tek tıkla ekleme). Riskli işlemden önce yedek yalnızca veritabanı silmede yapıldı (`dbtrash.rs`: 7 günlük çöp kutusu ve geri getirme); site silme ve PHP ana sürüm değişimi için sıradaki adım: `backup::run::run_inline` ile tek siteyi yedekleyip sonra işleme geçmek (yedek yeri yoksa uyarı). Kara liste (DNSBL) denetimi `blacklist.rs` (günde bir, 3 liste, Spamhaus reddi listeleme sayılmaz).
 - **Arayüz:** giriş sayfası sunucunun genel sağlık durumunu ve bekleyen bulguları gösterir; her site kartında o sitenin durumu.
 - **Kabul:** servis elle öldürülünce bir dakika içinde ayağa kalkar ve bildirim gelir; DNS'i doğru yeni sitede sertifika kendiliğinden alınır; bulgular düzeltilince listeden kendiliğinden düşer.
 
@@ -180,7 +181,7 @@ Kullanıcının sözü: "Birden çok ip, komut satırı, dns kümesi, uzun döne
 - 11a. Müşteri olarak giriş (yönetici ve bayi için; denetim günlüğüne yazılır, kolayca geri dönülür). — **tamamlandı (11.11.2026)**
 - 11b. Bildirim olayları: disk doluyor, servis durdu, sertifika bitiyor, yedek başarısız, hesap kotayı aştı, yeni adresten giriş. — **tamamlandı (11.11.2026; sunucu olayları yöneticiye `health_alert` ile, site ve kota olayları hesabın kendisine)**
 - 11c. Sistem güncellemeleri: bekleyen paketler, güvenlik güncellemelerinin kendiliğinden kurulması, yeniden başlatma gerekli uyarısı. — **tamamlandı (12.11.2026)**
-- 11d. Servis izleme: duran servisi yeniden başlatma, geçmişe dönük ölçümler (bugün yalnızca son dakikalar).
+- 11d. Servis izleme: duran servisi yeniden başlatma (sağlık merkezinde vardı), geçmişe dönük ölçümler. — **tamamlandı (12.11.2026):** `svchist.rs`; izlenen servisler için dakikalık bellek/işlemci/görev/durum/yeniden başlama (48 saat dakikalık, 30 gün saatlik), Servisler sayfasında grafik, sık yeniden başlama ve bellek sızıntısı denetimleri. Kalan: izlenmeyen servislerin (sistemin öteki birimleri) geçmişi, kapsayıcılarda muhasebe kapalıyken işlemci/bellek için `/proc` tabanlı yedek ölçüm.
 - 11e. Marka: logo, ad, giriş sayfası metni (bayi bazında). — **tamamlandı (sunucu geneli 11.11.2026, bayi bazında 12.11.2026)**
 
 ---

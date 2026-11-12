@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play, RotateCw, Square } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Play, RotateCw, Square } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 import { useFeedback } from "../components/feedback";
+import { ServiceHistoryPanel } from "../components/ServiceHistoryPanel";
 import type { Tone } from "../components/ui";
 import { Checkbox, ErrorBlock, IconButton, LoadingBlock, Mono, PageHeader, Panel, SearchInput, Status, Table, Td, Th } from "../components/ui";
 import type { Service } from "../lib/api";
@@ -41,6 +42,8 @@ export function ServicesPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [onlyRunning, setOnlyRunning] = useState(false);
+  // Ölçüm geçmişi açık olan servis (aynı anda biri).
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const services = useQuery({
     queryKey: ["services"],
@@ -120,11 +123,24 @@ export function ServicesPage() {
                 const running = service.active === "active" || service.active === "activating";
                 const busy = act.isPending && act.variables?.name === service.name;
                 const canToggle = service.enabled === "enabled" || service.enabled === "disabled";
+                const open = expanded === service.name;
                 return (
-                  <tr key={service.name} className="hover:bg-sunken/50">
+                  <Fragment key={service.name}>
+                  <tr className="hover:bg-sunken/50">
                     <Td>
-                      <Mono className="font-medium">{service.name.replace(/\.service$/, "")}</Mono>
-                      <p className="max-w-[60ch] truncate text-[13px] text-ink-3">{service.description}</p>
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => setExpanded(open ? null : service.name)}
+                        className="flex w-full items-start gap-1.5 text-left"
+                        title={t("Ölçüm geçmişini göster")}
+                      >
+                        {open ? <ChevronDown aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-3" /> : <ChevronRight aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-3" />}
+                        <span className="min-w-0">
+                          <Mono className="font-medium">{service.name.replace(/\.service$/, "")}</Mono>
+                          <span className="block max-w-[60ch] truncate text-[13px] text-ink-3">{service.description}</span>
+                        </span>
+                      </button>
                     </Td>
                     <Td className="whitespace-nowrap">
                       <Status tone={state.tone}>{state.label}</Status>
@@ -162,6 +178,14 @@ export function ServicesPage() {
                       </div>
                     </Td>
                   </tr>
+                  {open && (
+                    <tr>
+                      <td colSpan={4} className="border-b border-line bg-sunken/30 px-4 py-4 sm:px-6">
+                        <ServiceHistoryPanel unit={service.name} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

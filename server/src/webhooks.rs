@@ -63,6 +63,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("traffic_warning", "Aylık trafik sınırınızın %80'ine ulaşıldığında ya da sınır dolduğunda"),
     ("login_new_ip", "Hesabınıza yeni bir adresten giriş yapıldığında"),
     ("health_alert", "Sunucuda dikkat gerektiren bir sorun çıktığında ya da panel bir sorunu kendiliğinden düzelttiğinde"),
+    ("weekly_report", "Haftalık özet hazırlandığında"),
     ("job.started", "Bir görev başladığında"),
     ("job.succeeded", "Bir görev başarıyla bittiğinde"),
     ("job.failed", "Bir görev başarısız olduğunda"),

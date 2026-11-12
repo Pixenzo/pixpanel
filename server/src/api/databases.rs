@@ -18,6 +18,7 @@ use tokio_util::io::ReaderStream;
 use crate::auth::{self, AuthUser};
 use crate::db::now;
 use crate::dbms::{self, busy, Access, Engine};
+use crate::dbtrash;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::sys::services;
@@ -30,6 +31,9 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(overview).post(create_database))
         .route("/{id}", delete(drop_database))
+        .route("/trash", get(trash_list))
+        .route("/trash/{id}", delete(trash_purge))
+        .route("/trash/{id}/restore", post(trash_restore))
         .route("/{id}/export", get(export))
         .route("/{id}/open", post(open_tool))
         .route("/{id}/import", post(import).layer(axum::extract::DefaultBodyLimit::disable()))
@@ -385,34 +389,185 @@ async fn create_database(
     Ok(Json(json!({ "id": database_id })))
 }
 
+#[derive(Deserialize, Default)]
+struct DropQuery {
+    /// Silmeden önce dökümü al ve 7 gün boyunca geri getirilebilir tut.
+    #[serde(default)]
+    backup: bool,
+}
+
 async fn drop_database(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<i64>,
+    Query(query): Query<DropQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
     user.require(AREA)?;
-    let _guard = state.sys_lock.lock().await;
     let database = load_database(&state, &user, id)?;
-    if busy::is_busy(database.engine, &database.name) {
-        return Err(busy_error());
+    // İsteğe bağlı yedek: döküm silmeden önce, sistem kilidi tutulmadan (uzun sürebilir) alınır;
+    // başarısız olursa hiçbir şey silinmez.
+    let mut trashed: Option<(String, i64)> = None;
+    if query.backup {
+        database.engine.require_installed()?;
+        let busy_guard = busy::try_lock(database.engine, &database.name).ok_or_else(busy_error)?;
+        trashed = Some(dbtrash::dump(&state, database.engine, &database.name).await?);
+        drop(busy_guard);
     }
-    // PostgreSQL'de yetkiler rol üzerinde tutulduğundan veritabanı silinmeden önce alınır.
-    let grantees: Vec<(String, String)> = state.db.call(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT du.name, du.host FROM database_grants g JOIN database_users du ON du.id = g.db_user_id
-             WHERE g.database_id = ?1",
-        )?;
-        let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))?;
-        rows.collect()
-    })?;
-    for (name, host) in &grantees {
-        dbms::revoke(database.engine, &database.name, name, host).await?;
+    let _guard = state.sys_lock.lock().await;
+    let mut trash_id: Option<i64> = None;
+    let outcome: AppResult<()> = async {
+        if busy::is_busy(database.engine, &database.name) {
+            return Err(busy_error());
+        }
+        // PostgreSQL'de yetkiler rol üzerinde tutulduğundan veritabanı silinmeden önce alınır.
+        let grantees: Vec<(String, String, String)> = state.db.call(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT du.name, du.host, g.access FROM database_grants g JOIN database_users du ON du.id = g.db_user_id
+                 WHERE g.database_id = ?1",
+            )?;
+            let rows = stmt.query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+            rows.collect()
+        })?;
+        if let Some((file, size)) = &trashed {
+            let grants: Vec<dbtrash::Grant> =
+                grantees.iter().map(|(name, host, access)| dbtrash::Grant { name: name.clone(), host: host.clone(), access: access.clone() }).collect();
+            trash_id = Some(dbtrash::record(&state, database.user_id, database.engine, &database.name, file, *size, &grants)?);
+        }
+        for (name, host, _) in &grantees {
+            dbms::revoke(database.engine, &database.name, name, host).await?;
+        }
+        dbms::drop_database(database.engine, &database.name).await?;
+        state.db.call(|conn| conn.execute("DELETE FROM databases WHERE id = ?1", params![database.id]))?;
+        Ok(())
     }
-    dbms::drop_database(database.engine, &database.name).await?;
-    state.db.call(|conn| conn.execute("DELETE FROM databases WHERE id = ?1", params![database.id]))?;
+    .await;
+    if let Err(err) = outcome {
+        // Silme yapılamadıysa çöp kutusuna bir şey bırakılmaz.
+        match (trash_id, &trashed) {
+            (Some(trash), _) => {
+                let _ = dbtrash::remove(&state, trash);
+            }
+            (None, Some((file, _))) => dbtrash::discard_file(&state, file),
+            _ => {}
+        }
+        return Err(err);
+    }
     sync_hba(&state, database.engine).await;
-    auth::audit(&state.db, &user, "database.delete", &database.name, database.engine.as_str());
+    let detail = if trash_id.is_some() { format!("{}; yedek 7 gün saklanıyor", database.engine.as_str()) } else { database.engine.as_str().to_string() };
+    auth::audit(&state.db, &user, "database.delete", &database.name, &detail);
+    Ok(Json(json!({ "ok": true, "trash_id": trash_id, "expires_at": trash_id.map(|_| now() + dbtrash::RETENTION_SECS) })))
+}
+
+#[derive(Serialize)]
+struct TrashItem {
+    #[serde(flatten)]
+    entry: dbtrash::Entry,
+    owner: String,
+}
+
+/// Geri getirilebilir (silinmiş, dökümü saklanan) veritabanları. Yönetici hepsini, hesap kendininkini görür.
+async fn trash_list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<TrashItem>>> {
+    user.require(AREA)?;
+    let owner = if user.is_admin() { None } else { Some(user.owner_id()) };
+    let mut items = Vec::new();
+    for entry in dbtrash::list(&state, owner)? {
+        let username: String = state
+            .db
+            .call(|conn| conn.query_row("SELECT username FROM users WHERE id = ?1", params![entry.user_id], |row| row.get(0)).optional())?
+            .unwrap_or_default();
+        items.push(TrashItem { entry, owner: username });
+    }
+    Ok(Json(items))
+}
+
+/// Dökümü hemen siler (7 günü beklemeden).
+async fn trash_purge(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let entry = dbtrash::load(&state, id, if user.is_admin() { None } else { Some(user.owner_id()) })?;
+    dbtrash::remove(&state, id)?;
+    auth::audit(&state.db, &user, "database.trash.purge", &entry.name, &entry.engine);
     Ok(Json(json!({ "ok": true })))
+}
+
+/// Silinmiş veritabanını aynı adla yeniden oluşturup dökümü yükler (görev). Kullanıcı yetkileri,
+/// kullanıcılar hâlâ varsa yeniden verilir.
+async fn trash_restore(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let entry = dbtrash::load(&state, id, if user.is_admin() { None } else { Some(user.owner_id()) })?;
+    let engine = Engine::parse(&entry.engine)?;
+    engine.require_installed()?;
+    dbms::validate_name(&entry.name, "Veritabanı adı")?;
+    let path = dbtrash::path_of(&state, &entry)?;
+    if !path.exists() {
+        return Err(AppError::bad("Döküm dosyası bulunamadı"));
+    }
+    let taken: bool = state.db.call(|conn| {
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM databases WHERE engine = ?1 AND name = ?2)", params![entry.engine, entry.name], |row| row.get(0))
+    })?;
+    if taken {
+        return Err(AppError::conflict(format!("“{}” adında bir veritabanı zaten var; önce onu silin", entry.name)));
+    }
+    crate::quota::check(&state.db, entry.user_id, crate::quota::Resource::Database)?;
+    let busy_guard = busy::try_lock(engine, &entry.name).ok_or_else(busy_error)?;
+    let title = format!("{} veritabanı çöp kutusundan geri getiriliyor", entry.name);
+    let audit_name = entry.name.clone();
+    let job_state = state.clone();
+    let job_id = state.jobs.start("database.restore_trash", &title, Some(user.id), move |ctx| async move {
+        let _busy_guard = busy_guard;
+        let name = entry.name.clone();
+        let database_id = {
+            let _sys = job_state.sys_lock.lock().await;
+            ctx.log(format!("{name} veritabanı yeniden oluşturuluyor"));
+            dbms::create_database(engine, &name).await?;
+            let inserted = job_state.db.call(|conn| {
+                conn.execute("INSERT INTO databases (user_id, engine, name, created_at) VALUES (?1, ?2, ?3, ?4)", params![entry.user_id, entry.engine, name, now()])?;
+                Ok(conn.last_insert_rowid())
+            });
+            match inserted {
+                Ok(id) => id,
+                Err(err) => {
+                    let _ = dbms::drop_database(engine, &name).await;
+                    return Err(err);
+                }
+            }
+        };
+        // Yükleme uzun sürebilir; sistem kilidi tutulmaz.
+        if let Err(err) = run_import(&ctx, engine, &name, &path, true).await {
+            let _sys = job_state.sys_lock.lock().await;
+            let _ = dbms::drop_database(engine, &name).await;
+            let _ = job_state.db.call(|conn| conn.execute("DELETE FROM databases WHERE id = ?1", params![database_id]));
+            ctx.log("Döküm yüklenemedi; yarım kalan veritabanı kaldırıldı. Döküm çöp kutusunda duruyor, yeniden deneyebilirsiniz.");
+            return Err(err);
+        }
+        for grant in &entry.grants {
+            let found: Option<i64> = job_state.db.call(|conn| {
+                conn.query_row(
+                    "SELECT id FROM database_users WHERE engine = ?1 AND name = ?2 AND host = ?3",
+                    params![entry.engine, grant.name, grant.host],
+                    |row| row.get(0),
+                )
+                .optional()
+            })?;
+            let (Some(db_user_id), Ok(access)) = (found, Access::parse(&grant.access)) else { continue };
+            if dbms::grant(engine, &name, &grant.name, &grant.host, access).await.is_ok() {
+                let _ = job_state.db.call(|conn| {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO database_grants (database_id, db_user_id, access) VALUES (?1, ?2, ?3)",
+                        params![database_id, db_user_id, grant.access],
+                    )
+                });
+                ctx.log(format!("{} kullanıcısının yetkisi geri verildi", grant.name));
+            }
+        }
+        sync_hba(&job_state, engine).await;
+        dbtrash::mark_restored(&job_state, entry.id)?;
+        let _ = dbtrash::remove(&job_state, entry.id);
+        dbms::stats::invalidate(engine);
+        ctx.log("Veritabanı geri getirildi");
+        Ok(())
+    })?;
+    auth::audit(&state.db, &user, "database.trash.restore", &audit_name, engine.as_str());
+    Ok(Json(json!({ "job_id": job_id })))
 }
 
 #[derive(Deserialize)]
