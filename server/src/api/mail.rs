@@ -34,6 +34,7 @@ pub fn router() -> Router<AppState> {
         .route("/domains/{id}/mailboxes", post(create_mailbox))
         .route("/domains/{id}/aliases", post(create_alias))
         .route("/mailboxes/{id}", patch(update_mailbox).delete(remove_mailbox))
+        .route("/mailboxes/{id}/import", post(import_mailbox))
         .route("/aliases/{id}", patch(update_alias).delete(remove_alias))
         .route("/queue", get(queue))
         .route("/queue/flush", post(flush_queue))
@@ -371,6 +372,19 @@ fn authorized_mailbox(state: &AppState, user: &AuthUser, id: i64) -> AppResult<M
     let mailbox = mail::load_mailbox(&state.db, id)?;
     mail::get_domain(&state.db, user, mailbox.domain_id)?;
     Ok(mailbox)
+}
+
+/// Kutuya başka sunucudaki posta kutusunun iletilerini IMAP ile aktarır (arka plan görevi).
+async fn import_mailbox(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(mut body): Json<mail::import::ImapSource>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    ensure_installed()?;
+    let mailbox = authorized_mailbox(&state, &user, id)?;
+    body.validate()?;
+    let address = mail::import::resolve(&body, user.is_admin()).await?;
+    auth::audit(&state.db, &user, "mail.mailbox.import", &mailbox.address, &format!("{}:{}", body.host, body.port()));
+    let title = format!("Posta aktarma: {} → {}", body.host, mailbox.address);
+    let job_id = state.jobs.start("mail.import", &title, Some(user.id), move |ctx| async move { mail::import::run(&ctx, &mailbox, &body, address).await })?;
+    Ok(Json(serde_json::json!({ "job_id": job_id })))
 }
 
 #[derive(Deserialize)]

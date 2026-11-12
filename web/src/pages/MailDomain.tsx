@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Smartphone, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, AtSign, Check, Copy, ExternalLink, Globe, Inbox, MailOpen, MailPlus, Pencil, Plus, RefreshCw, Shuffle, SlidersHorizontal, Smartphone, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -33,6 +33,7 @@ import {
 import { api, errorMessage } from "../lib/api";
 import { classNames, formatBytes, formatDateTime } from "../lib/format";
 import { t } from "../lib/i18n";
+import { MailImportModal } from "./MailImport";
 import { useMe } from "../lib/session";
 import { MailClientSettings } from "./MailClientSettings";
 import type { AutoReply, DnsRecord, FilterAction, FilterCondition, MailAlias, MailDomain, MailFilter, Mailbox } from "./Mail";
@@ -905,6 +906,7 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<Mailbox | null>(null);
+  const [importing, setImporting] = useState<Mailbox | null>(null);
   const editing = detail.mailboxes.find((item) => item.id === editingId);
 
   const remove = useMutation({
@@ -1014,6 +1016,9 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
                           {t("Web postası")}
                         </a>
                       )}
+                      <IconButton label={t("Eski sunucudan ileti aktar")} onClick={() => setImporting(mailbox)}>
+                        <MailPlus className="size-4" />
+                      </IconButton>
                       <IconButton label={t("Düzenle")} onClick={() => setEditingId(mailbox.id)}>
                         <Pencil className="size-4" />
                       </IconButton>
@@ -1030,6 +1035,7 @@ function MailboxesSection({ detail }: { detail: DomainDetail }) {
       </Panel>
       {creating && <CreateMailboxModal domain={detail.domain} onClose={() => setCreating(false)} />}
       {editing && <MailboxEditor key={editing.id} mailbox={editing} onClose={() => setEditingId(null)} />}
+      {importing && <MailImportModal mailbox={importing} onClose={() => setImporting(null)} />}
       {deleting && <DeleteMailboxModal mailbox={deleting} onClose={() => setDeleting(null)} onChoose={(deleteMail) => void chooseDelete(deleting, deleteMail)} />}
     </>
   );
