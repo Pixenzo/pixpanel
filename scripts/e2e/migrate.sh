@@ -49,8 +49,15 @@ print(json.dumps(d))" "$@"; }
 cleanup_remote() {
   sed -i '/pixpanel-tasima-sinamasi/d' /root/.ssh/authorized_keys 2>/dev/null
   rm -f $KEY $KEY.pub
-  pkill -KILL -u $OLDUSER 2>/dev/null; userdel -r $OLDUSER 2>/dev/null
-  rm -f /etc/ssh/sshd_config.d/00-pxmig-sinama.conf; systemctl reload ssh 2>/dev/null
+  # Geçici kullanıcının oturum yöneticisi kapanmadan öldürülürse "başarısız birim" olarak kalır.
+  if id $OLDUSER >/dev/null 2>&1; then
+    local uid; uid=$(id -u $OLDUSER)
+    loginctl terminate-user $OLDUSER 2>/dev/null; systemctl stop "user@$uid.service" "user-runtime-dir@$uid.service" 2>/dev/null
+    pkill -KILL -u $OLDUSER 2>/dev/null; userdel -r $OLDUSER 2>/dev/null
+    systemctl reset-failed "user@$uid.service" "user-runtime-dir@$uid.service" 2>/dev/null
+  fi
+  # Soketle başlatılan sshd yeniden yüklenemez (portu soket birimi tutar); yeniden başlatılır.
+  if [ -e /etc/ssh/sshd_config.d/00-pxmig-sinama.conf ]; then rm -f /etc/ssh/sshd_config.d/00-pxmig-sinama.conf; systemctl restart ssh 2>/dev/null; fi
   fail2ban-client unban "$ADDR" >/dev/null 2>&1
 }
 drop_wp_databases() {
@@ -88,7 +95,7 @@ useradd -m -s /bin/bash $OLDUSER && echo "$OLDUSER:$OLDPASS" | chpasswd
 mkdir -p /home/$OLDUSER/public_html/alt && echo "eski-duz-site" > /home/$OLDUSER/public_html/index.html && echo "alt-dosya" > /home/$OLDUSER/public_html/alt/sayfa.html
 chown -R $OLDUSER: /home/$OLDUSER/public_html
 # Sınama bilerek yanlış girişler dener; sshd'nin kaynak başına geçici engeli sonraki adımları kesmesin.
-echo "PerSourcePenalties no" > /etc/ssh/sshd_config.d/00-pxmig-sinama.conf; systemctl reload ssh; sleep 1
+echo "PerSourcePenalties no" > /etc/ssh/sshd_config.d/00-pxmig-sinama.conf; systemctl restart ssh; sleep 1
 curl -sk -o /dev/null -c $JC -H 'content-type: application/json' -X POST $B/auth/login -d "{\"username\":\"$C\",\"password\":\"$PASS\"}"
 
 say "Girdi denetimi"
