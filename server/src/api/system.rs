@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/updates/install", post(updates_install))
         .route("/reboot", post(reboot))
         .route("/reboot/cancel", post(reboot_cancel))
+        .route("/http3", get(http3_show).put(http3_save))
 }
 
 #[derive(Serialize)]
@@ -205,4 +206,51 @@ async fn audit_log(
         rows.collect()
     })?;
     Ok(Json(entries))
+}
+
+// ---- HTTP/3 ----
+
+/// HTTP/3 (QUIC) durumu: nginx destekliyor mu, açık mı.
+async fn http3_show(user: AuthUser) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    use crate::hosting::nginx;
+    Ok(Json(json!({ "supported": nginx::is_installed() && nginx::http3_supported().await, "enabled": nginx::http3_enabled() })))
+}
+
+#[derive(Deserialize)]
+struct Http3Body {
+    enabled: bool,
+}
+
+/// HTTP/3'ü sunucu genelinde açar ya da kapatır: işaret yazılır, tanımsız alan adlarının sunucusu ve
+/// sertifikalı sitelerin yapılandırması yeniden üretilir. Yapılandırma geçersiz çıkarsa ayar geri alınır.
+async fn http3_save(State(state): State<AppState>, user: AuthUser, Json(body): Json<Http3Body>) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    use crate::hosting::{nginx, sites};
+    if body.enabled && !nginx::http3_supported().await {
+        return Err(AppError::bad("Kurulu nginx HTTP/3 desteğiyle derlenmemiş"));
+    }
+    let _guard = state.sys_lock.lock().await;
+    let before = nginx::http3_enabled();
+    if before == body.enabled {
+        return Ok(Json(json!({ "supported": true, "enabled": before })));
+    }
+    nginx::set_http3(body.enabled)?;
+    if let Err(err) = nginx::ensure_base().await {
+        nginx::set_http3(before)?;
+        let _ = nginx::ensure_base().await;
+        return Err(err);
+    }
+    let mut failed = Vec::new();
+    for site in sites::list_with_ssl(&state.db)? {
+        if site.status != "active" || !site.ip.is_empty() {
+            continue;
+        }
+        if let Err(err) = sites::provision(&site).await {
+            tracing::warn!(domain = %site.domain, error = %err, "HTTP/3 ayarı siteye uygulanamadı");
+            failed.push(site.domain.clone());
+        }
+    }
+    auth::audit(&state.db, &user, "system.http3", if body.enabled { "on" } else { "off" }, "");
+    Ok(Json(json!({ "supported": true, "enabled": body.enabled, "failed": failed })))
 }

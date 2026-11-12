@@ -8,6 +8,7 @@ import { useFeedback } from "../components/feedback";
 import { BrandingSettings } from "../components/BrandingSettings";
 import { IpAddresses } from "../components/IpAddresses";
 import { PanelCertificate } from "../components/PanelCertificate";
+import { WebServerSettings } from "../components/WebServerSettings";
 import { Button, ErrorBlock, Input, LoadingBlock, PageHeader, Panel, Select } from "../components/ui";
 import { api, errorMessage } from "../lib/api";
 import { t } from "../lib/i18n";
@@ -190,6 +191,9 @@ export function SettingsPage() {
       </div>
       <div id="marka" className="mb-4 scroll-mt-20">
         <BrandingSettings />
+      </div>
+      <div id="web-sunucusu" className="mt-4 scroll-mt-20">
+        <WebServerSettings />
       </div>
       <div id="ip-adresleri" className="scroll-mt-20">
         <IpAddresses />

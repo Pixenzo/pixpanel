@@ -85,6 +85,7 @@ const actionLabels: Record<string, string> = {
   "package.delete": "Paketi sildi",
   "site.clone": "Siteyi kopyaladı",
   "site.migrate": "Başka sunucudan site taşıdı",
+  "system.http3": "HTTP/3 ayarını değiştirdi",
   "mail.mailbox.self_password": "Kutu sahibi parolasını değiştirdi",
   "mail.quarantine.release": "Karantinadan ileti bıraktı",
   "mail.quarantine.delete": "Karantinadan ileti sildi",

@@ -269,7 +269,8 @@
     "Kutu sahibi parolasını değiştirdi",
     "Karantinadan ileti bıraktı",
     "Karantinadan ileti sildi",
-    "Karantinadan toplu ileti sildi"
+    "Karantinadan toplu ileti sildi",
+    "HTTP/3 ayarını değiştirdi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
@@ -684,6 +685,8 @@
     "Panelin adı, logosu ve giriş metni",
     "Hesaplar, bayiler ve hizmet paketleri",
     "Olaylarda e-posta, Telegram ya da HTTP isteği",
-    "İkincil ad sunucuları"
+    "İkincil ad sunucuları",
+    "Web sunucusu",
+    "HTTP/3 (QUIC)"
   ]
 }

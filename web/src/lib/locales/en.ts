@@ -3069,4 +3069,11 @@ export const en: Record<string, string> = {
   "Karantinadan ileti bıraktı": "Released a message from quarantine",
   "Karantinadan ileti sildi": "Deleted a message from quarantine",
   "Karantinadan toplu ileti sildi": "Bulk-deleted messages from quarantine",
+  "Ayar şu sitelere uygulanamadı: {sites}": "The setting could not be applied to these sites: {sites}",
+  "HTTP/3 açıldı": "HTTP/3 enabled",
+  "HTTP/3 kapatıldı": "HTTP/3 disabled",
+  "Sertifikalı siteler HTTP/3 üzerinden de yanıt verir; özellikle mobil ve kesintili bağlantılarda sayfalar daha hızlı açılır. Güvenlik duvarında UDP 443 açık olmalıdır (Web siteleri kümesi bunu kapsar). Belirli bir sunucu adresine bağlı siteler HTTP/2 ile devam eder.": "Sites with a certificate also answer over HTTP/3; pages load faster, especially on mobile and unstable connections. UDP 443 must be open in the firewall (the Web sites set covers it). Sites bound to a specific server address keep using HTTP/2.",
+  "Kurulu nginx HTTP/3 desteğiyle derlenmemiş; bu sunucuda açılamaz.": "The installed nginx was built without HTTP/3 support; it cannot be enabled on this server.",
+  "HTTP/3 ayarını değiştirdi": "Changed the HTTP/3 setting",
+  "HTTP/3 (QUIC)": "HTTP/3 (QUIC)",
 };

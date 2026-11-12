@@ -141,6 +141,36 @@ async fn supports_http2_directive() -> bool {
     (major, minor, patch) >= (1, 25, 1)
 }
 
+/// HTTP/3 açıkken var olan işaret dosyası. Ayar sunucu genelidir: nginx'te QUIC dinleyicisi
+/// adres başına bir kez (`reuseport` ile) kurulur ve bunu tanımsız alan adlarının sunucusu üstlenir.
+const HTTP3_FLAG: &str = "/etc/pixpanel/nginx-http3";
+
+/// HTTP/3 (QUIC) açık mı?
+pub fn http3_enabled() -> bool {
+    Path::new(HTTP3_FLAG).exists()
+}
+
+/// Kurulu nginx HTTP/3 modülüyle derlenmiş mi?
+pub async fn http3_supported() -> bool {
+    match exec::run("nginx", &["-V"]).await {
+        Ok(output) => output.stderr.contains("--with-http_v3_module") || output.stdout.contains("--with-http_v3_module"),
+        Err(_) => false,
+    }
+}
+
+/// HTTP/3 işaretini yazar ya da kaldırır; yapılandırmalar ayrıca yeniden üretilmelidir.
+pub fn set_http3(enabled: bool) -> AppResult<()> {
+    if enabled {
+        atomic_write(Path::new(HTTP3_FLAG), b"1\n", 0o644)
+    } else {
+        match std::fs::remove_file(HTTP3_FLAG) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
+}
+
 pub(crate) fn listen_lines(out: &mut String, port: u16, flags: &str, bind: Option<std::net::IpAddr>) {
     // Adrese bağlı site yalnızca o adresi dinler; nginx o adrese gelen isteği yalnızca
     // o adresi dinleyen sitelere dağıtır.
@@ -223,6 +253,10 @@ server {
 ");
     listen_lines(&mut default, 80, " default_server", None);
     listen_lines(&mut default, 443, " ssl default_server", None);
+    if http3_enabled() {
+        // QUIC dinleyicisi (UDP 443): `reuseport` adres başına tek sunucuda verilir; siteler yalnızca `quic` yazar.
+        listen_lines(&mut default, 443, " quic reuseport", None);
+    }
     default.push_str("    server_name _;
     ssl_reject_handshake on;
 ");
@@ -336,7 +370,7 @@ fn proxy_origin(target: &str) -> Option<&str> {
     if rest.contains('/') { None } else { Some(trimmed) }
 }
 
-pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
+pub fn render(site: &SiteConfig<'_>, http2_directive: bool, http3: bool) -> String {
     let mut names = site.domain.to_string();
     for alias in site.aliases {
         names.push(' ');
@@ -374,6 +408,12 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
         listen_lines(&mut out, 443, if http2_directive { " ssl" } else { " ssl http2" }, site.bind);
         if http2_directive {
             out.push_str("    http2 on;\n");
+        }
+        // HTTP/3 yalnızca bütün adresleri dinleyen sitelerde: adrese bağlı sitenin QUIC dinleyicisi
+        // o adres için ayrı bir `reuseport` sahibi ister.
+        if http3 && site.bind.is_none() {
+            listen_lines(&mut out, 443, " quic", None);
+            out.push_str("    add_header Alt-Svc 'h3=\":443\"; ma=86400' always;\n");
         }
         let _ = writeln!(out, "    ssl_certificate {};", cert.display());
         let _ = writeln!(out, "    ssl_certificate_key {};", key.display());
@@ -475,7 +515,7 @@ pub async fn apply(site: &SiteConfig<'_>) -> AppResult<()> {
     if !Path::new(BASE_CONF).exists() {
         ensure_base().await?;
     }
-    let content = render(site, supports_http2_directive().await);
+    let content = render(site, supports_http2_directive().await, http3_enabled());
     let path = site_conf_path(site.domain);
     let snapshot = Snapshot::take(&path);
     atomic_write(&path, content.as_bytes(), 0o644)?;

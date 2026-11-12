@@ -43,6 +43,7 @@ const groups: ToolGroup[] = [
       { to: "/processes", label: "Süreçler", hint: "Çalışan süreçler ve kaynak kullanımı" },
       { to: "/terminal", label: "Terminal", hint: "Tarayıcıdan sunucu kabuğu" },
       { to: "/settings#ip-adresleri", label: "IP adresleri", hint: "Sunucu adresleri ve hesaplara ayırma" },
+      { to: "/settings#web-sunucusu", label: "Web sunucusu", hint: "HTTP/3 (QUIC)" },
     ],
   },
   {

@@ -173,6 +173,7 @@ suite redis-account redis
 suite impersonate
 suite rules php-8.3
 suite site-perf php-8.3
+suite http3
 suite clone php-8.3 mariadb
 suite branding
 suite python python
