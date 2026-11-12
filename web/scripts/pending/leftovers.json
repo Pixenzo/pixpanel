@@ -1,0 +1,36 @@
+{
+  "Güvenlik denetimi": "Security audit",
+  "1 madde düzeltildi": "1 item fixed",
+  "{count} madde düzeltildi": "{count} items fixed",
+  "Güvenlik anahtarları yenilensin mi?": "Refresh the security keys?",
+  "Sitede oturumu açık olan herkes (siz dahil) yeniden giriş yapmak zorunda kalır.": "Everyone who is logged in to the site (including you) will have to log in again.",
+  "Yenile": "Refresh",
+  "Yeniden denetle": "Check again",
+  "Hepsini düzelt": "Fix all",
+  "{total} maddeden {passed} tanesi tamam": "{passed} of {total} items are fine",
+  "Bilgi": "Info",
+  "Sorunlu": "Needs attention",
+  "Düzelt": "Fix",
+  "Yönetim panelinden dosya düzenleme kapalı": "File editing from the admin panel is disabled",
+  "Hata iletileri ziyaretçilere gösterilmiyor": "Error messages are not shown to visitors",
+  "wp-config.php dosya izni güvenli": "wp-config.php file permissions are safe",
+  "Güvenlik anahtarları benzersiz": "Security keys are unique",
+  "Site WordPress koruma şablonunu kullanıyor": "Site uses the WordPress protection template",
+  "Güvenlik sürümleri kendiliğinden kuruluyor": "Security releases are installed automatically",
+  "Çekirdek dosyaları değiştirilmemiş": "Core files are unmodified",
+  "“admin” adlı yönetici hesabı yok": "No administrator account named “admin”",
+  "Kullanılmayan eklenti ve temalar": "Unused plugins and themes",
+  "__extra__": {
+    "web/src/pages/SiteWordPressSecurity.tsx": [
+      "Yönetim panelinden dosya düzenleme kapalı",
+      "Hata iletileri ziyaretçilere gösterilmiyor",
+      "wp-config.php dosya izni güvenli",
+      "Güvenlik anahtarları benzersiz",
+      "Site WordPress koruma şablonunu kullanıyor",
+      "Güvenlik sürümleri kendiliğinden kuruluyor",
+      "Çekirdek dosyaları değiştirilmemiş",
+      "“admin” adlı yönetici hesabı yok",
+      "Kullanılmayan eklenti ve temalar"
+    ]
+  }
+}
