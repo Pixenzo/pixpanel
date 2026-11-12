@@ -95,7 +95,7 @@ check "klasörler birleşir, eski dosya kalır" "$(ls $HOME_A/birles/alt | tr '\
 check "geçici açma klasörü kalmaz" "$(find $HOME_A -name '.pixpanel-acma-*' | wc -l)" 0
 check "istekteki kota alanı yok sayılır" "$(fcode $JA $UA '{"op":"extract","path":"'"$W"'/kucuk.zip","dest":"'"$W"'/kota-hedef","disk_budget":1}')" 200
 check "kota alanına rağmen açıldı" "$(ls $HOME_A/kota-hedef | tr '\n' ' ')" "a.txt alt "
-check "açma denetim günlüğünde" "$(sqlite3 $DB "SELECT count(*) > 0 FROM audit_log WHERE action='file.extract' AND target LIKE '/kucuk.zip%'")" 1
+check "açma denetim günlüğünde" "$(sqlite3 $DB "SELECT count(*) > 0 FROM audit_log WHERE action='file.extract' AND target LIKE '%px-arsiv/kucuk.zip%'")" 1
 
 say "Zip bombası reddedilir"
 R=$(fop $JA $UA "$(extract $W/bomba.zip $W/bomba-hedef)")

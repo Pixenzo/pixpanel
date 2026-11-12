@@ -55,14 +55,14 @@ my() { mariadb -N -B -e "$1" 2>&1; }
 # my_can <kullanıcı> <adres> : MariaDB'ye TCP ile bağlanılabiliyor mu? (parola ortam değişkeniyle verilir)
 my_can() {
   local out
-  out=$(MYSQL_PWD=$DBPASS mariadb --skip-ssl --connect-timeout=5 -h "$2" -P 3306 -u "$1" -N -B -e 'SELECT 1' 2>&1)
+  out=$(MYSQL_PWD=$DBPASS mariadb --skip-ssl --connect-timeout=5 -h "$2" -P 3306 -u "$1" -N -B -e 'SELECT 1' 2>/dev/null)
   if [ "$out" = 1 ]; then echo bağlandı; else echo reddedildi; fi
 }
 pg() { runuser -u postgres -- psql -X -At -d "${2:-postgres}" -c "$1" 2>/dev/null; }
 # pg_can <kullanıcı> <veritabanı> [adres] [sslmode] : PostgreSQL'e TCP ile bağlanılabiliyor mu?
 pg_can() {
   local out
-  out=$(PGPASSWORD=$DBPASS psql "host=${3:-$LAN} port=5432 user=$1 dbname=$2 sslmode=${4:-require} connect_timeout=5" -X -At -c 'SELECT session_user' 2>&1)
+  out=$(PGPASSWORD=$DBPASS psql "host=${3:-$LAN} port=5432 user=$1 dbname=$2 sslmode=${4:-require} connect_timeout=5" -X -At -c 'SELECT session_user' 2>/dev/null)
   if [ "$out" = "$1" ]; then echo bağlandı; else echo reddedildi; fi
 }
 # Panel bloğunun dışındaki satırlar (önce/sonra karşılaştırması için).
