@@ -488,7 +488,15 @@
     "{name} durduruldu",
     "{name} yeniden başlatıldı",
     "{name} açılışta başlayacak",
-    "{name} açılışta başlamayacak"
+    "{name} açılışta başlamayacak",
+    "Başka servis başlatır",
+    "Bu açılışa özel açık",
+    "Dolaylı",
+    "Sistem üretir",
+    "Engelli",
+    "Takma ad",
+    "Geçici",
+    "Bağlı"
   ],
   "web/src/pages/SiteGit.tsx": [
     "Yayınlanıyor",

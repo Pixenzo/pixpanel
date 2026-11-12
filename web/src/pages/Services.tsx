@@ -24,6 +24,18 @@ const actionDone: Record<string, string> = {
   disable: "{name} açılışta başlamayacak",
 };
 
+/** systemd'nin açılış durumlarından aç/kapa yapılamayanların okunur adları. */
+const enabledLabels: Record<string, string> = {
+  static: "Başka servis başlatır",
+  "enabled-runtime": "Bu açılışa özel açık",
+  indirect: "Dolaylı",
+  generated: "Sistem üretir",
+  masked: "Engelli",
+  alias: "Takma ad",
+  transient: "Geçici",
+  linked: "Bağlı",
+};
+
 export function ServicesPage() {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
@@ -126,7 +138,9 @@ export function ServicesPage() {
                           onChange={(event) => act.mutate({ name: service.name, action: event.target.checked ? "enable" : "disable" })}
                         />
                       ) : (
-                        <span className="text-ink-3">{service.enabled || "—"}</span>
+                        <span className="text-ink-3" title={service.enabled}>
+                          {enabledLabels[service.enabled] ? t(enabledLabels[service.enabled]) : service.enabled || "—"}
+                        </span>
                       )}
                     </Td>
                     <Td align="right">
