@@ -117,17 +117,36 @@ function StatusPanel({ site }: { site: Site }) {
   );
 }
 
-function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) {
+const SYSTEM_PYTHON = "system";
+
+/** Python yorumlayıcısı değişince sanal ortam sıfırlandığı için bağımlılıklar yeniden kurulur; görevin kimliğini üst bileşene verir. */
+function SettingsPanel({ site, options, onReinstall }: { site: Site; options: SiteOptions; onReinstall: (jobId: number) => void }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<NodeSettings>(site.node);
   const save = useMutation({
     mutationFn: () => api.patch<Site>(`/sites/${site.id}`, { node: { ...settings, env: settings.env.filter((variable) => variable.key.trim() !== "") } }),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
       queryClient.setQueryData(["site", String(site.id)], updated);
       void queryClient.invalidateQueries({ queryKey: ["site-node", site.id] });
       void queryClient.invalidateQueries({ queryKey: ["sites"] });
-      feedback.success(t("Ayarlar kaydedildi; uygulama yeniden başlatıldı"));
+      const interpreterChanged = site.kind === "python" && (updated.node.python || SYSTEM_PYTHON) !== (site.node.python || SYSTEM_PYTHON);
+      if (!interpreterChanged) {
+        feedback.success(t("Ayarlar kaydedildi; uygulama yeniden başlatıldı"));
+        return;
+      }
+      feedback.success(t("Python sürümü değişti; sanal ortam yeni sürümle yeniden kuruldu"));
+      // Sanal ortam sıfırlandı: bağımlılık dosyası varsa kurulum hemen başlar ve canlı izlenir.
+      try {
+        const status = await api.get<NodeStatus>(`/sites/${site.id}/node`);
+        if (status.dependencies) {
+          const result = await api.post<{ job_id: number }>(`/sites/${site.id}/node/run`, { script: "install", restart: true });
+          onReinstall(result.job_id);
+          void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+        }
+      } catch (error) {
+        feedback.error(error);
+      }
     },
   });
 
@@ -149,7 +168,21 @@ function SettingsPanel({ site, options }: { site: Site; options: SiteOptions }) 
       <form onSubmit={submit} className="flex max-w-2xl flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           {site.kind === "python" ? (
-            <Input label={t("Python sürümü")} value={`Python ${settings.version}`} readOnly disabled hint={t("Sunucudaki Python; site kendi sanal ortamını (.venv) kullanır.")} />
+            <Select
+              label={t("Python sürümü")}
+              value={settings.python || SYSTEM_PYTHON}
+              onChange={(event) => set("python", event.target.value === SYSTEM_PYTHON ? "" : event.target.value)}
+              hint={t("Sürüm değişince sanal ortam (.venv) yeni sürümle sıfırdan kurulur; bağımlılıklar yeniden kurulmalıdır. Başka sürümleri yönetici Bileşenler sayfasından kurar.")}
+            >
+              <option value={SYSTEM_PYTHON}>
+                {options.python_versions[0] ? t("Sistem Python'u ({version})", { version: options.python_versions[0] }) : t("Sistem Python'u")}
+              </option>
+              {options.python_runtimes.map((version) => (
+                <option key={version} value={version}>
+                  Python {version}
+                </option>
+              ))}
+            </Select>
           ) : (
             <Select label={t("Node.js sürümü")} value={settings.version} onChange={(event) => set("version", event.target.value)}>
               {versions.map((version) => (
@@ -296,12 +329,15 @@ function NpmPanel({ site }: { site: Site }) {
   );
 }
 
-/** Python sitesinin bağımlılıklarını (requirements.txt) sanal ortama kurar. */
+/** Python sitesinin bağımlılıklarını (requirements.txt ya da pyproject.toml) sanal ortama kurar. */
 function PipPanel({ site }: { site: Site }) {
   const feedback = useFeedback();
   const queryClient = useQueryClient();
   const [restart, setRestart] = useState(true);
   const [jobId, setJobId] = useState<number | null>(null);
+  // Durum sorgusu StatusPanel ile ortaktır (aynı anahtar); bağımlılık dosyasını oradan öğreniriz.
+  const status = useQuery({ queryKey: ["site-node", site.id], queryFn: () => api.get<NodeStatus>(`/sites/${site.id}/node`), refetchInterval: 4000 });
+  const dependencies = status.data?.dependencies ?? null;
   const run = useMutation({
     mutationFn: () => api.post<{ job_id: number }>(`/sites/${site.id}/node/run`, { script: "install", restart }),
     onSuccess: (result) => {
@@ -314,11 +350,11 @@ function PipPanel({ site }: { site: Site }) {
   return (
     <Panel title={t("Bağımlılıklar")}>
       <p className="mb-3 max-w-[75ch] text-ink-2">
-        {t("Uygulamanızın gereksinimlerini site klasöründeki requirements.txt dosyasına yazın. Paketler yalnızca bu sitenin sanal ortamına kurulur; sunucudaki öteki uygulamaları etkilemez.")}
+        {t("Uygulamanızın gereksinimlerini site klasöründeki requirements.txt ya da pyproject.toml dosyasına yazın (ikisi de varsa requirements.txt kullanılır). Paketler yalnızca bu sitenin sanal ortamına kurulur; sunucudaki öteki uygulamaları etkilemez.")}
       </p>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Button loading={run.isPending} onClick={() => run.mutate()} className="font-mono text-[13.5px]">
-          pip install -r requirements.txt
+        <Button loading={run.isPending} disabled={dependencies === null} onClick={() => run.mutate()} className="font-mono text-[13.5px]">
+          {dependencies === "pyproject.toml" ? "pip install ." : "pip install -r requirements.txt"}
         </Button>
         <Checkbox label={t("Komut bitince uygulamayı yeniden başlat")} checked={restart} onChange={(event) => setRestart(event.target.checked)} />
       </div>
@@ -338,11 +374,26 @@ function PipPanel({ site }: { site: Site }) {
 }
 
 export function NodeSection({ site, options }: { site: Site; options: SiteOptions }) {
+  const queryClient = useQueryClient();
+  // Ayar kaydı SettingsPanel'i yeniden kurduğundan (anahtarı site.node), yeniden kurulum görevinin penceresi burada durur.
+  const [reinstallJob, setReinstallJob] = useState<number | null>(null);
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ["site-node", site.id] });
   return (
     <div className="flex flex-col gap-5">
       <StatusPanel site={site} />
-      <SettingsPanel key={JSON.stringify(site.node)} site={site} options={options} />
+      <SettingsPanel key={JSON.stringify(site.node)} site={site} options={options} onReinstall={setReinstallJob} />
       {site.kind === "python" ? <PipPanel site={site} /> : <NpmPanel site={site} />}
+      <Modal
+        open={reinstallJob !== null}
+        onClose={() => {
+          setReinstallJob(null);
+          refresh();
+        }}
+        title="pip install"
+        wide
+      >
+        {reinstallJob !== null && <JobLog jobId={reinstallJob} onDone={refresh} />}
+      </Modal>
     </div>
   );
 }

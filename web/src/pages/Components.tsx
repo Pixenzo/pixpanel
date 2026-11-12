@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useFeedback } from "../components/feedback";
-import { Button, ErrorBlock, LoadingBlock, Modal, Mono, PageHeader, Panel, Status } from "../components/ui";
+import { Button, ErrorBlock, IconButton, LoadingBlock, Modal, Mono, PageHeader, Panel, Status } from "../components/ui";
 import type { ComponentStatus } from "../lib/api";
 import { api, errorMessage } from "../lib/api";
 import { t } from "../lib/i18n";
@@ -35,6 +35,26 @@ export function ComponentsPage() {
     },
     onError: (error) => feedback.error(error),
   });
+
+  // Yalnız uv ile kurulan Python sürümleri kaldırılabilir; kullanan site varsa sunucu reddeder.
+  const uninstall = useMutation({
+    mutationFn: (component: ComponentStatus) => api.delete(`/components/${component.id}`),
+    onSuccess: (_result, component) => {
+      feedback.success(t("{name} kaldırıldı", { name: component.name }));
+      refresh();
+    },
+    onError: (error) => feedback.error(error),
+  });
+
+  async function removeVersion(component: ComponentStatus) {
+    const confirmed = await feedback.confirm({
+      title: t("{name} kaldırılsın mı?", { name: component.name }),
+      description: t("Bu sürümü kullanan site varsa kaldırılamaz; önce sitelerin Python sürümünü değiştirin."),
+      confirmLabel: t("Kaldır"),
+      danger: true,
+    });
+    if (confirmed) uninstall.mutate(component);
+  }
 
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: ["components"] });
@@ -76,6 +96,14 @@ export function ComponentsPage() {
                               <Status tone="ok">{t("Kurulu")}</Status>
                             )}
                           </div>
+                          {component.id.startsWith("python-") && (
+                            <IconButton
+                              label={t("{name} sürümünü kaldır", { name: component.name })}
+                              onClick={() => void removeVersion(component)}
+                            >
+                              <Trash2 className="size-4" />
+                            </IconButton>
+                          )}
                         </>
                       ) : (
                         <Button

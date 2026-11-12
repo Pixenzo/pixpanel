@@ -255,6 +255,8 @@ export interface NodeSettings {
   command: string;
   env: { key: string; value: string }[];
   memory_mb: number;
+  /** Yalnız Python siteleri: boş ya da "system" dağıtımın Python'u, aksi hâlde kurulu uv sürümü (ör. "3.12"). */
+  python: string;
 }
 
 export interface NodeStatus {
@@ -264,6 +266,8 @@ export interface NodeStatus {
   memory_bytes: number | null;
   restarts: number;
   port: number;
+  /** Yalnız Python siteleri: bağımlılıkların kurulabileceği dosya; yoksa null. */
+  dependencies: string | null;
 }
 
 export interface ProxyRule {
@@ -417,6 +421,8 @@ export interface SiteOptions {
   node_versions: string[];
   /** Sistemdeki Python sürümü; kurulu değilse boş. */
   python_versions: string[];
+  /** Yöneticinin uv ile kurduğu Python sürümleri. */
+  python_runtimes: string[];
   /** Hesabın sitelerini bağlayabileceği sunucu adresleri. */
   ips: { address: string; label: string; user_id: number | null }[];
 }

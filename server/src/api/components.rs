@@ -1,7 +1,7 @@
 //! Sunucu bileşenlerinin listelenmesi ve kurulması. Yalnızca yöneticiler.
 
 use axum::extract::{Path, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
@@ -11,7 +11,15 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/", get(list)).route("/{id}/install", post(install))
+    Router::new().route("/", get(list)).route("/{id}/install", post(install)).route("/{id}", delete(uninstall))
+}
+
+/// `python-` ile başlayan bileşen kimliğinde sürüm dizesi beyaz listeyle doğrulanır; geçersizse 404 yerine 400 döner.
+fn check_python_id(id: &str) -> AppResult<()> {
+    match id.strip_prefix("python-") {
+        Some(version) => crate::hosting::pyenv::validate_version(version),
+        None => Ok(()),
+    }
 }
 
 async fn list(user: AuthUser) -> AppResult<Json<Vec<ComponentStatus>>> {
@@ -25,6 +33,7 @@ async fn install(
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
     user.require_admin()?;
+    check_python_id(&id)?;
     let component = components::find(&id)?;
     if components::status(&component).await.installed {
         return Err(AppError::conflict(format!("{} zaten kurulu", component.name)));
@@ -91,4 +100,27 @@ postfix postfix/mailname string {}
     })?;
     auth::audit(&state.db, &user, "component.install", &id, "");
     Ok(Json(json!({ "job_id": job_id })))
+}
+
+/// Bir uv Python sürümünü kaldırır. Sürümü kullanan site varsa reddedilir (409). Yalnızca yöneticiler.
+async fn uninstall(State(state): State<AppState>, user: AuthUser, Path(id): Path<String>) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    check_python_id(&id)?;
+    let component = components::find(&id)?;
+    let Some(version) = crate::hosting::pyenv::version_of_component(&component.id) else {
+        return Err(AppError::bad("Bu bileşen panelden kaldırılamaz"));
+    };
+    // Site ayarları da bu kilitle değişir; denetimle silme arasında bir site sürümü seçemez.
+    let _guard = state.sys_lock.lock().await;
+    if !components::status(&component).await.installed {
+        return Err(AppError::bad(format!("{} kurulu değil", component.name)));
+    }
+    let using = crate::hosting::sites::list_by_python(&state.db, version)?;
+    if !using.is_empty() {
+        let names: Vec<&str> = using.iter().map(|site| site.domain.as_str()).collect();
+        return Err(AppError::conflict(format!("{} şu sitelerde kullanılıyor: {}. Önce sitelerin Python sürümünü değiştirin", component.name, names.join(", "))));
+    }
+    crate::hosting::pyenv::uninstall(version)?;
+    auth::audit(&state.db, &user, "component.uninstall", &id, "");
+    Ok(Json(json!({ "ok": true })))
 }
