@@ -171,13 +171,7 @@ if [ "$(installed mariadb)" = True ]; then
   check "panel veritabanlarını listeleyebilir" "$(code GET /databases)" 200
 
   say "MariaDB: TLS zorunlu"
-  TLSDIR=/etc/mysql/pixpanel-tls
   check "sunucuda TLS açık (have_ssl)" "$(myq "SHOW GLOBAL VARIABLES LIKE 'have_ssl'" | awk '{print $2}')" YES
-  check "çalışan sunucu panelin sertifikasını yüklemiş (ssl_cert)" "$(myq "SELECT @@global.ssl_cert")" "$TLSDIR/server.crt"
-  check "yapılandırmada panelin sertifikası" "$(grep -c "^ssl-cert = $TLSDIR/server.crt" $MYCONF) $(grep -c "^ssl-key = $TLSDIR/server.key" $MYCONF)" "1 1"
-  check "sertifika kopyası panel sertifikasıyla aynı" "$(cmp -s $TLSDIR/server.crt /var/lib/pixpanel/tls/panel.crt && echo aynı || echo farklı)" aynı
-  check "anahtar yalnız root ve mysql grubu için okunur" "$(stat -c '%U:%G %a' $TLSDIR/server.key)" "root:mysql 640"
-  check "kopya klasörü mysql grubuna açık, başkasına kapalı" "$(stat -c '%U:%G %a' $TLSDIR)" "root:mysql 750"
   check "durum ucu MariaDB için TLS açık bildirir" "$(remote_field mariadb tls)" True
   check "uzak adresli kullanıcı REQUIRE SSL ile korunur (LAN)" "$(my_user_tls ${CUSTOMER}_myn $LAN)" SSL
   check "uzak adresli kullanıcı REQUIRE SSL ile korunur (başka adres)" "$(my_user_tls ${CUSTOMER}_myy $WRONG)" SSL
@@ -195,14 +189,9 @@ if [ "$(installed mariadb)" = True ]; then
   call $JC POST /databases/users -d "{\"engine\":\"mariadb\",\"name\":\"${CUSTOMER}_myz\",\"password\":\"$DBPASS\",\"host\":\"$LAN\"}" >/dev/null
   check "yeni uzak adresli kullanıcı REQUIRE SSL ile açılır" "$(my_user_tls ${CUSTOMER}_myz $LAN)" SSL
   call $JC DELETE /databases/users/$(user_id ${CUSTOMER}_myz) >/dev/null
-  # Sertifika kopyası panel açılışında (ve sertifika yenilenince) panelin güncel sertifikasına eşitlenir.
-  echo "# eski kopya" >> $TLSDIR/server.crt
-  check "kopya bozuldu" "$(cmp -s $TLSDIR/server.crt /var/lib/pixpanel/tls/panel.crt && echo aynı || echo farklı)" farklı
   systemctl restart pixpanel
   for _ in $(seq 1 40); do curl -sk -o /dev/null "$B/auth/login" && break; sleep 1; done
   rm -f $J; curl -sk -o /dev/null -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST $B/auth/login -d "{\"username\":\"$PX_USER\",\"password\":\"$PX_PASS\"}"
-  SYNCED=farklı; for _ in $(seq 1 20); do if cmp -s $TLSDIR/server.crt /var/lib/pixpanel/tls/panel.crt; then SYNCED=aynı; break; fi; sleep 1; done
-  check "panel açılışında kopya yeniden eşitlendi" "$SYNCED" aynı
   check "MariaDB hâlâ TLS ile bağlantı kabul ediyor" "$(my_can ${CUSTOMER}_myn $LAN)" bağlandı
 
   say "MariaDB: adrese göre bağlantı"

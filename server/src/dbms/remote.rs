@@ -418,13 +418,6 @@ fn ipv6_available() -> bool {
         && std::fs::read_to_string("/proc/sys/net/ipv6/conf/all/disable_ipv6").map_or(true, |value| value.trim() != "1")
 }
 
-/// MariaDB için panel sertifikasının kopyalarının durduğu klasör (`mysql` grubu okuyabilir).
-const MARIADB_TLS_DIR: &str = "/etc/mysql/pixpanel-tls";
-
-fn mariadb_tls_paths() -> (PathBuf, PathBuf) {
-    (Path::new(MARIADB_TLS_DIR).join("server.crt"), Path::new(MARIADB_TLS_DIR).join("server.key"))
-}
-
 /// Yapılandırma dosyasının içeriği; `bind` sabit adaylardan biridir (kullanıcı metni girmez). `tls` verilirse
 /// sunucuya sertifika ve anahtar yolları yazılır.
 fn render_mariadb_config(bind: &str, tls: Option<(&Path, &Path)>) -> String {
@@ -439,32 +432,6 @@ fn render_mariadb_config(bind: &str, tls: Option<(&Path, &Path)>) -> String {
     out
 }
 
-/// Panel sertifikasının MariaDB'nin okuyabileceği kopyasını yazar (anahtar yalnızca root ve `mysql` grubu için okunur).
-/// İçerik değiştiyse `true` döner. Sertifika yenilenince de çağrılır.
-fn sync_mariadb_tls_files(cfg: &Config) -> AppResult<bool> {
-    use std::os::unix::fs::{chown, PermissionsExt};
-    let (cert_source, key_source) = crate::panelcert::paths(cfg);
-    let cert = std::fs::read(&cert_source).map_err(|err| AppError::internal(format!("panel sertifikası okunamadı: {err}")))?;
-    let key = std::fs::read(&key_source).map_err(|err| AppError::internal(format!("panel sertifikasının anahtarı okunamadı: {err}")))?;
-    let gid = crate::hosting::sysuser::group_id("mysql")?;
-    let dir = Path::new(MARIADB_TLS_DIR);
-    std::fs::create_dir_all(dir)?;
-    chown(dir, Some(0), Some(gid))?;
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o750))?;
-    let (cert_path, key_path) = mariadb_tls_paths();
-    let mut changed = false;
-    for (path, bytes, mode) in [(cert_path, cert, 0o644), (key_path, key, 0o640)] {
-        if std::fs::read(&path).ok().as_deref() == Some(bytes.as_slice()) {
-            continue;
-        }
-        crate::hosting::atomic_write(&path, &bytes, mode)?;
-        chown(&path, Some(0), Some(gid))?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))?;
-        changed = true;
-    }
-    Ok(changed)
-}
-
 /// MariaDB'de TLS durumu (`have_ssl`): açıksa `Some(true)`, kapalıysa `Some(false)`; değişken bu sürümde
 /// yoksa ya da okunamıyorsa `None`.
 async fn mariadb_tls_state() -> Option<bool> {
@@ -473,14 +440,12 @@ async fn mariadb_tls_state() -> Option<bool> {
     Some(value == "YES")
 }
 
-/// MariaDB'de TLS gerçekten açık mı? `have_ssl` bu sürümde yoksa panelin verdiği sertifika yolunun sunucuda
-/// yüklü olup olmadığına bakılır.
+/// MariaDB'de TLS gerçekten açık mı? MariaDB 11.4 ve sonrası sertifika verilmese de açılışta kendi
+/// sertifikasını üretip TLS'i açar; panel bu yerleşik TLS'e güvenir. Panelin sertifikası sunucuya
+/// VERİLMEZ: verilince yerel istemciler (root dahil, soket üzerinden) sertifikayı doğrulayamayıp
+/// bağlanamıyor ve sunucunun kendi bakım betikleri de bozuluyor.
 async fn mariadb_tls_active() -> bool {
-    if let Some(state) = mariadb_tls_state().await {
-        return state;
-    }
-    let (cert, _) = mariadb_tls_paths();
-    mariadb::query("SELECT @@global.ssl_cert;\n").await.is_ok_and(|output| output.lines().any(|line| line.trim() == cert.to_string_lossy()))
+    mariadb_tls_state().await == Some(true)
 }
 
 /// Uzaktan adresi olan (yerel olmayan) bütün MariaDB kullanıcılarına `REQUIRE SSL` uygular. Zaten öyleyse
@@ -502,26 +467,13 @@ pub async fn sync_mariadb_requirements(db: &Db) -> AppResult<()> {
 /// Panel açılırken ve sertifika yenilenince: MariaDB'ye verilen sertifika kopyası güncellenir (sunucu
 /// `FLUSH SSL` ile yeniden başlatmadan yeni sertifikayı yükler) ve uzak kullanıcıların TLS şartı doğrulanır.
 /// Hatalar günlüğe yazılır; panelin işini bozmaz.
-pub async fn refresh_mariadb_tls(db: &Db, cfg: &Config) {
-    if Engine::Mariadb.is_installed() && is_enabled(Engine::Mariadb) {
-        match sync_mariadb_tls_files(cfg) {
-            Ok(true) => {
-                if services::is_active(Engine::Mariadb.service()).await {
-                    if let Err(err) = mariadb::query("FLUSH SSL;\n").await {
-                        tracing::warn!(error = %err, "MariaDB yeni sertifikayı yükleyemedi (FLUSH SSL)");
-                    }
-                }
-            }
-            Ok(false) => {}
-            Err(err) => tracing::warn!(error = %err, "MariaDB için panel sertifikası kopyalanamadı"),
-        }
-    }
+pub async fn refresh_mariadb_tls(db: &Db, _cfg: &Config) {
     if let Err(err) = sync_mariadb_requirements(db).await {
         tracing::warn!(error = %err, "MariaDB kullanıcılarının TLS şartı uygulanamadı");
     }
 }
 
-async fn set_mariadb(db: &Db, cfg: &Config, enabled: bool) -> AppResult<Outcome> {
+async fn set_mariadb(db: &Db, _cfg: &Config, enabled: bool) -> AppResult<Outcome> {
     let path = Path::new(MARIADB_CONFIG);
     if enabled == path.is_file() {
         return Ok(Outcome { changed: false, tls: enabled.then_some(true) });
@@ -533,13 +485,10 @@ async fn set_mariadb(db: &Db, cfg: &Config, enabled: bool) -> AppResult<Outcome>
     let service = Engine::Mariadb.service();
     let mut last_error = None;
     if enabled {
-        // Uzak bağlantı yalnızca TLS ile kabul edilir: önce sertifika kopyası hazırlanır; hazırlanamazsa açılmaz.
-        sync_mariadb_tls_files(cfg).map_err(|err| AppError::bad(format!("MariaDB için TLS sertifikası hazırlanamadı, uzaktan erişim açılmadı: {err}")))?;
-        let (cert, key) = mariadb_tls_paths();
         // `::` hem IPv4 hem IPv6'yı dinler; IPv6 yoksa ya da başlatılamazsa yalnızca IPv4'e düşülür.
         let candidates: &[&str] = if ipv6_available() { &["0.0.0.0,::", "0.0.0.0"] } else { &["0.0.0.0"] };
         for bind in candidates {
-            if let Err(err) = write_file(path, render_mariadb_config(bind, Some((&cert, &key))).as_bytes(), 0o644) {
+            if let Err(err) = write_file(path, render_mariadb_config(bind, None).as_bytes(), 0o644) {
                 last_error = Some(err);
                 break;
             }
@@ -547,7 +496,7 @@ async fn set_mariadb(db: &Db, cfg: &Config, enabled: bool) -> AppResult<Outcome>
                 Ok(()) => {
                     // Sunucu TLS'i gerçekten açmış olmalı ve uzak kullanıcıların şartı uygulanmalı; yoksa geri alınır.
                     if !mariadb_tls_active().await {
-                        last_error = Some(AppError::internal("MariaDB TLS'i açamadı (have_ssl)"));
+                        last_error = Some(AppError::bad("Bu MariaDB sürümünde TLS açık değil (have_ssl); uzaktan erişim şifresiz açılmaz"));
                         break;
                     }
                     match sync_mariadb_requirements(db).await {
@@ -915,10 +864,10 @@ mod tests {
         assert!(text.contains("[mysqld]\nbind-address = 0.0.0.0\n"));
         assert!(!text.contains("ssl"), "sertifika verilmezse TLS satırı yazılmaz");
         assert!(render_mariadb_config("::", None).contains("bind-address = ::\n"));
-        let (cert, key) = mariadb_tls_paths();
-        let secure = render_mariadb_config("0.0.0.0,::", Some((&cert, &key)));
-        assert!(secure.contains("ssl-cert = /etc/mysql/pixpanel-tls/server.crt\n"));
-        assert!(secure.contains("ssl-key = /etc/mysql/pixpanel-tls/server.key\n"));
+        let (cert, key) = (Path::new("/etc/mysql/tls/server.crt"), Path::new("/etc/mysql/tls/server.key"));
+        let secure = render_mariadb_config("0.0.0.0,::", Some((cert, key)));
+        assert!(secure.contains("ssl-cert = /etc/mysql/tls/server.crt\n"));
+        assert!(secure.contains("ssl-key = /etc/mysql/tls/server.key\n"));
     }
 
     #[test]

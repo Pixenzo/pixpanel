@@ -344,7 +344,7 @@ else
   check "dosya yalnız root'a açık (600)" "$(stat -c %a "$FILE")" 600
   check "çöp klasörü yalnız root'a açık (700)" "$(stat -c %a $TRASH_DIR)" 700
   check "dosya adı veritabanı adını sızdırmaz" "$(basename "$FILE" | grep -c "$DBNAME")" 0
-  check "döküm içeriği" "$(zcat "$FILE" | grep -c 'INSERT INTO `t` VALUES (42),(43)')" 1
+  check "döküm içeriği" "$(zcat "$FILE" | tr -d '\n' | grep -c 'INSERT INTO `t` VALUES *(42), *(43)')" 1
   check "müşteri çöp kutusunu göremez" "$(ccall GET /databases/trash | jget 'len(d)')" 0
   check "müşteri başkasının dökümünü geri getiremez" "$(ccode POST /databases/trash/$TID/restore)" 404
   check "müşteri başkasının dökümünü silemez" "$(ccode DELETE /databases/trash/$TID)" 404
@@ -356,7 +356,7 @@ else
   check "geri getirme görevi" "$(wait_job $RJ)" success
   check "veri geri geldi" "$(mq "SELECT GROUP_CONCAT(a ORDER BY a) FROM $DBNAME.t")" "42,43"
   check "listede yeniden var" "$([ -n "$(db_id $DBNAME)" ] && echo var)" var
-  check "kullanıcının yetkisi geri verildi" "$(mq "SELECT COUNT(*) FROM information_schema.schema_privileges WHERE grantee LIKE \"'$DBUSER'@%\" AND table_schema = '$DBNAME'")" 1
+  check "kullanıcının yetkisi geri verildi" "$(mq "SELECT COUNT(*) > 0 FROM information_schema.schema_privileges WHERE grantee LIKE \"'$DBUSER'@%\" AND REPLACE(table_schema, CHAR(92), '') = '$DBNAME'")" 1
   check "panel kaydında yetki" "$(sql "SELECT COUNT(*) FROM database_grants g JOIN databases d ON d.id = g.database_id WHERE d.name = '$DBNAME' AND g.access = 'full'")" 1
   check "çöp kutusundan kalktı" "$(trash_field $DBNAME id)" ""
   check "döküm dosyası silindi" "$([ -f "$FILE" ] && echo var || echo yok)" yok

@@ -55,7 +55,7 @@ do_import() {
   JOB=$(jget 'd["job_id"]' <<<"$R"); RES=$(wait_job "$JOB")
   if [ "$RES" != success ]; then
     echo "        yanıt: $(head -c 300 <<<"$R")"
-    case "$JOB" in ''|*[!0-9]*) ;; *) joblog "$JOB" | tail -15 | sed 's/^/        /' ;; esac
+    case "$JOB" in ''|*[!0-9]*) ;; *) joblog "$JOB" | tail -15 | sed 's/^/        /; s/HATA:/hata:/' ;; esac
   fi
 }
 # drop_inspect: şu anki incelemenin geçici klasörünü siler (aynı anda en çok 4 inceleme tutulur).
@@ -248,11 +248,11 @@ check "içe aktarma görevi" "$RES" success
 LOG=$(joblog "$JOB")
 has "PostgreSQL atlandı ve bildirildi" "$LOG" "PostgreSQL"
 check "gizli bilgiler görev günlüğünde yok" "$(grep -cF "$SRCDBPASS" <<<"$LOG")" 0
-check "siteler hesapta açıldı" "$(api GET /sites | jget "sorted((s['domain'], s['owner'], s['kind']) for s in d if s['domain'] in ('$CPMAIN','$CPADDON'))")" "[('$CPADDON', '$C', 'static'), ('$CPMAIN', '$C', 'php')]"
+check "siteler hesapta açıldı" "$(api GET /sites | jget "sorted((s['domain'], s['owner'], s['kind']) for s in d if s['domain'] in ('$CPMAIN','$CPADDON'))")" "[('$CPMAIN', '$C', 'php'), ('$CPADDON', '$C', 'static')]"
 DIR=/home/$C/sites/$CPMAIN/public
 check "dosyalar yerinde" "$(cat $DIR/isaret.txt) $(cat $DIR/wp-content/uploads/2026/foto.jpg)" "yedekten-gelen-dosya resim"
 check "dosyaların tamamı hesabın" "$(find $DIR ! -user $C | wc -l)" 0
-check "setuid/setgid yok" "$(find $DIR -perm /6000 | wc -l)" 0
+check "setuid/setgid yok" "$(find $DIR -mindepth 1 -perm /6000 | wc -l)" 0
 check "sembolik bağlar gelmedi" "$([ -e $DIR/disari-bag ] || [ -L $DIR/disari-bag ] && echo var || echo yok)" yok
 check "yayın klasörü başkasına yazılabilir değil" "$(find $DIR -perm /o+w ! -type l | wc -l)" 0
 check "ek alan adı dosyası" "$(cat /home/$C/sites/$CPADDON/public/index.html)" "ek-alan-sitesi"

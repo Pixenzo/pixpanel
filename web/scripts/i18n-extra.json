@@ -281,7 +281,24 @@
     "Node.js sürümünü güncelledi",
     "Yedek dosyasını inceledi",
     "Yedek dosyasından içe aktardı",
-    "Yedek incelemesinin geçici dosyalarını sildi"
+    "Yedek incelemesinin geçici dosyalarını sildi",
+    "Virüs taraması ayarını uyguladı",
+    "Posta alanının kendi adını açtı",
+    "Posta alanının kendi adını kapattı",
+    "Posta alanı sertifikasını yeniledi",
+    "Posta listesi oluşturdu",
+    "Posta listesini güncelledi",
+    "Posta listesini sildi",
+    "Posta listesine üye ekledi",
+    "Posta listesinden üye çıkardı",
+    "Liste üyesinin yetkisini değiştirdi",
+    "Haftalık özet ayarını değiştirdi",
+    "Haftalık özeti gönderdi",
+    "Kara liste denetimini çalıştırdı",
+    "Varsayılan yedek planını değiştirdi",
+    "Siteyi varsayılan yedek planına ekledi",
+    "Silinen veritabanını geri getirdi",
+    "Silinen veritabanının yedeğini kalıcı olarak sildi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
@@ -318,7 +335,8 @@
     "Node.js sürümleri",
     "Veritabanı ve önbellek",
     "Konteyner",
-    "Posta"
+    "Posta",
+    "Posta için virüs tarayıcısı (ClamAV). Virüslü iletiler reddedilir (karantina açıksa karantinaya alınır); imzalar kendiliğinden güncellenir. İmza veritabanı bellekte yaklaşık 1,2 GB yer tutar: en az 2 GB belleği olan sunucularda kurun."
   ],
   "server/src/components.rs (bileşen açıklamaları, Components.tsx içinde t(component.description))": [
     "Web sunucusu ve ters vekil. Siteleri yayınlamak için gereklidir.",
@@ -759,5 +777,25 @@
     "Çöken servis yeniden başlatılır, sorun size bildirilir.",
     "Yedekler plana göre alınır",
     "Siteler, veritabanları ve postalar tek tıkla geri gelir."
+  ],
+  "web/src/pages/MailLists.tsx": [
+    "Herkes gönderebilir",
+    "Yalnızca üyeler",
+    "Yalnızca yöneticiler"
+  ],
+  "web/src/pages/MailOwnName.tsx": [
+    "Posta sunucusu (IMAP/SMTP)",
+    "Thunderbird / K-9 otomatik ayarı",
+    "Outlook otomatik ayarı",
+    "Web postası"
+  ],
+  "web/src/pages/BackupDefaultPlan.tsx": [
+    "Kısa: 7 günlük kopya",
+    "Dengeli: 7 günlük, 4 haftalık, 6 aylık kopya",
+    "Uzun: 14 günlük, 8 haftalık, 12 aylık kopya"
+  ],
+  "hardening": [
+    "Redis belleği",
+    "Hesabın Redis örneğinin bellek sınırı (maxmemory). 0 yazarsanız pakette Redis bulunmaz; boş bırakırsanız örnek varsayılan 64 MB ile açılır ve yönetici değiştirebilir."
   ]
 }
