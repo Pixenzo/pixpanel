@@ -571,6 +571,11 @@ const MIGRATIONS: &[&str] = &[
 
     ALTER TABLE site_git ADD COLUMN signature_secret TEXT NOT NULL DEFAULT '';
     "#,
+    // 31: hesabın veritabanlarının ölçülen toplam boyutu (disk_bytes bunu da kapsar; kullanım
+    //     görünümünde ayrı kalem olarak gösterilir).
+    r#"
+    ALTER TABLE account_usage ADD COLUMN db_bytes INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

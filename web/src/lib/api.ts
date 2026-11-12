@@ -192,6 +192,8 @@ export interface AccountUsage {
   /** İçinde bulunulan ayda sitelerin aktardığı veri (bayt). */
   traffic_bytes: number;
   disk_bytes: number | null;
+  /** `disk_bytes` içindeki veritabanları payı (bayt). */
+  database_bytes: number | null;
   disk_measured_at: number | null;
 }
 
@@ -328,8 +330,37 @@ export interface DatabaseInfo {
   name: string;
   owner: string;
   size: number | null;
+  /** Tablo sayısı (görünümler hariç). */
+  tables: number | null;
   grants: { db_user_id: number; name: string; host: string; access: DbAccess }[];
   created_at: number;
+}
+
+export interface SlowQueryEntry {
+  /** Sorgunun başladığı an (Unix saniyesi); 0 ise günlükte yok. */
+  time: number;
+  query_time: number;
+  lock_time: number;
+  rows_sent: number;
+  rows_examined: number;
+  user: string;
+  host: string;
+  database: string;
+  query: string;
+}
+
+export interface SlowQueryLog {
+  enabled: boolean;
+  /** Eşik (saniye). */
+  threshold: number;
+  thresholds: number[];
+  file: string;
+  /** Günlük dosyaya yazılıyor mu (değilse kayıtlar okunamaz). */
+  file_output: boolean;
+  file_size: number;
+  /** Ayar yeniden başlatmaya dayanıyor mu. */
+  persistent: boolean;
+  entries: SlowQueryEntry[];
 }
 
 export interface DbUserInfo {

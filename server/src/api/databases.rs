@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 
 use axum::body::Body;
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
@@ -17,7 +17,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::auth::{self, AuthUser};
 use crate::db::now;
-use crate::dbms::{self, Access, Engine};
+use crate::dbms::{self, busy, Access, Engine};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::sys::services;
@@ -33,6 +33,9 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/export", get(export))
         .route("/{id}/open", post(open_tool))
         .route("/{id}/import", post(import).layer(axum::extract::DefaultBodyLimit::disable()))
+        .route("/{id}/copy", post(copy_database))
+        .route("/{id}/maintenance", post(maintenance))
+        .route("/slow-log", get(slow_log).put(set_slow_log))
         .route("/{id}/grants/{db_user_id}", put(set_grant).delete(remove_grant))
         .route("/users", post(create_user))
         .route("/users/{id}", patch(update_user).delete(drop_user))
@@ -61,6 +64,8 @@ struct DatabaseInfo {
     name: String,
     owner: String,
     size: Option<u64>,
+    /// Tablo sayısı (görünümler hariç).
+    tables: Option<u64>,
     grants: Vec<GrantInfo>,
     created_at: i64,
 }
@@ -109,12 +114,13 @@ fn check_prefix(prefix: &str, name: &str) -> AppResult<()> {
 async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Overview>> {
     user.require(AREA)?;
     let mut engines = Vec::new();
-    let mut sizes: HashMap<Engine, HashMap<String, u64>> = HashMap::new();
+    let mut sizes: HashMap<Engine, dbms::stats::Stats> = HashMap::new();
     for engine in Engine::ALL {
         let installed = engine.is_installed();
         let running = installed && services::is_active(engine.service()).await;
         if running {
-            sizes.insert(engine, dbms::sizes(engine).await);
+            // Boyutlar kısa süreli önbellekten gelir; sayfa her açıldığında sunucuya sorgu atılmaz.
+            sizes.insert(engine, dbms::stats::get(engine).await);
         }
         engines.push(EngineInfo { id: engine.as_str(), label: engine.label(), installed, running });
     }
@@ -133,6 +139,7 @@ async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
                     name: row.get(2)?,
                     owner: row.get(3)?,
                     size: None,
+                    tables: None,
                     grants: Vec::new(),
                     created_at: row.get(4)?,
                 })
@@ -169,7 +176,9 @@ async fn overview(State(state): State<AppState>, user: AuthUser) -> AppResult<Js
     })?;
     for database in &mut databases {
         let engine = Engine::parse(&database.engine)?;
-        database.size = sizes.get(&engine).and_then(|map| map.get(&database.name)).copied();
+        let stat = sizes.get(&engine).and_then(|map| map.get(&database.name));
+        database.size = stat.map(|stat| stat.size);
+        database.tables = stat.map(|stat| stat.tables);
     }
     Ok(Json(Overview { engines, databases, users, name_prefix: name_prefix(&state, &user)?, tools: crate::dbtools::installed() }))
 }
@@ -372,6 +381,9 @@ async fn drop_database(
     user.require(AREA)?;
     let _guard = state.sys_lock.lock().await;
     let database = load_database(&state, &user, id)?;
+    if busy::is_busy(database.engine, &database.name) {
+        return Err(busy_error());
+    }
     // PostgreSQL'de yetkiler rol üzerinde tutulduğundan veritabanı silinmeden önce alınır.
     let grantees: Vec<(String, String)> = state.db.call(|conn| {
         let mut stmt = conn.prepare(
@@ -556,6 +568,8 @@ async fn import(
 ) -> AppResult<Json<serde_json::Value>> {
     user.require(AREA)?;
     let database = load_database(&state, &user, id)?;
+    // Kopyalama ya da bakım sürerken içe aktarma başlamasın (kilit görev bitene kadar tutulur).
+    let busy_guard = busy::try_lock(database.engine, &database.name).ok_or_else(busy_error)?;
 
     let upload_dir = state.cfg.data_dir.join("uploads");
     tokio::fs::create_dir_all(&upload_dir).await?;
@@ -595,8 +609,10 @@ async fn import(
     let (engine, name) = (database.engine, database.name.clone());
     let title = format!("{name} veritabanına içe aktarma");
     let job_id = state.jobs.start("database.import", &title, Some(user.id), move |ctx| async move {
+        let _busy_guard = busy_guard;
         let outcome = run_import(&ctx, engine, &name, &path, gzipped).await;
         let _ = tokio::fs::remove_file(&path).await;
+        dbms::stats::invalidate(engine);
         outcome
     })?;
     auth::audit(&state.db, &user, "database.import", &database.name, database.engine.as_str());
@@ -633,4 +649,226 @@ async fn run_import(
     }
     ctx.log("İçe aktarma tamamlandı");
     Ok(())
+}
+
+fn busy_error() -> AppError {
+    AppError::conflict("Bu veritabanında başka bir işlem sürüyor; bitmesini bekleyin")
+}
+
+/// Veritabanının sahibi olan hesabın ad öneki (yönetici hesabında yok). Yönetici başkasının
+/// veritabanını kopyalarken yeni ad da o hesabın kuralına uyar.
+fn owner_prefix(state: &AppState, owner_id: i64) -> AppResult<String> {
+    let (username, role): (String, String) = state
+        .db
+        .call(|conn| conn.query_row("SELECT username, role FROM users WHERE id = ?1", params![owner_id], |row| Ok((row.get(0)?, row.get(1)?))))?;
+    if role == "admin" {
+        return Ok(String::new());
+    }
+    Ok(format!("{}_", username.replace('-', "_")))
+}
+
+#[derive(Deserialize)]
+struct CopyBody {
+    name: String,
+}
+
+/// Veritabanını aynı hesapta yeni bir adla kopyalar. Döküm diske yazılmadan akıtılır; yükleme
+/// tarafı, yüklenen dökümlerle aynı sınırlı yetkili yoldan yürür (bkz. `dbms::import`).
+async fn copy_database(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(body): Json<CopyBody>,
+) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let source = load_database(&state, &user, id)?;
+    let engine = source.engine;
+    engine.require_installed()?;
+
+    // Yeni veritabanı kaynağın sahibi olan hesaba açılır; ad kuralları oluşturma ucuyla aynıdır.
+    let owner_id = source.user_id;
+    let prefix = owner_prefix(&state, owner_id)?;
+    let name = body.name.trim().to_lowercase();
+    dbms::validate_name(&name, "Veritabanı adı")?;
+    check_prefix(&prefix, &name)?;
+
+    crate::quota::check(&state.db, owner_id, crate::quota::Resource::Database)?;
+    let source_size = dbms::stats::get(engine).await.get(&source.name).map_or(0, |stat| stat.size);
+    crate::quota::check_extra_disk(&state.db, owner_id, source_size)?;
+
+    let source_guard = busy::try_lock(engine, &source.name).ok_or_else(busy_error)?;
+    let target_guard = busy::try_lock(engine, &name).ok_or_else(busy_error)?;
+    let _guard = state.sys_lock.lock().await;
+    let taken: bool = state.db.call(|conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM databases WHERE engine = ?1 AND name = ?2)",
+            params![engine.as_str(), name],
+            |row| row.get(0),
+        )
+    })?;
+    if taken {
+        return Err(AppError::conflict(format!("“{name}” adında bir veritabanı zaten var")));
+    }
+
+    dbms::create_database(engine, &name).await?;
+    let target_id = match state.db.call(|conn| {
+        conn.execute(
+            "INSERT INTO databases (user_id, engine, name, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![owner_id, engine.as_str(), name, now()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }) {
+        Ok(id) => id,
+        Err(err) => {
+            let _ = dbms::drop_database(engine, &name).await;
+            return Err(err);
+        }
+    };
+
+    let (source_name, target_name) = (source.name.clone(), name.clone());
+    let (db, sys_lock) = (state.db.clone(), state.sys_lock.clone());
+    let title = format!("{source_name} veritabanı {target_name} olarak kopyalanıyor");
+    let started = state.jobs.start("database.copy", &title, Some(user.id), move |ctx| async move {
+        let _guards = (source_guard, target_guard);
+        let outcome = run_copy(&ctx, engine, &source_name, &target_name).await;
+        if outcome.is_err() {
+            // Yarım kalmış kopya bırakılmaz: yeni veritabanı ve kaydı geri alınır.
+            ctx.log("Kopyalama başarısız; yeni veritabanı geri alınıyor");
+            let _lock = sys_lock.lock().await;
+            match dbms::drop_database(engine, &target_name).await {
+                Ok(()) => {
+                    let _ = db.call(|conn| conn.execute("DELETE FROM databases WHERE id = ?1", params![target_id]));
+                    ctx.log("Yeni veritabanı silindi");
+                }
+                Err(err) => ctx.log(format!("Yeni veritabanı silinemedi, elle silmeniz gerekebilir: {err}")),
+            }
+        }
+        dbms::stats::invalidate(engine);
+        outcome
+    });
+    let job_id = match started {
+        Ok(job_id) => job_id,
+        Err(err) => {
+            let _ = dbms::drop_database(engine, &name).await;
+            let _ = state.db.call(|conn| conn.execute("DELETE FROM databases WHERE id = ?1", params![target_id]));
+            return Err(err);
+        }
+    };
+    auth::audit(&state.db, &user, "database.copy", &source.name, &format!("→ {name}"));
+    Ok(Json(json!({ "job_id": job_id, "id": target_id })))
+}
+
+/// Kaynağı dökerken çıktıyı doğrudan sınırlı yetkili yükleme hattına bağlar.
+async fn run_copy(ctx: &crate::jobs::JobCtx, engine: Engine, source: &str, target: &str) -> AppResult<()> {
+    ctx.log(format!("{source} veritabanı {target} adıyla kopyalanıyor (döküm diske yazılmaz)"));
+    let mut dump = dbms::copy_dump_command(engine, source)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| AppError::internal(format!("döküm başlatılamadı: {err}")))?;
+    let stdout: Stdio = dump.stdout.take().expect("stdout borusu").try_into().map_err(|err: std::io::Error| AppError::internal(err.to_string()))?;
+    let stderr = dump.stderr.take().expect("stderr borusu");
+    let err_ctx = ctx.clone();
+    let err_task = tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut lines = BufReader::new(stderr).lines();
+        let mut count = 0;
+        while let Ok(Some(line)) = lines.next_line().await {
+            // Bozuk bir kaynak binlerce uyarı üretebilir; günlük şişmesin.
+            if count < 200 {
+                err_ctx.log(line);
+            }
+            count += 1;
+        }
+    });
+    let loaded = dbms::import::run_strict(ctx, engine, target, stdout).await;
+    let status = dump.wait().await?;
+    let _ = err_task.await;
+    loaded?;
+    if !status.success() {
+        return Err(AppError::bad("Kaynak veritabanı dökülemedi (ayrıntı yukarıda)"));
+    }
+    ctx.log("Kopyalama tamamlandı");
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct MaintenanceBody {
+    action: String,
+}
+
+/// Veritabanı tablolarını denetler, onarır ya da iyileştirir; çıktı görev günlüğüne akar.
+async fn maintenance(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(body): Json<MaintenanceBody>,
+) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let action = dbms::Maintenance::parse(&body.action)?;
+    let database = load_database(&state, &user, id)?;
+    database.engine.require_installed()?;
+    // Ad komut satırına girdiğinden, panelin açabileceği türden olduğu bir kez daha doğrulanır.
+    dbms::validate_name(&database.name, "Veritabanı adı")?;
+    let (mut command, program) = dbms::maintenance_command(database.engine, &database.name, action)?;
+    // Onarım ve iyileştirme tabloları kilitleyebilir; aynı veritabanında iki işlem birden yürümez.
+    let guard = busy::try_lock(database.engine, &database.name).ok_or_else(busy_error)?;
+
+    let name = database.name.clone();
+    let title = format!("{name} veritabanı {}", action.label());
+    let job_id = state.jobs.start("database.maintenance", &title, Some(user.id), move |ctx| async move {
+        let _guard = guard;
+        ctx.log(format!("{name} veritabanı {} ({program})", action.label()));
+        ctx.run_streaming(&mut command, program, None).await?;
+        ctx.log("İşlem tamamlandı");
+        Ok(())
+    })?;
+    auth::audit(&state.db, &user, "database.maintenance", &database.name, action.as_str());
+    Ok(Json(json!({ "job_id": job_id })))
+}
+
+#[derive(Deserialize)]
+struct SlowLogQuery {
+    limit: Option<usize>,
+}
+
+/// Yavaş sorgu günlüğünün durumu ve son kayıtları. Günlük bütün hesapların sorgularını
+/// içerdiğinden yalnızca yöneticiye açıktır.
+async fn slow_log(user: AuthUser, Query(query): Query<SlowLogQuery>) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    Engine::Mariadb.require_installed()?;
+    let settings = dbms::slowlog::settings().await?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let (file_size, entries) =
+        if settings.file_output { dbms::slowlog::recent(&settings.file, limit).await? } else { (0, Vec::new()) };
+    Ok(Json(json!({
+        "enabled": settings.enabled,
+        "threshold": settings.threshold,
+        "thresholds": dbms::slowlog::THRESHOLDS,
+        "file": settings.file,
+        "file_output": settings.file_output,
+        "file_size": file_size,
+        "persistent": settings.persistent,
+        "entries": entries,
+    })))
+}
+
+#[derive(Deserialize)]
+struct SlowLogBody {
+    enabled: bool,
+    threshold: Option<u32>,
+}
+
+async fn set_slow_log(State(state): State<AppState>, user: AuthUser, Json(body): Json<SlowLogBody>) -> AppResult<Json<serde_json::Value>> {
+    user.require_admin()?;
+    Engine::Mariadb.require_installed()?;
+    let threshold = body.threshold.unwrap_or(2);
+    if !dbms::slowlog::THRESHOLDS.contains(&threshold) {
+        return Err(AppError::bad("Eşik 1, 2, 5 ya da 10 saniye olmalı"));
+    }
+    let _guard = state.sys_lock.lock().await;
+    dbms::slowlog::apply(body.enabled, threshold).await?;
+    let detail = if body.enabled { format!("açık, eşik {threshold} sn") } else { "kapalı".to_string() };
+    auth::audit(&state.db, &user, "database.slow_log", Engine::Mariadb.as_str(), &detail);
+    Ok(Json(json!({ "ok": true })))
 }

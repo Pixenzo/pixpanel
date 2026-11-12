@@ -11,10 +11,9 @@
 //! bürünürler; böylece hangisi tablo oluşturursa oluştursun nesnelerin sahibi
 //! ortak roldür ve tam yetkili kullanıcıların hepsi onları yönetebilir.
 
-use std::collections::HashMap;
-
 use tokio::process::Command;
 
+use crate::dbms::stats::{parse_rows, Stats};
 use crate::dbms::{run_client, Access};
 use crate::error::AppResult;
 use crate::sys::exec::base_command;
@@ -49,16 +48,34 @@ async fn run(database: &str, script: &str, vars: &[(&str, &str)]) -> AppResult<S
     run_client(command, &format!("{preamble}{script}"), "PostgreSQL").await
 }
 
-pub async fn sizes() -> AppResult<HashMap<String, u64>> {
-    let output =
-        run("postgres", "SELECT datname, pg_database_size(datname) FROM pg_database WHERE NOT datistemplate;\n", &[]).await?;
-    Ok(output
-        .lines()
-        .filter_map(|line| {
-            let (name, size) = line.split_once('\t')?;
-            Some((name.to_string(), size.trim().parse().ok()?))
-        })
-        .collect())
+/// Veritabanındaki tablo sayısını veren sorgu. Müşterinin veritabanına yönetici rolüyle
+/// bağlanıldığından arama yolu `pg_catalog`a sabitlenir ve her nesne adı nitelenir; müşterinin
+/// açtığı bir şema, işlev ya da geçici tablo sorgunun anlamını değiştiremez.
+const TABLE_COUNT_SCRIPT: &str = "SET search_path = pg_catalog;\n\
+    SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c\n\
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace\n\
+    WHERE c.relkind IN ('r', 'p') AND NOT c.relispartition\n\
+      AND n.nspname <> 'information_schema' AND n.nspname !~ '^pg_';\n";
+
+/// Bütün veritabanlarının boyutu (tek sorgu) ve tablo sayısı (veritabanı başına bir bağlantı).
+pub async fn stats() -> AppResult<Stats> {
+    let output = run(
+        "postgres",
+        "SELECT datname, pg_database_size(datname), 0 FROM pg_database WHERE NOT datistemplate AND datallowconn;\n",
+        &[],
+    )
+    .await?;
+    let mut stats = parse_rows(&output);
+    for (name, stat) in stats.iter_mut() {
+        // `-d` değeri `=` içeriyorsa bağlantı dizesi sayılır; yalnızca panelin açabileceği türden adlara bağlanılır.
+        if crate::dbms::validate_name(name, "Veritabanı adı").is_err() && name != "postgres" {
+            continue;
+        }
+        if let Ok(count) = run(name, TABLE_COUNT_SCRIPT, &[]).await {
+            stat.tables = count.lines().rev().find_map(|line| line.trim().parse().ok()).unwrap_or(0);
+        }
+    }
+    Ok(stats)
 }
 
 /// PostgreSQL varsayılan olarak her role `postgres` ve `template1`
@@ -163,6 +180,22 @@ pub async fn grant(database: &str, user: &str, access: Access) -> AppResult<()> 
 pub fn dump_command(database: &str) -> Command {
     let mut command = as_postgres("pg_dump");
     command.args(["--no-owner", "--no-acl", "--clean", "--if-exists", "--", database]);
+    command
+}
+
+/// Kopyalama için döküm: hedef veritabanı boş olduğundan `DROP` ifadelerine gerek yoktur.
+pub fn copy_dump_command(database: &str) -> Command {
+    let mut command = as_postgres("pg_dump");
+    command.args(["--no-owner", "--no-acl", "--", database]);
+    command
+}
+
+/// `VACUUM ANALYZE`: ölü satırları temizler, planlayıcı istatistiklerini yeniler. Ad çağıran
+/// tarafından doğrulanmıştır. Tablolar bu sırada sahip rolün yetkisiyle işlenir (PostgreSQL,
+/// VACUUM/ANALYZE sırasında dizin ifadelerini tablo sahibi olarak çalıştırır).
+pub fn vacuum_command(database: &str) -> Command {
+    let mut command = as_postgres("psql");
+    command.args(["-X", "-q", "-d", database, "-c", "VACUUM (VERBOSE, ANALYZE)"]);
     command
 }
 

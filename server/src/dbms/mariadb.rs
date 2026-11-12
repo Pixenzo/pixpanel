@@ -4,10 +4,9 @@
 //! Adlar (`validate_name`, `validate_host`) çağıran tarafından doğrulanmış
 //! olmalıdır; burada ek olarak SQL'e gömülürken tırnaklanır.
 
-use std::collections::HashMap;
-
 use tokio::process::Command;
 
+use crate::dbms::stats::{parse_rows, Stats};
 use crate::dbms::{run_client, Access};
 use crate::error::{AppError, AppResult};
 use crate::sys::exec::base_command;
@@ -27,7 +26,7 @@ async fn run(script: &str) -> AppResult<String> {
 }
 
 /// Metni tek tırnaklı SQL sabitine çevirir.
-fn quote(value: &str) -> String {
+pub(crate) fn quote(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('\'');
     for c in value.chars() {
@@ -46,21 +45,23 @@ fn account(user: &str, host: &str) -> String {
     format!("{}@{}", quote(user), quote(host))
 }
 
-pub async fn sizes() -> AppResult<HashMap<String, u64>> {
+/// Yönetici kimliğiyle verilen SQL betiğini çalıştırıp çıktısını döner (yalnızca panelin kendi
+/// sabit betikleri için; kullanıcı metni `quote` ile kaçışlanmadan girmemelidir).
+pub async fn query(script: &str) -> AppResult<String> {
+    run(script).await
+}
+
+/// Bütün veritabanlarının boyutu ve tablo sayısı; tek sorguyla. Görünümler tablo sayılmaz.
+pub async fn stats() -> AppResult<Stats> {
     let output = run(
-        "SELECT s.schema_name, COALESCE(SUM(t.data_length + t.index_length), 0)
+        "SELECT s.schema_name, COALESCE(SUM(t.data_length + t.index_length), 0),
+                COUNT(CASE WHEN t.table_type IN ('BASE TABLE', 'SYSTEM VERSIONED') THEN 1 END)
          FROM information_schema.schemata s
          LEFT JOIN information_schema.tables t ON t.table_schema = s.schema_name
          GROUP BY s.schema_name;\n",
     )
     .await?;
-    Ok(output
-        .lines()
-        .filter_map(|line| {
-            let (name, size) = line.split_once('\t')?;
-            Some((name.to_string(), size.trim().parse::<f64>().ok()? as u64))
-        })
-        .collect())
+    Ok(parse_rows(&output))
 }
 
 pub async fn create_database(name: &str) -> AppResult<()> {
@@ -154,6 +155,14 @@ pub async fn revoke(database: &str, user: &str, host: &str) -> AppResult<()> {
 pub fn dump_command(database: &str) -> Command {
     let mut command = base_command("mariadb-dump");
     command.args(["--single-transaction", "--routines", "--triggers", "--events", "--default-character-set=utf8mb4", "--", database]);
+    command
+}
+
+/// Veritabanının tablolarını denetleyen/onaran/iyileştiren program. Ad çağıran tarafından
+/// `validate_name` ile doğrulanmıştır (küçük harfle başlar, seçenek gibi görünemez).
+pub fn maintenance_command(database: &str, flag: &str) -> Command {
+    let mut command = base_command("mariadb-check");
+    command.args([flag, database]);
     command
 }
 

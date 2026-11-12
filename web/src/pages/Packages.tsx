@@ -284,6 +284,12 @@ export function UsagePanel({ path, title }: { path: string; title?: string }) {
           }
         />
       </dl>
+      {data.database_bytes !== null && (
+        <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+          <span className="text-ink-2">{t("Disk kullanımının veritabanları payı")}</span>
+          <span className="tabular font-mono text-[13.5px]">{formatBytes(data.database_bytes)}</span>
+        </p>
+      )}
       <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
         <span className="text-ink-2">{t("Aylık trafik")}</span>
         <span className="tabular font-mono text-[13.5px]">{formatBytes(data.traffic_bytes)}</span>
