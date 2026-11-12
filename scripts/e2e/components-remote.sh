@@ -169,6 +169,7 @@ suite metrics
 suite backup-ftp restic ftp
 suite templates php-8.3
 suite cli
+suite api-scopes
 suite ips dns
 suite redis-account redis
 suite impersonate

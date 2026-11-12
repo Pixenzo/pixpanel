@@ -423,6 +423,7 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | Yöntem | Yol | Açıklama | Yetki |
 | --- | --- | --- | --- |
 | GET | `/packages` | Hosting paketleri. | Yönetici/Bayi |
+| GET | `/packages/limits-support` | İşlemci ve bellek sınırlarının bu sunucuda uygulanıp uygulanamadığı. | Yönetici/Bayi |
 | POST | `/packages` | Paket oluşturur. | Yönetici/Bayi |
 | PATCH | `/packages/{id}` | Paketi günceller. | Yönetici/Bayi |
 | DELETE | `/packages/{id}` | Paketi siler. | Yönetici/Bayi |
@@ -460,6 +461,8 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | GET | `/system/audit` | Denetim günlüğü. | Yönetici |
 | GET | `/system/updates` | Bekleyen paket güncellemeleri. | Yönetici |
 | POST | `/system/updates/refresh` | Güncelleme listesini yeniler. | Yönetici |
+| GET | `/system/http3` | HTTP/3 (QUIC) durumu: nginx destekliyor mu, açık mı. | Yönetici |
+| PUT | `/system/http3` | HTTP/3'ü sunucu genelinde açar ya da kapatır. | Yönetici |
 | POST | `/system/updates/install` | Güncellemeleri kurar (görev). | Yönetici |
 | POST | `/system/reboot` | Sunucuyu yeniden başlatır. | Yönetici |
 | POST | `/system/reboot/cancel` | Zamanlanmış yeniden başlatmayı iptal eder. | Yönetici |

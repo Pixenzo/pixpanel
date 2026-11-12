@@ -3107,4 +3107,12 @@ export const en: Record<string, string> = {
   "Bu sunucuda işlemci denetleyicisi kullanıcı dilimlerine devredilmemiş (yetkisiz konteynerde olabilir); sınırlar kaydedildi ama uygulanamıyor.": "The CPU controller is not delegated to user slices on this server (this can happen in an unprivileged container); the limits were saved but cannot be applied.",
   "Bu sunucuda bellek denetleyicisi kullanıcı dilimlerine devredilmemiş (yetkisiz konteynerde olabilir); sınırlar kaydedildi ama uygulanamıyor.": "The memory controller is not delegated to user slices on this server (this can happen in an unprivileged container); the limits were saved but cannot be applied.",
   "Bu sunucuda işlemci ve bellek denetleyicileri kullanıcı dilimlerine devredilmemiş (yetkisiz konteynerde olabilir); sınırlar kaydedildi ama uygulanamıyor.": "The CPU and memory controllers are not delegated to user slices on this server (this can happen in an unprivileged container); the limits were saved but cannot be applied.",
+  "Erişim alanları": "Access areas",
+  "Hesabımın bütün yetkileri": "All permissions of my account",
+  "Yalnızca seçtiğim alanlar": "Only the areas I select",
+  "Anahtar yalnızca seçilen alanlardaki işlemleri yapabilir; kullanıcı, sunucu ve güvenlik ayarlarına erişemez.": "The key can only perform actions in the selected areas; it cannot access users, server or security settings.",
+  "Anahtar, hesabınızın yapabildiği her şeyi yapabilir.": "The key can do everything your account can do.",
+  "Alan yok": "No areas",
+  "Alanlar: {areas}": "Areas: {areas}",
+  "{count} alan: {areas}": "{count} areas: {areas}",
 };
