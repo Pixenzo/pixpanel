@@ -376,8 +376,28 @@ export interface DbUserInfo {
   created_at: number;
 }
 
+/** Bir veritabanı motorunun uzaktan erişim durumu (yönetici görünümü; `GET /databases/remote`). */
+export interface DbRemoteStatus {
+  id: DbEngine;
+  label: string;
+  installed: boolean;
+  running: boolean;
+  /** Panelin yazdığı sunucu ayarı var mı. */
+  remote_enabled: boolean;
+  /** Sunucunun dinlediği adres; sunucu çalışmıyorsa yok. */
+  listen: string | null;
+  port: number;
+  local_only: boolean | null;
+  /** PostgreSQL: sunucuda TLS açık mı. */
+  tls: boolean | null;
+  /** Yalnızca bu sunucu dışında bir adresten bağlanabilen kullanıcı sayısı. */
+  remote_users: number;
+  firewall_enabled: boolean;
+  firewall_port_open: boolean;
+}
+
 export interface DatabaseOverview {
-  engines: { id: DbEngine; label: string; installed: boolean; running: boolean }[];
+  engines: { id: DbEngine; label: string; installed: boolean; running: boolean; remote_enabled: boolean }[];
   databases: DatabaseInfo[];
   users: DbUserInfo[];
   name_prefix: string;

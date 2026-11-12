@@ -48,6 +48,12 @@ async fn run(database: &str, script: &str, vars: &[(&str, &str)]) -> AppResult<S
     run_client(command, &format!("{preamble}{script}"), "PostgreSQL").await
 }
 
+/// Yönetici kimliğiyle `postgres` veritabanında sabit bir betik çalıştırıp çıktısını döner
+/// (yalnızca panelin kendi betikleri için; kullanıcı metni betiğe girmez).
+pub async fn query(script: &str) -> AppResult<String> {
+    run("postgres", script, &[]).await
+}
+
 /// Veritabanındaki tablo sayısını veren sorgu. Müşterinin veritabanına yönetici rolüyle
 /// bağlanıldığından arama yolu `pg_catalog`a sabitlenir ve her nesne adı nitelenir; müşterinin
 /// açtığı bir şema, işlev ya da geçici tablo sorgunun anlamını değiştiremez.
