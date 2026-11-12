@@ -24,6 +24,10 @@ pub fn spawn_certificate_renewal(state: AppState) {
             if let Err(err) = crate::panelcert::renew_if_due(&state, RENEW_BEFORE_SECS).await {
                 tracing::error!(error = %err, "panel sertifikası yenilenemedi");
             }
+            // Posta alanlarının kendi adıyla bağlanma sertifikaları (yenilenince SNI haritaları yeniden üretilir).
+            if let Err(err) = crate::mail::tls::renew_due(&state).await {
+                tracing::error!(error = %err, "posta alanı sertifikaları yenilenemedi");
+            }
             tokio::time::sleep(CHECK_INTERVAL).await;
         }
     });

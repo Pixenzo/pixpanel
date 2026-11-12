@@ -1,9 +1,9 @@
 //! Sunucu bileşenlerinin listelenmesi ve kurulması. Yalnızca yöneticiler.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::auth::{self, AuthUser};
@@ -31,6 +31,15 @@ struct ComponentView {
     removable: bool,
     /// Kuruluysa ve kullanımdaysa kaldırılamama nedeni.
     in_use: Option<String>,
+    /// Kurulmamışsa kurulumdan önce gösterilecek uyarı (ör. ClamAV için yetersiz bellek).
+    warning: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct InstallQuery {
+    /// Uyarı gösterildi ve onaylandı: yine de kur.
+    #[serde(default)]
+    force: bool,
 }
 
 async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<ComponentView>>> {
@@ -39,7 +48,8 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
     for status in components::status_all().await {
         let removable = components::removable(&status.id);
         let in_use = if removable && status.installed { components::removal_blocker(&state.db, &components::find(&status.id)?).await? } else { None };
-        list.push(ComponentView { status, removable, in_use });
+        let warning = if status.installed { None } else { components::install_warning(&status.id) };
+        list.push(ComponentView { status, removable, in_use, warning });
     }
     Ok(Json(list))
 }
@@ -79,6 +89,11 @@ async fn remove(
             let _sys = job_state.sys_lock.lock().await;
             crate::dbtools::after_removal(&job_state.cfg).await?;
         }
+        if component.id == "clamav" {
+            ctx.log("Rspamd'nin virüs taraması yapılandırması geri alınıyor");
+            let _sys = job_state.sys_lock.lock().await;
+            crate::mail::antivirus::remove_config().await?;
+        }
         if component.id.starts_with("php-") {
             // Kalan PHP havuzlarının port kısıtı yeniden uygulanır.
             crate::hosting::portguard::apply().await;
@@ -102,12 +117,16 @@ async fn install(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<String>,
+    Query(query): Query<InstallQuery>,
 ) -> AppResult<Json<serde_json::Value>> {
     user.require_admin()?;
     check_python_id(&id)?;
     let component = components::find(&id)?;
     if components::status(&component).await.installed {
         return Err(AppError::conflict(format!("{} zaten kurulu", component.name)));
+    }
+    if let Some(warning) = components::install_warning(&id).filter(|_| !query.force) {
+        return Err(AppError::conflict(format!("{warning} Yine de kurmak için onaylayın.")));
     }
     let apt_lock = state.apt_lock.clone();
     let job_state = state.clone();
@@ -150,6 +169,11 @@ postfix postfix/mailname string {}
         if component.id == "ftp" {
             ctx.log("FTP sunucusu yapılandırılıyor");
             crate::hosting::ftp::setup(&job_state.cfg).await?;
+        }
+        if component.id == "clamav" {
+            ctx.log("Virüs taraması yapılandırılıyor");
+            let _sys = job_state.sys_lock.lock().await;
+            crate::mail::antivirus::setup(&ctx).await?;
         }
         if component.id == "mail" {
             ctx.log("Posta servisleri yapılandırılıyor");

@@ -582,6 +582,9 @@ mod scope_tests {
     fn gate_maps_areas_and_denies_the_rest() {
         assert_eq!(scope_gate("/api/v1/auth/me"), ScopeGate::Open);
         assert_eq!(scope_gate("/api/v1/jobs/{id}/stream"), ScopeGate::Open);
+        assert_eq!(scope_gate("/api/v1/mail/domains/{id}/own-name"), ScopeGate::Area("mail"));
+        assert_eq!(scope_gate("/api/v1/mail/domains/{id}/lists/{list_id}/members"), ScopeGate::Area("mail"));
+        assert_eq!(scope_gate("/api/v1/mail/antivirus"), ScopeGate::Area("mail"));
         assert_eq!(scope_gate("/api/v1/sites"), ScopeGate::Area("sites"));
         assert_eq!(scope_gate("/api/v1/sites/{id}"), ScopeGate::Area("sites"));
         assert_eq!(scope_gate("/api/v1/sites/{id}/ssl/letsencrypt"), ScopeGate::Area("ssl"));

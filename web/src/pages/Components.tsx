@@ -9,7 +9,7 @@ import { t } from "../lib/i18n";
 import { JobLog } from "./Jobs";
 
 /** Sunucunun eklediği kaldırma bilgisi. */
-type ComponentRow = ComponentStatus & { removable?: boolean; in_use?: string | null };
+type ComponentRow = ComponentStatus & { removable?: boolean; in_use?: string | null; warning?: string | null };
 
 const categories: { id: ComponentStatus["category"]; title: string }[] = [
   { id: "web", title: "Web sunucusu" },
@@ -31,8 +31,10 @@ export function ComponentsPage() {
   });
 
   const install = useMutation({
-    mutationFn: (component: ComponentStatus) => api.post<{ job_id: number }>(`/components/${component.id}/install`),
-    onSuccess: (result, component) => {
+    // `force`: kurulum uyarısı (ör. yetersiz bellek) gösterildi ve onaylandı.
+    mutationFn: ({ component, force }: { component: ComponentStatus; force: boolean }) =>
+      api.post<{ job_id: number }>(`/components/${component.id}/install${force ? "?force=true" : ""}`),
+    onSuccess: (result, { component }) => {
       setWatching({ jobId: result.job_id, title: t("{name} kurulumu", { name: component.name }) });
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
@@ -71,6 +73,19 @@ export function ComponentsPage() {
       danger: true,
     });
     if (confirmed) remove.mutate(component);
+  }
+
+  async function startInstall(component: ComponentRow) {
+    if (component.warning) {
+      const confirmed = await feedback.confirm({
+        title: t("{name} yine de kurulsun mu?", { name: component.name }),
+        description: component.warning,
+        confirmLabel: t("Yine de kur"),
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    install.mutate({ component, force: Boolean(component.warning) });
   }
 
   function refresh() {
@@ -132,8 +147,8 @@ export function ComponentsPage() {
                         <Button
                           size="sm"
                           icon={<Download className="size-3.5" />}
-                          loading={install.isPending && install.variables?.id === component.id}
-                          onClick={() => install.mutate(component)}
+                          loading={install.isPending && install.variables?.component.id === component.id}
+                          onClick={() => void startInstall(component)}
                         >
                           {t("Kur")}
                         </Button>

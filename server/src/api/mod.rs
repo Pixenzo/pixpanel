@@ -25,6 +25,7 @@ mod health;
 mod jobs;
 mod logs;
 mod mail;
+mod mail_extras;
 mod notify;
 mod packages;
 mod panelcert;

@@ -33,6 +33,7 @@ import { api, errorMessage } from "../lib/api";
 import { formatBytes, formatDateTime, formatRelative } from "../lib/format";
 import { t } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { AntivirusCard } from "./MailAntivirus";
 import { MailLimitsTab } from "./MailLimits";
 import { MailQuarantineTab } from "./MailQuarantine";
 
@@ -652,7 +653,12 @@ function SpamTab() {
   if (settings.isPending) return <LoadingBlock />;
   if (settings.isError) return <ErrorBlock message={errorMessage(settings.error)} onRetry={() => void settings.refetch()} />;
   // `key`, kaydetme sonrası gelen değerlerle formun sıfırlanmasını sağlar.
-  return <SpamForm key={JSON.stringify(settings.data)} settings={settings.data} />;
+  return (
+    <div className="flex flex-col gap-5">
+      <SpamForm key={JSON.stringify(settings.data)} settings={settings.data} />
+      <AntivirusCard />
+    </div>
+  );
 }
 
 // ---- Etkinlik ----

@@ -8,6 +8,7 @@ import { Badge, ErrorBlock, LoadingBlock, Mono, Panel, Status, Table, Td, Th } f
 import { api, errorMessage } from "../lib/api";
 import { t } from "../lib/i18n";
 import type { MailDomain } from "./Mail";
+import { MailOwnNamePanel } from "./MailOwnName";
 
 interface NameStatus {
   name: string;
@@ -98,6 +99,8 @@ export function MailClientSettings({ domain }: { domain: MailDomain }) {
           <Row label={t("Parola")}>{t("Kutunun parolası")}</Row>
         </dl>
       </Panel>
+
+      <MailOwnNamePanel domain={domain} />
 
       <Panel title={t("Otomatik ayar")}>
         <p className="mb-4 max-w-[75ch] text-ink-2">

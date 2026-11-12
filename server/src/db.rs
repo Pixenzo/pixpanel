@@ -596,6 +596,38 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE api_tokens ADD COLUMN scope TEXT;
     "#,
+    // 37: posta ekleri. `mail_domain_certs`: posta alanının kendi adıyla (`mail.<alan>`) bağlanması;
+    //     satırın varlığı özelliğin açık olduğunu gösterir (`webmail`: `webmail.<alan>` de sunulur,
+    //     `dns`: sertifika DNS doğrulamasıyla alınır/yenilenir). `mail_lists` + `mail_list_members`:
+    //     basit dağıtım listeleri (`mode`: kimler gönderebilir).
+    r#"
+    CREATE TABLE mail_domain_certs (
+        domain_id  INTEGER PRIMARY KEY REFERENCES mail_domains(id) ON DELETE CASCADE,
+        webmail    INTEGER NOT NULL DEFAULT 0,
+        dns        INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT NOT NULL DEFAULT '',
+        issued_at  INTEGER,
+        created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE mail_lists (
+        id         INTEGER PRIMARY KEY,
+        domain_id  INTEGER NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
+        local      TEXT NOT NULL,
+        mode       TEXT NOT NULL DEFAULT 'members' CHECK (mode IN ('anyone', 'members', 'admins')),
+        created_at INTEGER NOT NULL,
+        UNIQUE (domain_id, local)
+    );
+
+    CREATE TABLE mail_list_members (
+        id         INTEGER PRIMARY KEY,
+        list_id    INTEGER NOT NULL REFERENCES mail_lists(id) ON DELETE CASCADE,
+        address    TEXT NOT NULL,
+        is_admin   INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        UNIQUE (list_id, address)
+    );
+    "#,
 ];
 
 const USER_ID_FLOOR_KEY: &str = "users.id_floor";

@@ -221,9 +221,9 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 - 17b. İstemci otomatik ayarı (autoconfig, autodiscover). — **tamamlandı (12.11.2026)**
 - 17c. Giden posta sınırı (kutu ve alan adı başına saatlik sınır; ele geçirilmiş hesaba karşı). — **tamamlandı (12.11.2026)**
 - 17d. Karantina: şüpheli iletileri tutma, panelden bırakma ya da silme. — **tamamlandı (12.11.2026)**
-- 17e. Antivirüs (ClamAV; yaklaşık 1 GB bellek ister, isteğe bağlı bileşen).
-- 17f. Posta listeleri (düşük öncelik).
-- 17g. Alan adı başına sertifika (SNI) ve `webmail.<alan>` adresi.
+- 17e. Antivirüs (ClamAV; yaklaşık 1 GB bellek ister, isteğe bağlı bileşen). — **kodu tamam (12.11.2026, dal `agent/mail-extras`; test makinesinde sınanmadı: `mail-extras.sh`, ClamAV kurulu makine gerekir)**
+- 17f. Posta listeleri (düşük öncelik). — **kodu tamam (12.11.2026, dal `agent/mail-extras`; test makinesinde sınanmadı: `mail-extras.sh`)**. Kalan: `List-Id`/`List-Unsubscribe` başlıkları, abonelikten çıkma bağlantısı.
+- 17g. Alan adı başına sertifika (SNI) ve `webmail.<alan>` adresi. — **kodu tamam (12.11.2026, dal `agent/mail-extras`; test makinesinde sınanmadı: `mail-extras.sh`, Pebble gerekir)**. Kalan: MX kaydının `mail.<alan>`'a çevrilmesi, genel posta adı (sunucu adı) için kendiliğinden Let's Encrypt.
 
 ### 18. DNS derinliği — TAMAMLANDI (12.11.2026)
 

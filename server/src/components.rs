@@ -253,8 +253,25 @@ pub fn catalog() -> Vec<Component> {
             Some("postfix.service"),
             Repo::Distro,
         ),
+        component(
+            "clamav",
+            "ClamAV virüs taraması",
+            "Posta için virüs tarayıcısı (ClamAV). Virüslü iletiler reddedilir (karantina açıksa karantinaya alınır); imzalar kendiliğinden güncellenir. İmza veritabanı bellekte yaklaşık 1,2 GB yer tutar: en az 2 GB belleği olan sunucularda kurun.",
+            "mail",
+            &["clamav-daemon", "clamav-freshclam"],
+            Some("clamav-daemon.service"),
+            Repo::Distro,
+        ),
     ]);
     list
+}
+
+/// Kurulumdan önce yöneticiye gösterilen uyarı (varsa). Uyarı onaylanmadan kurulum başlamaz.
+pub fn install_warning(id: &str) -> Option<String> {
+    match id {
+        "clamav" => crate::mail::antivirus::memory_warning(),
+        _ => None,
+    }
 }
 
 pub fn find(id: &str) -> AppResult<Component> {
@@ -518,7 +535,8 @@ pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
         hosting::nginx::ensure_base().await?;
     }
     // PowerDNS arka ucu yapılandırılmadan başlayamaz; onu yapılandırma adımı başlatır.
-    if let Some(service) = component.service.as_ref().filter(|_| component.id != "dns") {
+    // ClamAV'ın `clamd`'si imza veritabanı inmeden başlayamaz; onu `mail::antivirus::setup` başlatır.
+    if let Some(service) = component.service.as_ref().filter(|_| component.id != "dns" && component.id != "clamav") {
         ctx.exec("systemctl", &["enable", "--now", "--", service]).await?;
     }
     ctx.log(format!("{} kuruldu", component.name));
@@ -530,7 +548,7 @@ pub async fn install(ctx: &JobCtx, component: &Component) -> AppResult<()> {
 /// Panelden kaldırılabilen bileşenler. Veri tutanlar (MariaDB, PostgreSQL, posta, DNS, nginx)
 /// kasıtlı olarak yok: kaldırmaları veri kaybına ya da siteleri durdurmaya yol açar.
 pub fn removable(id: &str) -> bool {
-    id.starts_with("php-") || matches!(id, "phpmyadmin" | "adminer" | "roundcube" | "redis" | "docker" | "ftp" | "fail2ban")
+    id.starts_with("php-") || matches!(id, "phpmyadmin" | "adminer" | "roundcube" | "redis" | "docker" | "ftp" | "fail2ban" | "clamav")
 }
 
 /// Bileşeni kullanımda tutan şey varsa nedenini döner. Kullanımdaki bileşen kaldırılmaz.
@@ -657,7 +675,7 @@ mod removal_tests {
 
     #[test]
     fn only_safe_components_are_removable() {
-        for id in ["php-8.3", "phpmyadmin", "adminer", "roundcube", "redis", "docker", "ftp", "fail2ban"] {
+        for id in ["php-8.3", "phpmyadmin", "adminer", "roundcube", "redis", "docker", "ftp", "fail2ban", "clamav"] {
             assert!(removable(id), "{id}");
         }
         for id in ["nginx", "mariadb", "postgresql", "mail", "dns", "restic", "python", "node-22"] {
