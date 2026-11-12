@@ -356,6 +356,33 @@ async fn database_bytes_by_account(db: &Db) -> AppResult<HashMap<i64, i64>> {
     Ok(totals)
 }
 
+/// Sitelerin klasör boyutları (site listesindeki "Disk" sütunu için); saatlik ölçümle dolar,
+/// panel yeniden başlayınca ilk ölçüme kadar boştur.
+static SITE_SIZES: std::sync::Mutex<Option<std::collections::HashMap<i64, u64>>> = std::sync::Mutex::new(None);
+
+/// Sitenin klasörünün en son ölçülen boyutu (bayt); henüz ölçülmediyse `None`.
+pub fn site_size(site_id: i64) -> Option<u64> {
+    SITE_SIZES.lock().unwrap_or_else(|p| p.into_inner()).as_ref().and_then(|sizes| sizes.get(&site_id).copied())
+}
+
+/// Her sitenin klasör boyutunu ölçer.
+pub async fn measure_sites(db: &Db) -> AppResult<()> {
+    let sites: Vec<(i64, String, String)> = db.call(|conn| {
+        let mut stmt = conn.prepare("SELECT s.id, u.username, s.domain FROM sites s JOIN users u ON u.id = s.user_id")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect()
+    })?;
+    let mut sizes = std::collections::HashMap::new();
+    for (id, username, domain) in sites {
+        if crate::api::validate_account_name(&username).is_err() || crate::hosting::domain::normalize(&domain).is_err() {
+            continue;
+        }
+        sizes.insert(id, u64::try_from(directory_size(&format!("/home/{username}/sites/{domain}")).await).unwrap_or(0));
+    }
+    *SITE_SIZES.lock().unwrap_or_else(|p| p.into_inner()) = Some(sizes);
+    Ok(())
+}
+
 pub async fn measure_disk(db: &Db) -> AppResult<()> {
     let database_bytes = database_bytes_by_account(db).await?;
     let accounts: Vec<(i64, String)> = db.call(|conn| {

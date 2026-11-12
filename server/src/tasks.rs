@@ -146,10 +146,13 @@ pub fn spawn_dkim_owner_sync(state: AppState) {
 /// Hesapların disk kullanımını saatte bir ölçer (paketlerin disk kotası için).
 pub fn spawn_disk_measurement(state: AppState) {
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(120)).await;
+        tokio::time::sleep(Duration::from_secs(20)).await;
         loop {
             if let Err(err) = crate::quota::measure_disk(&state.db).await {
                 tracing::warn!(error = %err, "disk kullanımı ölçülemedi");
+            }
+            if let Err(err) = crate::quota::measure_sites(&state.db).await {
+                tracing::warn!(error = %err, "site boyutları ölçülemedi");
             }
             if let Err(err) = crate::quota::notify_disk(&state).await {
                 tracing::warn!(error = %err, "disk kotası uyarıları gönderilemedi");

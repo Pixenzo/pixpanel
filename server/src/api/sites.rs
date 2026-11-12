@@ -95,6 +95,10 @@ struct SiteSummary {
     uptime_day: Option<f64>,
     /// Son başarılı yoklamanın yanıt süresi (ms).
     response_millis: Option<u32>,
+    /// Site klasörünün boyutu (bayt; saatte bir ölçülür, henüz ölçülmediyse `None`).
+    disk_bytes: Option<u64>,
+    /// Bu ayki trafik (bayt).
+    month_bytes: i64,
 }
 
 async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<SiteSummary>>> {
@@ -122,7 +126,18 @@ async fn summary(State(state): State<AppState>, user: AuthUser) -> AppResult<Jso
             ))
         })?;
         let (uptime_day, response_millis) = crate::uptime::glance(&state.db, site.id)?;
-        list.push(SiteSummary { site_id: site.id, ssl_expires_at, git, databases, cron_jobs, issues: state.health.site_issues(site.id), uptime_day, response_millis });
+        list.push(SiteSummary {
+            site_id: site.id,
+            ssl_expires_at,
+            git,
+            databases,
+            cron_jobs,
+            issues: state.health.site_issues(site.id),
+            uptime_day,
+            response_millis,
+            disk_bytes: crate::quota::site_size(site.id),
+            month_bytes: crate::stats::site_month_bytes(&state.db, site.id)?,
+        });
     }
     Ok(Json(list))
 }

@@ -539,6 +539,10 @@ export interface SiteSummary {
   uptime_day: number | null;
   /** Son başarılı yoklamanın yanıt süresi (ms). */
   response_millis: number | null;
+  /** Site klasörünün boyutu (bayt); henüz ölçülmediyse `null`. */
+  disk_bytes: number | null;
+  /** Bu ayki trafik (bayt). */
+  month_bytes: number;
 }
 
 export interface UptimeBucket {

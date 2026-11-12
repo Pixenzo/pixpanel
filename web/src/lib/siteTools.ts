@@ -21,6 +21,7 @@ import {
   HardDriveUpload,
   Mail,
   ShieldCheck,
+  Signpost,
   SlidersHorizontal,
   SquareTerminal,
 } from "lucide-react";
@@ -29,8 +30,43 @@ import type { Me, Site, SiteOptions, SiteSummary } from "./api";
 import { formatRelative } from "./format";
 import { t } from "./i18n";
 
+export type SiteToolGroup = "files" | "dev" | "security" | "domain";
+
+/** Araç gruplarının sırası ve başlıkları (site listesi ve site sayfası aynı sırayı kullanır). */
+export const siteToolGroups: { id: SiteToolGroup; title: string }[] = [
+  { id: "files", title: "Dosyalar ve veritabanları" },
+  { id: "dev", title: "Uygulama ve geliştirme" },
+  { id: "security", title: "Güvenlik ve erişim" },
+  { id: "domain", title: "Alan adı ve posta" },
+];
+
+const toolGroup: Record<string, SiteToolGroup> = {
+  files: "files",
+  databases: "files",
+  ftp: "files",
+  migrate: "files",
+  php: "dev",
+  node: "dev",
+  wordpress: "dev",
+  git: "dev",
+  logs: "dev",
+  cron: "dev",
+  stats: "dev",
+  terminal: "dev",
+  ssl: "security",
+  access: "security",
+  advanced: "security",
+  settings: "domain",
+  subdomain: "domain",
+  dns: "domain",
+  mail: "domain",
+  proxy: "domain",
+  rules: "domain",
+};
+
 export interface SiteTool {
   id: string;
+  group: SiteToolGroup;
   label: string;
   icon: LucideIcon;
   to: string;
@@ -65,9 +101,23 @@ function gitStatus(summary?: SiteSummary): Pick<SiteTool, "status" | "tone"> {
 }
 
 export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: SiteOptions): SiteTool[] {
+  return collectTools(site, me, summary, options).map((tool) => ({ ...tool, group: toolGroup[tool.id] ?? "domain" }));
+}
+
+function accessStatus(site: Site): Pick<SiteTool, "status" | "tone"> {
+  const rules = site.rules;
+  if (rules.maintenance) return { status: t("Bakım kipi açık"), tone: "warn" };
+  const parts: string[] = [];
+  if (rules.redirects.length > 0) parts.push(t("{count} yönlendirme", { count: rules.redirects.length }));
+  if (rules.server_cache?.enabled) parts.push(t("Önbellek açık"));
+  if (rules.cloudflare_only) parts.push(t("Yalnızca Cloudflare"));
+  return { status: parts.length > 0 ? parts.join(" · ") : t("Yönlendirme, parola, önbellek") };
+}
+
+function collectTools(site: Site, me: Me, summary?: SiteSummary, options?: SiteOptions): Omit<SiteTool, "group">[] {
   const can = (area: string) => me.role !== "member" || me.permissions.includes(area);
   const base = `/sites/${site.id}`;
-  const tools: SiteTool[] = [];
+  const tools: Omit<SiteTool, "group">[] = [];
 
   if (can("files") && site.kind !== "proxy") {
     tools.push({
@@ -118,6 +168,7 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
   if (can("ssl")) {
     tools.push({ id: "ssl", label: t("SSL sertifikası"), icon: ShieldCheck, to: `${base}/ssl`, ...sslStatus(site, summary) });
   }
+  tools.push({ id: "access", label: t("Kurallar ve erişim"), icon: Signpost, to: `${base}/access`, ...accessStatus(site) });
   if (site.kind === "php") {
     tools.push({ id: "wordpress", label: "WordPress", icon: PenLine, to: `${base}/wordpress`, status: t("Tek tıkla kur, güncelle, giriş yap") });
   }

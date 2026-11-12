@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ExternalLink, Lock, LockOpen, Plus, UserRound } from "lucide-react";
+import { ChevronRight, CornerDownRight, ExternalLink, Lock, LockOpen, Plus, UserRound } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useFeedback } from "../components/feedback";
 import {
-  Badge,
   Button,
   EmptyState,
   ErrorBlock,
@@ -26,7 +25,7 @@ import { classNames, formatBytes, formatPercent, formatRelative } from "../lib/f
 import { t } from "../lib/i18n";
 import { useJobs } from "../lib/live";
 import { useMe } from "../lib/session";
-import { siteTools } from "../lib/siteTools";
+import { siteToolGroups, siteTools } from "../lib/siteTools";
 
 export const kindLabels: Record<SiteKind, string> = {
   php: "PHP",
@@ -306,26 +305,37 @@ function readExpanded(): number[] | null {
 
 const toneText: Record<string, string> = { warn: "text-warn", bad: "text-bad", accent: "text-accent", ok: "text-ok" };
 
-/** Sitenin araçları: her kutu aracın adını ve o anki durumunu gösterir. */
+/** Sitenin araçları, türlerine göre gruplanmış: her kutu aracın adını ve o anki durumunu gösterir. */
 export function SiteToolGrid({ site, summary, options }: { site: Site; summary?: SiteSummary; options?: SiteOptions }) {
   const me = useMe();
   const tools = siteTools(site, me, summary, options);
   return (
-    <ul className="-mr-px -mb-px grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      {tools.map((tool) => (
-        <li key={tool.id} className="border-r border-b border-line">
-          <Link to={tool.to} className="group flex h-full items-center gap-3.5 px-4 py-3.5 outline-offset-[-2px] transition-colors hover:bg-accent-soft/40 sm:px-5 sm:py-4">
-            <span className="grid size-9.5 shrink-0 place-items-center rounded-xl bg-sunken text-ink-2 transition-colors group-hover:bg-accent-soft group-hover:text-accent">
-              <tool.icon aria-hidden className="size-[18px]" />
-            </span>
-            <span className="min-w-0">
-              <span className="block font-medium transition-colors group-hover:text-accent">{tool.label}</span>
-              <span className={classNames("mt-0.5 block truncate text-[13px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status || " "}</span>
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-5 px-3 py-4 sm:px-5 sm:py-5">
+      {siteToolGroups.map((group) => {
+        const items = tools.filter((tool) => tool.group === group.id);
+        if (items.length === 0) return null;
+        return (
+          <section key={group.id} aria-label={t(group.title)}>
+            <h3 className="mb-1.5 px-2 text-[13px] font-semibold text-ink-2">{t(group.title)}</h3>
+            <ul className="grid grid-cols-1 gap-x-2 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {items.map((tool) => (
+                <li key={tool.id}>
+                  <Link to={tool.to} className="group flex h-full items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-accent-soft/50">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-surface text-ink-2 shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors group-hover:border-accent/30 group-hover:text-accent">
+                      <tool.icon aria-hidden className="size-[18px]" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-medium transition-colors group-hover:text-accent">{tool.label}</span>
+                      {tool.status && <span className={classNames("block truncate text-[13px]", tool.tone ? toneText[tool.tone] : "text-ink-3")}>{tool.status}</span>}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -335,6 +345,12 @@ export function siteKindLabel(site: Site): string {
   if (site.kind === "python") return `Python ${site.node.version}`;
   return t(kindLabels[site.kind]);
 }
+
+/** Liste sütunları geniş ekranda hizalı durur: aç/kapa, alan adı, durum, disk, trafik, kısayollar. */
+const ROW_GRID = "flex flex-wrap items-center gap-x-4 gap-y-2 lg:grid lg:grid-cols-[2.125rem_minmax(0,1fr)_10.5rem_5rem_6.5rem_13rem]";
+
+/** Satırdaki kısayollar: en sık açılan araçlar tek tıkla. */
+const QUICK_TOOLS = ["files", "databases", "logs", "settings"];
 
 function SiteCard({
   site,
@@ -354,16 +370,20 @@ function SiteCard({
   /** Listede üst alan adının altında, girintili gösterilir. */
   nested: boolean;
 }) {
+  const me = useMe();
   const scheme = site.ssl_mode === "none" ? "http" : "https";
   const panelId = `site-tools-${site.id}`;
   // Panelin fark ettiği sorunlar: en önemlisi durum ışığının rengini belirler.
   const issues = site.status === "active" ? (summary?.issues ?? []) : [];
   const worst = issues[0]?.severity;
-  const lamp = site.status !== "active" ? "bg-warn" : worst === "critical" ? "bg-bad" : worst === "warning" ? "bg-warn" : "bg-ok";
-  const lampTitle = site.status !== "active" ? t("Askıda") : issues.length > 0 ? issues.map((issue) => t(issue.label)).join(", ") : t("Yayında");
+  const tone = site.status !== "active" ? "warn" : worst === "critical" ? "bad" : worst === "warning" ? "warn" : "ok";
+  const lamp = tone === "ok" ? "bg-ok" : tone === "bad" ? "bg-bad" : "bg-warn";
+  const statusText = site.status !== "active" ? t("Askıda") : issues.length > 0 ? t(issues[0].label) : t("Yayında");
+  const statusTitle = issues.length > 1 ? issues.map((issue) => t(issue.label)).join(", ") : undefined;
+  const quick = siteTools(site, me, summary, options).filter((tool) => QUICK_TOOLS.includes(tool.id));
   return (
-    <li className={classNames("overflow-hidden rounded-2xl border border-line bg-surface shadow-card", nested && "ml-4 sm:ml-10")}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-3 py-3.5 sm:gap-x-4 sm:px-4 sm:py-4">
+    <li className={classNames("transition-colors", expanded && "bg-sunken/40")}>
+      <div className={classNames(ROW_GRID, "px-3 py-3 sm:px-4")}>
         <button
           type="button"
           aria-expanded={expanded}
@@ -374,14 +394,10 @@ function SiteCard({
         >
           <ChevronRight className={classNames("size-4 transition-transform", expanded && "rotate-90")} />
         </button>
-        <span
-          aria-hidden
-          title={lampTitle}
-          className={classNames("size-2.5 shrink-0 rounded-full ring-4", lamp, lamp === "bg-ok" ? "ring-ok-soft" : lamp === "bg-bad" ? "ring-bad-soft" : "ring-warn-soft")}
-        />
-        <div className="min-w-0 flex-1 max-sm:basis-[calc(100%-5rem)]">
+        <div className={classNames("min-w-0 flex-1 max-lg:basis-[calc(100%-4rem)]", nested && "lg:pl-5")}>
           <div className="flex items-center gap-2">
-            <Link to={`/sites/${site.id}`} className="truncate font-mono text-[16px] font-medium tracking-[-0.01em] hover:text-accent">
+            {nested && <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-ink-3 max-lg:hidden" />}
+            <Link to={`/sites/${site.id}`} className="truncate font-mono text-[15.5px] font-medium tracking-[-0.01em] hover:text-accent">
               {site.domain}
             </Link>
             <a
@@ -394,60 +410,76 @@ function SiteCard({
             >
               <ExternalLink className="size-3.5" />
             </a>
-            {site.status !== "active" && <Badge tone="warn">{t("Askıda")}</Badge>}
           </div>
-          {site.aliases.length > 0 && <p className="truncate font-mono text-[12.5px] text-ink-3">{site.aliases.join(", ")}</p>}
-          {issues.length > 0 && (
-            <p className={classNames("truncate text-[13px] font-medium", worst === "critical" ? "text-bad" : worst === "warning" ? "text-warn" : "text-ink-2")}>
-              {issues.map((issue) => t(issue.label)).join(" · ")}
-            </p>
-          )}
-        </div>
-        <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13.5px] max-sm:min-w-0 max-sm:flex-1 max-sm:pl-1 sm:gap-x-5">
-          <div>
-            <dt className="sr-only">{t("Tür")}</dt>
-            <dd>
-              <Badge>{siteKindLabel(site)}</Badge>
-            </dd>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <dt className="sr-only">SSL</dt>
-            <dd className={classNames("flex items-center gap-1.5", site.ssl_mode === "none" ? "text-ink-3" : "text-ink-2")}>
-              {site.ssl_mode === "none" ? <LockOpen aria-hidden className="size-3.5" /> : <Lock aria-hidden className="size-3.5 text-ok" />}
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[13px] text-ink-3">
+            <span>{siteKindLabel(site)}</span>
+            <span className="flex items-center gap-1">
+              {site.ssl_mode === "none" ? <LockOpen aria-hidden className="size-3" /> : <Lock aria-hidden className="size-3 text-ok" />}
               {site.ssl_mode === "none" ? t("SSL yok") : "SSL"}
-            </dd>
-          </div>
-          {summary?.uptime_day != null && (
-            <div className="max-sm:hidden">
-              <dt className="sr-only">{t("Son 24 saatte erişilebilirlik")}</dt>
-              <dd
-                className={classNames("tabular font-mono text-[13px]", summary.uptime_day >= 99.9 ? "text-ink-3" : summary.uptime_day >= 99 ? "text-warn" : "text-bad")}
-                title={t("Son 24 saatte erişilebilirlik; son yanıt {millis} ms", { millis: summary.response_millis ?? 0 })}
-              >
-                %{summary.uptime_day.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}
-                {summary.response_millis != null && <span className="text-ink-3"> · {summary.response_millis === 0 ? "<1" : summary.response_millis} ms</span>}
-              </dd>
-            </div>
+            </span>
+            {showOwner && (
+              <span className="flex items-center gap-1">
+                <UserRound aria-hidden className="size-3" />
+                <span className="font-mono">{site.owner}</span>
+              </span>
+            )}
+            {site.aliases.length > 0 && <span className="truncate font-mono">{site.aliases.join(", ")}</span>}
+          </p>
+        </div>
+        <p className="flex min-w-0 items-center gap-2 text-[13.5px]" title={statusTitle}>
+          <span aria-hidden className={classNames("size-2 shrink-0 rounded-full", lamp)} />
+          <span className={classNames("truncate", tone === "ok" ? "text-ink" : tone === "bad" ? "font-medium text-bad" : "font-medium text-warn")}>{statusText}</span>
+          {summary?.uptime_day != null && tone === "ok" && summary.uptime_day < 99.9 && (
+            <span className="tabular font-mono text-[12.5px] text-warn" title={t("Son 24 saatte erişilebilirlik")}>
+              %{summary.uptime_day.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}
+            </span>
           )}
-          {showOwner && (
-            <div className="flex items-center gap-1.5">
-              <dt className="sr-only">{t("Sahibi")}</dt>
-              <dd className="flex items-center gap-1.5 text-ink-2">
-                <UserRound aria-hidden className="size-3.5 text-ink-3" />
-                <Mono>{site.owner}</Mono>
-              </dd>
-            </div>
+        </p>
+        <p className="tabular font-mono text-[13px] text-ink-2 max-lg:hidden" title={t("Site klasörünün boyutu")}>
+          {summary?.disk_bytes != null ? formatBytes(summary.disk_bytes) : "—"}
+        </p>
+        <p className="tabular font-mono text-[13px] text-ink-2 max-lg:hidden" title={t("Bu ayki trafik")}>
+          {summary ? (
+            <>
+              {formatBytes(summary.month_bytes)}
+              <span className="text-ink-3">{t("/ay")}</span>
+            </>
+          ) : (
+            "—"
           )}
-        </dl>
-        <Link
-          to={`/sites/${site.id}`}
-          className="inline-flex h-8.5 items-center rounded-lg border border-line-strong bg-surface px-3.5 text-[13.5px] font-medium shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors hover:bg-sunken"
-        >
-          {t("Yönet")}
-        </Link>
+        </p>
+        <div className="ml-auto flex items-center justify-end gap-0.5">
+          {quick.map((tool) => (
+            <Link
+              key={tool.id}
+              to={tool.to}
+              title={tool.label}
+              aria-label={`${site.domain}: ${tool.label}`}
+              className="inline-flex size-8.5 items-center justify-center rounded-lg text-ink-3 transition-colors hover:bg-sunken hover:text-accent max-sm:hidden"
+            >
+              <tool.icon aria-hidden className="size-[17px]" />
+            </Link>
+          ))}
+          <Link
+            to={`/sites/${site.id}`}
+            className="ml-1.5 inline-flex h-8.5 items-center rounded-lg border border-line-strong bg-surface px-3.5 text-[13.5px] font-medium shadow-[0_1px_1px_rgb(21_32_43/0.04)] transition-colors hover:bg-sunken"
+          >
+            {t("Yönet")}
+          </Link>
+        </div>
       </div>
       {expanded && (
-        <div id={panelId} className="overflow-hidden border-t border-line">
+        <div id={panelId} className="border-t border-line bg-surface">
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 border-b border-line px-5 py-3 text-[13.5px] lg:hidden">
+            <div className="flex gap-2">
+              <dt className="text-ink-3">{t("Disk")}</dt>
+              <dd className="tabular font-mono">{summary?.disk_bytes != null ? formatBytes(summary.disk_bytes) : "—"}</dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-ink-3">{t("Bu ayki trafik")}</dt>
+              <dd className="tabular font-mono">{summary ? formatBytes(summary.month_bytes) : "—"}</dd>
+            </div>
+          </dl>
           <SiteToolGrid site={site} summary={summary} options={options} />
         </div>
       )}
@@ -640,7 +672,16 @@ export function SitesPage() {
                 <EmptyState title={t("Aramanıza uyan site yok")} description={t("Alan adının bir bölümünü ya da hesabın adını yazmayı deneyin.")} />
               </Panel>
             ) : (
-              <ul className="flex flex-col gap-4">
+              <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+                <div className={classNames(ROW_GRID, "border-b border-line bg-sunken/50 px-3 py-2 text-[12.5px] font-medium text-ink-3 max-lg:hidden sm:px-4")}>
+                  <span />
+                  <span>{t("Alan adı")}</span>
+                  <span>{t("Durum")}</span>
+                  <span>{t("Disk")}</span>
+                  <span>{t("Trafik")}</span>
+                  <span />
+                </div>
+                <ul className="divide-y divide-line">
                 {visible.map((site) => (
                   <SiteCard
                     key={site.id}
@@ -653,7 +694,8 @@ export function SitesPage() {
                     nested={isSubdomain(site)}
                   />
                 ))}
-              </ul>
+                </ul>
+              </div>
             )}
           </>
         )}

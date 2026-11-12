@@ -363,6 +363,12 @@ pub fn site_stats(db: &Db, site_id: i64, days: i64) -> AppResult<SiteStats> {
 }
 
 /// Hesabın bütün sitelerinin içinde bulunulan ayda aktardığı veri (bayt).
+/// Sitenin bu ayki trafiği (bayt).
+pub fn site_month_bytes(db: &Db, site_id: i64) -> AppResult<i64> {
+    let month_start = day_key(now()) / 100 * 100;
+    Ok(db.call(|conn| conn.query_row("SELECT COALESCE(SUM(bytes), 0) FROM site_stats_daily WHERE site_id = ?1 AND day > ?2", params![site_id, month_start], |row| row.get(0)))?)
+}
+
 pub fn account_month_bytes(db: &Db, account_id: i64) -> AppResult<i64> {
     let month_start = day_key(now()) / 100 * 100;
     db.call(|conn| {
