@@ -104,6 +104,7 @@ pub fn spawn_wordpress_scan(state: AppState) {
 /// Not: `main.rs`e dokunmamak için `spawn_dkim_owner_sync` içinden başlatılır.
 fn spawn_mail_depth(state: AppState) {
     crate::mail::autoconfig::init(&state.cfg);
+    let owner_state = state.clone();
     let policy_state = state.clone();
     tokio::spawn(async move { crate::mail::policy::run(policy_state).await });
     tokio::spawn(async move {
@@ -116,8 +117,29 @@ fn spawn_mail_depth(state: AppState) {
                 if let Err(err) = crate::mail::autoconfig::sync_nginx(&state.db).await {
                     tracing::warn!(error = %err, "posta istemcisi otomatik ayarı nginx yapılandırması yenilenemedi");
                 }
+                drop(_guard);
+                // Karantinada 14 günden uzun kalan iletiler silinir (Postfix bekletme kuyruğu).
+                match crate::mail::quarantine::purge_expired(now()).await {
+                    Ok(0) => {}
+                    Ok(count) => tracing::info!(count, "süresi dolan karantina iletileri silindi"),
+                    Err(err) => tracing::warn!(error = %err, "karantina temizliği yapılamadı"),
+                }
             }
             tokio::time::sleep(Duration::from_secs(600)).await;
+        }
+    });
+    // Kutu sahibi özellikleri (parola değiştirme, ManageSieve, panel betiği ayrımı): var olan kurulumlar
+    // panel açılırken bir kez yeni düzene geçirilir; web postasının yapılandırması da yenilenir.
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let _guard = owner_state.sys_lock.lock().await;
+        if crate::dbtools::installed().roundcube {
+            if let Err(err) = crate::dbtools::ensure_runtime(&owner_state.cfg).await {
+                tracing::warn!(error = %err, "web postası yapılandırması yenilenemedi");
+            }
+        }
+        if let Err(err) = crate::mail::upgrade_owner_features(&owner_state.db, &owner_state.cfg).await {
+            tracing::warn!(error = %err, "posta sunucusu kutu sahibi özelliklerine geçirilemedi");
         }
     });
 }

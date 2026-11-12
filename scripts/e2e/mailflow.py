@@ -23,7 +23,8 @@ context = ssl._create_unverified_context()
 def send(login, sender, recipient, subject, port=587):
     message = EmailMessage()
     message["From"], message["To"], message["Subject"] = sender, recipient, subject
-    message.set_content("merhaba")
+    # Gövde MAIL_BODY ile değiştirilebilir (ör. GTUBE sınama dizgisi); alıcı virgülle ayrılmış birden çok adres olabilir.
+    message.set_content(os.environ.get("MAIL_BODY", "merhaba"))
     try:
         if port == 465:
             smtp = smtplib.SMTP_SSL(HOST, port, context=context, timeout=20)

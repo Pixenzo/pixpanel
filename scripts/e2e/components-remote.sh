@@ -184,6 +184,7 @@ suite portguard node-22
 suite dkim mail
 suite mail-depth mail
 suite mail-import mail
+suite mail-owner mail roundcube
 suite migrate php-8.3 mariadb
 suite staging php-8.3 mariadb
 systemctl stop pxmocks 2>/dev/null

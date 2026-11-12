@@ -265,7 +265,11 @@
     "Sistem güncellemesi kurdu",
     "Sunucuyu yeniden başlattı",
     "Yeniden başlatmayı iptal etti",
-    "Bileşen kaldırdı"
+    "Bileşen kaldırdı",
+    "Kutu sahibi parolasını değiştirdi",
+    "Karantinadan ileti bıraktı",
+    "Karantinadan ileti sildi",
+    "Karantinadan toplu ileti sildi"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",

@@ -40,6 +40,60 @@ const SIGNON_TEMPLATE: &str = include_str!("signon.php");
 const PMA_CONFIG_TEMPLATE: &str = include_str!("pma-config.php");
 const ADMINER_TEMPLATE: &str = include_str!("adminer.php");
 const ROUNDCUBE_TEMPLATE: &str = include_str!("roundcube-config.php");
+/// Roundcube `password` eklentisinin panele bağlanan sürücüsü.
+const PASSWORD_DRIVER: &str = include_str!("roundcube-password-driver.php");
+const ROUNDCUBE_PLUGINS: &str = "/usr/share/roundcube/plugins";
+/// Web postası ile panelin paylaştığı gizli anahtar (yalnızca root okur; Roundcube yapılandırmasına da yazılır).
+const WEBMAIL_KEY_FILE: &str = "/var/lib/pixpanel/tools/roundcube/api_key";
+/// Kutu sahibinin parola değiştirme ucu (panelin oturumsuz ucu).
+const PASSWORD_ENDPOINT: &str = "/api/v1/mail/public/password";
+
+/// Eklentilerin yapılandırma dosyaları; içeriklerinde sır yoktur (sır ana yapılandırmadadır).
+const PASSWORD_PLUGIN_CONFIG: &str = "<?php
+// PixPanel tarafından üretildi. Elle yapılan değişiklikler kaybolur.
+$config['password_driver'] = 'pixpanel';
+$config['password_confirm_current'] = true;
+$config['password_minimum_length'] = 10;
+$config['password_log'] = false;
+";
+const MANAGESIEVE_PLUGIN_CONFIG: &str = "<?php
+// PixPanel tarafından üretildi. Elle yapılan değişiklikler kaybolur.
+// Dovecot ManageSieve yalnızca 127.0.0.1'de dinler ve STARTTLS ister; sertifika yerel olduğundan doğrulanmaz.
+$config['managesieve_host'] = 'tls://127.0.0.1:4190';
+$config['managesieve_conn_options'] = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]];
+$config['managesieve_default'] = '';
+$config['managesieve_vacation'] = 1;
+$config['managesieve_forward'] = 0;
+$config['managesieve_raw_editor'] = true;
+";
+
+/// Web postasının panelle paylaştığı gizli anahtar (yoksa `None`).
+pub fn webmail_api_key() -> Option<String> {
+    std::fs::read_to_string(WEBMAIL_KEY_FILE).ok().map(|key| key.trim().to_string()).filter(|key| key.len() >= 32)
+}
+
+/// Eklentinin yapılandırma dosyasının yazılacağı yer: Debian'da `config.inc.php` /etc altındaki
+/// dosyaya sembolik bağdır; bağ izlenir (bağın kendisi yerine hedefi yazılır).
+fn plugin_config_path(name: &str) -> PathBuf {
+    let path = Path::new(ROUNDCUBE_PLUGINS).join(name).join("config.inc.php");
+    match std::fs::read_link(&path) {
+        Ok(target) if target.is_absolute() => target,
+        Ok(target) => path.parent().map(|parent| parent.join(target)).unwrap_or(path),
+        Err(_) => path,
+    }
+}
+
+/// Panelin web postasından gelen çağrıları kabul ettiği adres (panelin kendi dinleme adresi).
+fn panel_password_url(cfg: &Config) -> String {
+    let scheme = if cfg.tls { "https" } else { "http" };
+    let host = match cfg.listen_addr {
+        std::net::IpAddr::V4(ip) if ip.is_unspecified() => "127.0.0.1".to_string(),
+        std::net::IpAddr::V6(ip) if ip.is_unspecified() => "[::1]".to_string(),
+        std::net::IpAddr::V4(ip) => ip.to_string(),
+        std::net::IpAddr::V6(ip) => format!("[{ip}]"),
+    };
+    format!("{scheme}://{host}:{}{PASSWORD_ENDPOINT}", cfg.listen_port)
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Installed {
@@ -154,14 +208,44 @@ pub async fn ensure_runtime(cfg: &Config) -> AppResult<()> {
                 key
             }
         };
+        // Panelle paylaşılan gizli anahtar bir kez üretilir ve korunur (yalnızca root okur).
+        let api_key = match webmail_api_key() {
+            Some(key) => key,
+            None => {
+                let key = auth::random_token(24);
+                atomic_write(Path::new(WEBMAIL_KEY_FILE), key.as_bytes(), 0o600)?;
+                key
+            }
+        };
+        // Eklentiler yalnızca kuruluysa (roundcube-plugins paketi) etkinleştirilir.
+        let plugin_installed = |name: &str| Path::new(ROUNDCUBE_PLUGINS).join(name).is_dir();
+        let mut plugins = vec!["'archive'", "'zipdownload'"];
+        if plugin_installed("password") {
+            plugins.push("'password'");
+        }
+        if plugin_installed("managesieve") {
+            plugins.push("'managesieve'");
+        }
         let config = ROUNDCUBE_TEMPLATE
             .replace("{{db_file}}", &data.join("roundcube.db").to_string_lossy())
             .replace("{{des_key}}", &des_key)
             .replace("{{secure}}", secure)
-            .replace("{{temp_dir}}", &temp.to_string_lossy());
-        // Dosya şifreleme anahtarını içerdiğinden yalnızca havuzun grubu okuyabilir.
+            .replace("{{temp_dir}}", &temp.to_string_lossy())
+            .replace("{{plugins}}", &plugins.join(", "))
+            .replace("{{panel_url}}", &panel_password_url(cfg))
+            .replace("{{api_key}}", &api_key);
+        // Dosya şifreleme ve panel anahtarını içerdiğinden yalnızca havuzun grubu okuyabilir.
         if write_if_changed(Path::new(ROUNDCUBE_CONFIG), &config, 0o640)? {
             std::os::unix::fs::chown(ROUNDCUBE_CONFIG, Some(0), Some(web_gid))?;
+        }
+        // Kutu sahibinin parola değiştirme sürücüsü ve eklenti ayarları (sır içermez, herkese okunur).
+        if plugin_installed("password") {
+            let driver = Path::new(ROUNDCUBE_PLUGINS).join("password").join("drivers").join("pixpanel.php");
+            write_if_changed(&driver, PASSWORD_DRIVER, 0o644)?;
+            write_if_changed(&plugin_config_path("password"), PASSWORD_PLUGIN_CONFIG, 0o644)?;
+        }
+        if plugin_installed("managesieve") {
+            write_if_changed(&plugin_config_path("managesieve"), MANAGESIEVE_PLUGIN_CONFIG, 0o644)?;
         }
         // Web postası `/tools/` altında değil, kendi yolunda yayınlanır.
         let path = web_root.join("webmail");

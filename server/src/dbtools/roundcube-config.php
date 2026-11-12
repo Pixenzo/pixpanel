@@ -19,7 +19,15 @@ $config['product_name'] = 'PixPanel Web Postası';
 $config['support_url'] = '';
 $config['skin'] = 'elastic';
 $config['language'] = 'tr_TR';
-$config['plugins'] = ['archive', 'zipdownload'];
+// `password`: kutu sahibi parolasını panelin oturumsuz ucu üzerinden değiştirir (sürücü `pixpanel`);
+// `managesieve`: kutu sahibi kendi filtrelerini ve otomatik yanıtını yönetir (Dovecot ManageSieve).
+// İkisinin ayarları eklentilerin kendi yapılandırma dosyalarındadır (PixPanel üretir).
+$config['plugins'] = [{{plugins}}];
+
+// Parola sürücüsünün panele bağlandığı adres ve ortak anahtar. Anahtar, panelin web postasından gelen
+// ziyaretçi adresini (hız sınırı için) kabul etmesini sağlar; bu dosya yalnızca web grubuna okunur.
+$config['pixpanel_api_url'] = '{{panel_url}}';
+$config['pixpanel_api_key'] = '{{api_key}}';
 $config['enable_spellcheck'] = false;
 $config['enable_installer'] = false;
 

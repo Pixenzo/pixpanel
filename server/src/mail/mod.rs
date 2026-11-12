@@ -7,7 +7,9 @@
 
 pub mod autoconfig;
 pub mod import;
+pub mod owner;
 pub mod policy;
+pub mod quarantine;
 pub mod sieve;
 
 use std::path::{Path, PathBuf};
@@ -267,6 +269,23 @@ pub fn load_mailbox(db: &Db, id: i64) -> AppResult<Mailbox> {
     Ok(mailbox)
 }
 
+/// Adresine göre etkin kutuyu ve alan adının sahibi hesabın numarasını bulur (kutu sahibinin
+/// oturumsuz işlemleri için). Kapalı ya da var olmayan kutu için `None`.
+pub fn find_enabled_mailbox(db: &Db, local: &str, domain: &str) -> AppResult<Option<(Mailbox, i64)>> {
+    let found = db.call(|conn| {
+        conn.query_row(
+            &format!(
+                "SELECT {MAILBOX_COLUMNS}, d.user_id FROM mailboxes m JOIN mail_domains d ON d.id = m.domain_id
+                 WHERE m.local = ?1 AND d.domain = ?2 AND m.enabled = 1"
+            ),
+            params![local, domain],
+            |row| Ok((read_mailbox(row)?, row.get::<_, i64>(13)?)),
+        )
+        .optional()
+    })?;
+    Ok(found)
+}
+
 pub fn save_mailbox(db: &Db, mailbox: &Mailbox) -> AppResult<()> {
     let (auto_reply, filters) = (to_json(&mailbox.auto_reply)?, to_json(&mailbox.filters)?);
     db.call(|conn| {
@@ -369,8 +388,45 @@ async fn as_vmail(cwd: &Path, program: &str, args: &[&str], stdin: Option<&[u8]>
     Ok(if output.status.success() { Ok(stdout) } else { Err(if stderr.trim().is_empty() { stdout } else { stderr }) })
 }
 
-/// Kutunun Sieve betiğini kurallarına göre yazar ya da (kural yoksa) kaldırır.
-/// Betik derlenemezse etkinleştirilmez ve hata döner.
+/// Panelin ürettiği Sieve betiğinin klasörü (kutu klasörünün içinde). Dovecot'ta `sieve_script panel`
+/// (`type = before`) olarak tanımlıdır: betik kutu sahibinin kendi betiğinden ÖNCE çalışır. Klasör
+/// ManageSieve'in gördüğü kişisel betik klasörünün (`sieve/`) dışındadır; kutu sahibi bu betiği
+/// ne görebilir, ne değiştirebilir, ne de silebilir.
+const PANEL_SIEVE_DIR: &str = "sieve-before";
+/// Kutu sahibinin ManageSieve ile yönettiği kişisel betik klasörü (Dovecot `sieve_script personal`).
+const PERSONAL_SIEVE_DIR: &str = "sieve";
+const PANEL_SIEVE_FILE: &str = "pixpanel.sieve";
+
+/// Kutunun klasörlerini (panel betiği ve kişisel betikler) oluşturur.
+async fn ensure_sieve_dirs(root: &Path, home_str: &str) -> AppResult<()> {
+    as_vmail(root, "mkdir", &["-p", "--", &format!("{home_str}/{PERSONAL_SIEVE_DIR}"), &format!("{home_str}/{PANEL_SIEVE_DIR}")], None)
+        .await?
+        .map_err(|detail| AppError::internal(format!("Kutu klasörü oluşturulamadı: {}", detail.trim())))?;
+    Ok(())
+}
+
+/// Eski düzenin (panel betiği kutu sahibinin betik klasöründe ve `.dovecot.sieve` ile etkin) artıklarını
+/// siler; yalnızca geçişte (`migrate_sieve_layout`) çağrılır. Kutu sahibinin kendi etkin betiğine
+/// dokunulmaz: `.dovecot.sieve` yalnızca eski panel betiğine işaret ediyorsa kaldırılır.
+async fn remove_legacy_sieve(root: &Path, home_str: &str) {
+    let active = format!("{home_str}/.dovecot.sieve");
+    if let Ok(Ok(target)) = as_vmail(root, "readlink", &["--", &active], None).await {
+        if target.trim() == "sieve/pixpanel.sieve" {
+            let _ = as_vmail(root, "rm", &["-f", "--", &active, &format!("{home_str}/.dovecot.svbin")], None).await;
+        }
+    }
+    let legacy: Vec<String> = ["pixpanel.sieve", "pixpanel.svbin", "pixpanel.new.sieve", "pixpanel.new.svbin"]
+        .iter()
+        .map(|name| format!("{home_str}/{PERSONAL_SIEVE_DIR}/{name}"))
+        .collect();
+    let mut args = vec!["-f", "--"];
+    args.extend(legacy.iter().map(String::as_str));
+    let _ = as_vmail(root, "rm", &args, None).await;
+}
+
+/// Kutunun panel Sieve betiğini kurallarına göre yazar ya da (kural yoksa) kaldırır.
+/// Betik derlenemezse etkinleştirilmez ve hata döner. Kutu sahibinin kendi (ManageSieve) betiğine
+/// dokunulmaz; panel betiği ondan önce çalışır.
 pub async fn apply_sieve(mailbox: &Mailbox) -> AppResult<()> {
     let (local, domain) = mailbox.address.split_once('@').ok_or_else(|| AppError::internal("adres bozuk"))?;
     let home = mailbox_home(domain, local);
@@ -378,25 +434,52 @@ pub async fn apply_sieve(mailbox: &Mailbox) -> AppResult<()> {
     let home_str = home.to_string_lossy().into_owned();
     let run = |result: Result<String, String>, what: &str| result.map_err(|detail| AppError::internal(format!("{what}: {}", detail.trim())));
 
-    run(as_vmail(root, "mkdir", &["-p", "--", &format!("{home_str}/sieve")], None).await?, "Kutu klasörü oluşturulamadı")?;
-    let active = format!("{home_str}/.dovecot.sieve");
+    ensure_sieve_dirs(root, &home_str).await?;
+    let target = format!("{home_str}/{PANEL_SIEVE_DIR}/{PANEL_SIEVE_FILE}");
+    let target_binary = format!("{home_str}/{PANEL_SIEVE_DIR}/pixpanel.svbin");
     if !sieve::is_needed(&mailbox.filters, &mailbox.auto_reply, &mailbox.forward_to) {
-        run(as_vmail(root, "rm", &["-f", "--", &active, &format!("{home_str}/.dovecot.svbin")], None).await?, "Betik kaldırılamadı")?;
+        run(as_vmail(root, "rm", &["-f", "--", &target, &target_binary], None).await?, "Betik kaldırılamadı")?;
         return Ok(());
     }
 
     let script = sieve::render(&mailbox.address, &mailbox.filters, &mailbox.auto_reply, &mailbox.forward_to, mailbox.forward_keep);
-    // Önce geçici adla yazılıp derlenir; hatalı betik etkin betiğin yerini almaz.
-    let candidate = format!("{home_str}/sieve/pixpanel.new.sieve");
-    let target = format!("{home_str}/sieve/pixpanel.sieve");
+    // Önce Dovecot'un taramadığı bir yere yazılıp derlenir; hatalı betik etkin betiğin yerini almaz.
+    let candidate = format!("{home_str}/pixpanel-new.sieve");
+    let candidate_binary = format!("{home_str}/pixpanel-new.svbin");
     run(as_vmail(root, "tee", &["--", &candidate], Some(script.as_bytes())).await?, "Betik yazılamadı")?;
     if let Err(detail) = as_vmail(root, "sievec", &["--", &candidate], None).await? {
-        let _ = as_vmail(root, "rm", &["-f", "--", &candidate], None).await;
+        let _ = as_vmail(root, "rm", &["-f", "--", &candidate, &candidate_binary], None).await;
         return Err(AppError::bad(format!("Kurallar uygulanamadı: {}", detail.trim())));
     }
     run(as_vmail(root, "mv", &["-f", "--", &candidate, &target], None).await?, "Betik etkinleştirilemedi")?;
-    let _ = as_vmail(root, "rm", &["-f", "--", &format!("{home_str}/sieve/pixpanel.new.svbin")], None).await;
-    run(as_vmail(root, "ln", &["-sfn", "--", "sieve/pixpanel.sieve", &active], None).await?, "Betik etkinleştirilemedi")?;
+    // Eski derlenmiş sürüm silinir; Dovecot yeni betiği ilk teslimde yeniden derler.
+    let _ = as_vmail(root, "rm", &["-f", "--", &candidate_binary, &target_binary], None).await;
+    Ok(())
+}
+
+/// Var olan her kutuyu yeni Sieve düzenine geçirir: panel betiği `sieve-before/` altına yazılır,
+/// eski düzenin artıkları silinir, her kutuya ManageSieve için `sieve/` klasörü açılır.
+/// Dovecot'un yeni yapılandırması (`write_dovecot`) yazıldıktan sonra çağrılır.
+pub async fn migrate_sieve_layout(db: &Db) -> AppResult<()> {
+    let mut failures = 0;
+    for mailbox in list_mailboxes(db, None)? {
+        match apply_sieve(&mailbox).await {
+            // Eski düzenin artıkları, yeni betik yerine yazıldıktan sonra silinir (kural kaybı olmasın).
+            // Yalnızca geçişte yapılır: sonradan kutu sahibinin açtığı "pixpanel" adlı kendi betiğine dokunulmaz.
+            Ok(()) => {
+                if let Some((local, domain)) = mailbox.address.split_once('@') {
+                    remove_legacy_sieve(Path::new(MAIL_ROOT), &mailbox_home(domain, local).to_string_lossy()).await;
+                }
+            }
+            Err(err) => {
+                failures += 1;
+                tracing::warn!(error = %err, mailbox = %mailbox.address, "kutunun Sieve düzeni yeni biçime geçirilemedi");
+            }
+        }
+    }
+    if failures > 0 {
+        return Err(AppError::internal(format!("{failures} kutunun Sieve düzeni geçirilemedi")));
+    }
     Ok(())
 }
 
@@ -660,11 +743,24 @@ pub struct SpamSettings {
     pub whitelist: Vec<String>,
     /// Her zaman reddedilen gönderenler.
     pub blacklist: Vec<String>,
+    /// Reddetme eşiğini aşan iletilere ne yapılacağı: `reject` (SMTP'de reddet, varsayılan) ya da
+    /// `quarantine` (reddetmek yerine karantinaya al; panelden bırakılır ya da silinir).
+    pub reject_action: String,
 }
+
+pub const REJECT_ACTIONS: [&str; 2] = ["reject", "quarantine"];
 
 impl Default for SpamSettings {
     fn default() -> Self {
-        Self { reject_score: 15.0, junk_score: 6.0, greylisting: true, greylist_score: 4.0, whitelist: Vec::new(), blacklist: Vec::new() }
+        Self {
+            reject_score: 15.0,
+            junk_score: 6.0,
+            greylisting: true,
+            greylist_score: 4.0,
+            whitelist: Vec::new(),
+            blacklist: Vec::new(),
+            reject_action: "reject".into(),
+        }
     }
 }
 
@@ -678,6 +774,9 @@ fn normalize_sender_entry(value: &str) -> AppResult<String> {
 
 impl SpamSettings {
     pub fn normalized(mut self) -> AppResult<Self> {
+        if !REJECT_ACTIONS.contains(&self.reject_action.as_str()) {
+            return Err(AppError::bad("Reddetme eşiğini aşan iletiler için geçersiz işlem (reject ya da quarantine olmalı)"));
+        }
         let in_range = |value: f64| (0.5..=100.0).contains(&value);
         if !in_range(self.reject_score) || !in_range(self.junk_score) || !in_range(self.greylist_score) {
             return Err(AppError::bad("Puan eşikleri 0,5 ile 100 arasında olmalı"));
@@ -893,6 +992,22 @@ async fn write_rspamd(spam: &SpamSettings) -> AppResult<()> {
     for (name, content) in &files {
         atomic_write(&local.join(name), content.as_bytes(), 0o644)?;
     }
+    // Karantina kipi: Rspamd milter'ı reddedilecek iletiler için Postfix'e "karantina" (bekletme kuyruğu)
+    // komutu gönderir. Dosyanın panele ait olmayan satırlarına dokunulmaz.
+    let proxy_path = local.join("worker-proxy.inc");
+    let proxy_previous = std::fs::read_to_string(&proxy_path).ok();
+    match quarantine::proxy_config(proxy_previous.as_deref(), spam.reject_action == "quarantine") {
+        Some(content) => {
+            if proxy_previous.as_deref() != Some(content.as_str()) {
+                atomic_write(&proxy_path, content.as_bytes(), 0o644)?;
+            }
+        }
+        None => {
+            if proxy_previous.is_some() {
+                std::fs::remove_file(&proxy_path)?;
+            }
+        }
+    }
     let test = exec::run("rspamadm", &["configtest"]).await?;
     if !test.success() {
         for ((name, _), content) in files.iter().zip(previous) {
@@ -901,6 +1016,12 @@ async fn write_rspamd(spam: &SpamSettings) -> AppResult<()> {
                 None => {
                     let _ = std::fs::remove_file(local.join(name));
                 }
+            }
+        }
+        match proxy_previous {
+            Some(content) => atomic_write(&proxy_path, content.as_bytes(), 0o644)?,
+            None => {
+                let _ = std::fs::remove_file(&proxy_path);
             }
         }
         return Err(AppError::bad(format!("Rspamd ayarları geçersiz: {}", test.stdout.trim())));
@@ -921,6 +1042,73 @@ pub fn set_hostname(db: &Db, value: &str) -> AppResult<String> {
     Ok(name)
 }
 
+/// Dovecot yapılandırmasını (ve genel "istenmeyen posta" Sieve betiğini) yazar, `doveconf -n` ile
+/// sınar; geçersizse eski dosyayı geri koyar. Servisi yeniden başlatmaz ya da yüklemez.
+async fn write_dovecot(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
+    let account = vmail()?;
+    let sieve_dir = Path::new(MAIL_DIR).join("sieve");
+    std::fs::create_dir_all(&sieve_dir)?;
+    let before = sieve_dir.join("before.sieve");
+    atomic_write(&before, BEFORE_SIEVE.as_bytes(), 0o644)?;
+    exec::run_ok("sievec", &["--", &before.to_string_lossy()]).await?;
+
+    let name = hostname(db);
+    let (cert, key) = tls_paths(cfg, &name);
+    let dovecot_conf = Path::new("/etc/dovecot/dovecot.conf");
+    let original = Path::new("/etc/dovecot/dovecot.conf.pixpanel-orig");
+    let previous = std::fs::read(dovecot_conf).ok();
+    if !original.exists() {
+        if let Some(content) = &previous {
+            std::fs::write(original, content)?;
+        }
+    }
+    let rendered = DOVECOT_TEMPLATE
+        .replace("{{users_file}}", &mail_file("dovecot-users").to_string_lossy())
+        .replace("{{mail_root}}", MAIL_ROOT)
+        .replace("{{vmail_uid}}", &account.uid.to_string())
+        .replace("{{tls_cert}}", &cert.to_string_lossy())
+        .replace("{{tls_key}}", &key.to_string_lossy())
+        .replace("{{sieve_before}}", &before.to_string_lossy())
+        .replace("{{panel_sieve_dir}}", PANEL_SIEVE_DIR);
+    if previous.as_deref() == Some(rendered.as_bytes()) {
+        return Ok(());
+    }
+    atomic_write(dovecot_conf, rendered.as_bytes(), 0o644)?;
+    let test = exec::run("doveconf", &["-n"]).await?;
+    if !test.success() {
+        if let Some(content) = previous {
+            atomic_write(dovecot_conf, &content, 0o644)?;
+        }
+        return Err(AppError::internal(format!("Dovecot yapılandırması geçersiz: {}", test.stderr.trim())));
+    }
+    Ok(())
+}
+
+/// Sieve düzeninin (panel betiği `sieve-before/` altında, ManageSieve yalnız 127.0.0.1'de) geçiş
+/// işareti: dosya varsa var olan kurulum yeni düzene geçirilmiştir.
+fn sieve_layout_marker() -> PathBuf {
+    mail_file("sieve-layout")
+}
+
+/// Kutu sahibinin kendi işleri (parola, ManageSieve) için gereken Dovecot yapılandırmasına ve Sieve
+/// düzenine var olan kurulumu panel açılırken bir kez geçirir. Sırası: yeni Dovecot yapılandırması
+/// yazılıp yüklenir, sonra her kutunun panel betiği yeni yere taşınır, en sonda işaret dosyası yazılır
+/// (bir adım başarısız olursa işaret yazılmaz, sonraki açılışta yeniden denenir).
+pub async fn upgrade_owner_features(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
+    if !is_installed() || sieve_layout_marker().exists() || sysuser::lookup(VMAIL_USER).is_none() || !Path::new("/etc/dovecot/dovecot.conf.pixpanel-orig").exists() {
+        return Ok(());
+    }
+    write_dovecot(db, cfg).await?;
+    if services::is_active("dovecot.service").await {
+        // managesieve-login dinleme adresini değiştirdiği için servis yeniden yüklenir.
+        exec::run_ok("systemctl", &["reload-or-restart", "dovecot.service"]).await?;
+    }
+    migrate_sieve_layout(db).await?;
+    atomic_write(&sieve_layout_marker(), b"2\n", 0o644)?;
+    tracing::info!("posta sunucusu kutu sahibi özelliklerine (ManageSieve, panel betiği ayrımı) geçirildi");
+    Ok(())
+}
+
 /// Postfix, Dovecot ve Rspamd'nin temel yapılandırmasını yazar ve servisleri
 /// yeniden başlatır. Tekrar tekrar çağrılabilir.
 pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
@@ -939,12 +1127,6 @@ pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
         std::fs::set_permissions(MAIL_ROOT, std::fs::Permissions::from_mode(0o750))?;
     }
 
-    let sieve_dir = Path::new(MAIL_DIR).join("sieve");
-    std::fs::create_dir_all(&sieve_dir)?;
-    let before = sieve_dir.join("before.sieve");
-    atomic_write(&before, BEFORE_SIEVE.as_bytes(), 0o644)?;
-    exec::run_ok("sievec", &["--", &before.to_string_lossy()]).await?;
-
     let name = hostname(db);
     let (cert, key) = tls_paths(cfg, &name);
     let (cert, key) = (cert.to_string_lossy().into_owned(), key.to_string_lossy().into_owned());
@@ -952,29 +1134,7 @@ pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
     sync(db).await?;
 
     // ---- Dovecot ----
-    let dovecot_conf = Path::new("/etc/dovecot/dovecot.conf");
-    let original = Path::new("/etc/dovecot/dovecot.conf.pixpanel-orig");
-    let previous = std::fs::read(dovecot_conf).ok();
-    if !original.exists() {
-        if let Some(content) = &previous {
-            std::fs::write(original, content)?;
-        }
-    }
-    let rendered = DOVECOT_TEMPLATE
-        .replace("{{users_file}}", &mail_file("dovecot-users").to_string_lossy())
-        .replace("{{mail_root}}", MAIL_ROOT)
-        .replace("{{vmail_uid}}", &account.uid.to_string())
-        .replace("{{tls_cert}}", &cert)
-        .replace("{{tls_key}}", &key)
-        .replace("{{sieve_before}}", &before.to_string_lossy());
-    atomic_write(dovecot_conf, rendered.as_bytes(), 0o644)?;
-    let test = exec::run("doveconf", &["-n"]).await?;
-    if !test.success() {
-        if let Some(content) = previous {
-            atomic_write(dovecot_conf, &content, 0o644)?;
-        }
-        return Err(AppError::internal(format!("Dovecot yapılandırması geçersiz: {}", test.stderr.trim())));
-    }
+    write_dovecot(db, cfg).await?;
 
     // ---- Postfix ----
     let map = |file: &str| format!("texthash:{}", mail_file(file).display());
@@ -1035,6 +1195,11 @@ pub async fn setup(db: &Db, cfg: &crate::config::Config) -> AppResult<()> {
     for (service, _) in SERVICES {
         exec::run_ok("systemctl", &["enable", "--quiet", "--", service]).await?;
         exec::run_ok("systemctl", &["restart", "--", service]).await?;
+    }
+    // Var olan kutuların panel betikleri yeni düzene taşınır (yeni kurulumda kutu yoktur).
+    match migrate_sieve_layout(db).await {
+        Ok(()) => atomic_write(&sieve_layout_marker(), b"2\n", 0o644)?,
+        Err(err) => tracing::warn!(error = %err, "Sieve düzeni geçişi tamamlanamadı; panel açılışında yeniden denenecek"),
     }
     Ok(())
 }
