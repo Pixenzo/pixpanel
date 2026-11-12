@@ -411,14 +411,14 @@ fn compress(paths: &[String], dest: &str, format: ArchiveFormat) -> OpResult<Val
 // gibi atlanır (`enclosed_name` ve tar'ın `unpack_in` kuralları); bu davranış değişmedi.
 
 /// Tek seferde açılabilecek en büyük toplam boyut.
-const MAX_EXTRACT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+pub(crate) const MAX_EXTRACT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 /// Bir arşivden açılabilecek en çok girdi (dosya ve klasör).
-const MAX_EXTRACT_ENTRIES: u64 = 200_000;
+pub(crate) const MAX_EXTRACT_ENTRIES: u64 = 200_000;
 /// Zip'te tek girdinin açılmış/sıkıştırılmış boyut oranı sınırı.
-const MAX_ZIP_RATIO: u64 = 1000;
+pub(crate) const MAX_ZIP_RATIO: u64 = 1000;
 /// Oran denetimi bundan küçük girdilere uygulanmaz (küçük bir metin dosyası yüksek oranla sıkışabilir;
 /// toplam boyut ve girdi sayısı sınırları zaten tüm arşivi sınırlar).
-const RATIO_MIN_SIZE: u64 = 1024 * 1024;
+pub(crate) const RATIO_MIN_SIZE: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ExtractLimits {
@@ -431,7 +431,7 @@ struct ExtractLimits {
 }
 
 /// Bayt sayısını okunur yazar (1,5 GB gibi).
-fn human_size(bytes: u64) -> String {
+pub(crate) fn human_size(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     let value = bytes as f64;
     if value >= KB * KB * KB {

@@ -448,13 +448,20 @@ async fn create(
         _ => NodeSettings::default(),
     };
 
+    let new = NewSite { user_id: owner_id, domain: domain_name, aliases, kind: body.kind, php_version, proxy_target, node: node_settings };
+    Ok(Json(create_site(&state, &user, new).await?))
+}
+
+/// Doğrulanmış site kaydını ekler, sisteme uygular (kullanıcı, klasörler, PHP havuzu, nginx) ve
+/// alan adının DNS'i panelde yönetiliyorsa adres kaydını açar. Yarıda kalırsa geride kayıt bırakmaz.
+/// Yedekten içe aktarma da siteyi aynı yoldan açar.
+pub(crate) async fn create_site(state: &AppState, user: &AuthUser, new: NewSite) -> AppResult<Site> {
+    let owner_id = new.user_id;
+    let domain_name = new.domain.clone();
     // Sistem dosyalarına dokunan işlemler sırayla yürür.
     let _guard = state.sys_lock.lock().await;
-    let id = sites::insert(
-        &state.db,
-        &NewSite { user_id: owner_id, domain: domain_name.clone(), aliases, kind: body.kind, php_version, proxy_target, node: node_settings },
-    )?;
-    let mut site = sites::get(&state.db, &user, id)?;
+    let id = sites::insert(&state.db, &new)?;
+    let mut site = sites::get(&state.db, user, id)?;
     // Hesaba ayrılmış adres varsa yeni site ona bağlanarak açılır.
     let dedicated: Option<String> = state.db.call(|conn| {
         conn.query_row("SELECT address FROM server_ips WHERE user_id = ?1 ORDER BY created_at, address LIMIT 1", params![owner_id], |row| row.get(0)).optional()
@@ -474,11 +481,11 @@ async fn create(
     // Alan adının DNS'i panelde yönetiliyorsa adres kaydı kendiliğinden eklenir.
     let mut names = vec![site.domain.clone()];
     names.extend(site.aliases.iter().cloned());
-    for line in crate::dns::add_site_records(&state, site.user_id, &names).await {
+    for line in crate::dns::add_site_records(state, site.user_id, &names).await {
         tracing::info!(domain = %site.domain, "DNS: {line}");
     }
-    auth::audit(&state.db, &user, "site.create", &domain_name, &site.kind);
-    Ok(Json(site))
+    auth::audit(&state.db, user, "site.create", &domain_name, &site.kind);
+    Ok(site)
 }
 
 #[derive(Deserialize)]

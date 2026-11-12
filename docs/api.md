@@ -61,7 +61,7 @@ Kurallar:
 
 - Kapsam yetkiyi **asla genişletmez**: sonuç, hesabın (alt hesapsa alt hesabın) yetkisiyle kapsamın kesişimidir. Alt hesap, kendi yetkisinde olmayan bir alanı kapsama alamaz (`400`). Bilinmeyen alan adı da `400`.
 - Kapsamlı anahtar yalnızca kapsamındaki alanların uçlarını çağırabilir; başka alanın ucu `403` verir.
-- Kapsamlı anahtar **alan dışı** uçlara hiç girmez (`403`): kullanıcılar, sunucu/sistem, hizmetler, güvenlik duvarı, fail2ban, bileşenler, terminal, PHP yönetimi, paketler, marka, bildirimler, web kancaları, olay akışı, oturum/anahtar/parola uçları, SFTP/SSH erişimi, genel Redis ve yedek yönetimi (`/backup` altında yalnızca `/backup/mine` hesap yedekleri `backups` alanıyla açıktır). Güvenli varsayılan budur: tabloda olmayan her uç kapsamlı anahtara kapalıdır.
+- Kapsamlı anahtar **alan dışı** uçlara hiç girmez (`403`): kullanıcılar, sunucu/sistem, hizmetler, güvenlik duvarı, fail2ban, bileşenler, terminal, PHP yönetimi, paketler, marka, bildirimler, web kancaları, olay akışı, oturum/anahtar/parola uçları, SFTP/SSH erişimi, genel Redis, yedek yönetimi (`/backup` altında yalnızca `/backup/mine` hesap yedekleri `backups` alanıyla açıktır) ve yedekten içe aktarma (`/migrate`). Güvenli varsayılan budur: tabloda olmayan her uç kapsamlı anahtara kapalıdır.
 - Her kapsamlı anahtarın girebildiği alan dışı uçlar yalnızca şunlardır: `GET /auth/me` (kimliği ve `token_scope` alanını okur) ve görev uçları (`/jobs...`; yalnızca kapsamdaki alanlara ait görevler görünür, sistem görevleri görünmez).
 - Alan–yol eşlemesi: `/sites/{id}/ssl...` `ssl`; `/sites/{id}/ftp...` `ftp`; `/sites...` (git, WordPress, Node dahil) `sites`; `/databases...` ve hesabın kendi Redis'i (`/redis/mine...`, `/redis/keys`, `/redis/key`, `/redis/command`, `/redis/flush`) `databases`; `/mail...` `mail`; `/dns...` `dns`; `/files...` `files`; `/cron...` `cron`; `/logs...` `logs`; `/docker...` `docker`; `/backup/mine...` `backups`.
 - Anahtar listesi (`GET /auth/tokens`) her anahtarın `scope` alanını gösterir (`null`: kapsam yok).
@@ -506,6 +506,17 @@ Docker uçlarının hepsi yönetici içindir; `docker` alanı kapsamlı bir yön
 | POST | `/fail2ban/ban` | Adresi engeller. | Yönetici |
 | POST | `/fail2ban/unban` | Adresin engelini kaldırır. | Yönetici |
 | GET | `/terminal/ws` | Tarayıcı terminali (WebSocket). | Yönetici |
+
+### Taşıma: yedek dosyasından içe aktarma (`/migrate`, yalnızca yönetici)
+
+Başka panelin (cPanel, Plesk, HestiaCP) yedek dosyasındaki siteleri ve veritabanlarını bu sunucuya aktarır. Önce yedek incelenir (güvenli geçici klasöre açılır, içindekiler listelenir), sonra seçilenler içe aktarılır. Kapsamlı API anahtarına kapalıdır. Denetim günlüğü eylemleri: `migrate.backup.inspect`, `migrate.backup.import`, `migrate.backup.delete`.
+
+| Yöntem | Yol | Açıklama | Yetki |
+| --- | --- | --- | --- |
+| POST | `/migrate/backup/inspect` | `{path}`: yedeğin sunucudaki mutlak yolunu (dosya ya da açılmış klasör) inceleme görevi olarak başlatır; `{inspect_id, job_id}` döner. | Yönetici |
+| GET | `/migrate/backup/{id}` | İncelemenin durumu (`running`, `ready`, `failed`) ve hazırsa önizleme (`manifest`: biçim, alan adları, veritabanları, posta kutusu adresleri, notlar). | Yönetici |
+| POST | `/migrate/backup/import` | `{inspect_id, owner_user_id, items: [{domain, target_domain?, databases: []}]}`: seçilenleri hedef hesaba içe aktarır (görev; hata olursa bu işlemde oluşturulanlar geri alınır). | Yönetici |
+| DELETE | `/migrate/backup/{id}` | İncelemenin geçici klasörünü siler (24 saat sonra kendiliğinden de silinir). | Yönetici |
 
 ---
 

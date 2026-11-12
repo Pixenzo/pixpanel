@@ -343,6 +343,8 @@ pub fn scope_gate(template: &str) -> ScopeGate {
         ["logs", ..] => ScopeGate::Area("logs"),
         ["docker", ..] => ScopeGate::Area("docker"),
         ["backup", "mine", ..] => ScopeGate::Area("backups"),
+        // Taşıma (yedekten içe aktarma): yalnızca yönetici oturumu; kapsamlı anahtara kapalı (alana eşlenmez).
+        ["migrate", ..] => ScopeGate::Deny,
         _ => ScopeGate::Deny,
     }
 }
@@ -587,6 +589,8 @@ mod scope_tests {
         assert_eq!(scope_gate("/api/v1/sites/{id}/ssl/letsencrypt"), ScopeGate::Area("ssl"));
         assert_eq!(scope_gate("/api/v1/sites/{id}/ftp/{account}"), ScopeGate::Area("ftp"));
         assert_eq!(scope_gate("/api/v1/redis/mine/enable"), ScopeGate::Area("databases"));
+        assert_eq!(scope_gate("/api/v1/migrate/backup/inspect"), ScopeGate::Deny);
+        assert_eq!(scope_gate("/api/v1/migrate/backup/{id}"), ScopeGate::Deny);
         assert_eq!(scope_gate("/api/v1/backup/mine/run"), ScopeGate::Area("backups"));
         for denied in [
             "/api/v1/users",

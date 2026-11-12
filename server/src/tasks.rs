@@ -36,6 +36,11 @@ pub fn spawn_db_tool_cleanup(state: AppState) {
             if let Err(err) = crate::dbtools::cleanup(&state.db).await {
                 tracing::warn!(error = %err, "geçici veritabanı hesapları temizlenemedi");
             }
+            // Yedekten içe aktarma için açılmış geçici klasörler 24 saat sonra silinir.
+            let cfg = state.cfg.clone();
+            if let Err(err) = tokio::task::spawn_blocking(move || crate::backup_import::cleanup_expired(&cfg)).await {
+                tracing::warn!(error = %err, "yedek içe aktarma geçici klasörleri temizlenemedi");
+            }
             tokio::time::sleep(Duration::from_secs(600)).await;
         }
     });
