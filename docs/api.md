@@ -165,6 +165,8 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | POST | `/sites/{id}/wordpress/update` | WordPress çekirdeğini günceller (görev). | `sites` |
 | POST | `/sites/{id}/wordpress/login` | Tek tıkla yönetici girişi bağlantısı üretir. | `sites` |
 | PUT | `/sites/{id}/wordpress/settings` | WordPress ayarlarını kaydeder. | `sites` |
+| GET | `/sites/{id}/wordpress/security` | WordPress güvenlik denetimi. | `sites` |
+| POST | `/sites/{id}/wordpress/security/fix` | Seçilen güvenlik maddelerini düzeltir. | `sites` |
 | GET | `/sites/{id}/wordpress/staging` | Hazırlık ortamı durumu. | `sites` |
 | POST | `/sites/{id}/wordpress/staging` | Hazırlık ortamı oluşturur (görev). | `sites` |
 | POST | `/sites/{id}/wordpress/staging/sync` | Hazırlık ortamını canlıya/canlıdan eşler (görev). | `sites` |
@@ -301,6 +303,8 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 | POST | `/dns/zones/{id}/dnssec` | DNSSEC'i açar/kapatır. | `dns` |
 | GET | `/dns/zones/{id}/export` | Bölgeyi BIND bölge dosyası olarak dışa aktarır (`{filename, content}`). | `dns` |
 | POST | `/dns/zones/{id}/import` | BIND biçiminde içe aktarır. | `dns` |
+| GET | `/dns/templates` | Hazır kayıt şablonları ve istedikleri alanlar. | `dns` |
+| POST | `/dns/zones/{id}/templates/{template}` | Şablonun kayıtlarını önizler ya da uygular. | `dns` |
 | POST | `/dns/zones/{id}/cloudflare` | Bölgenin Cloudflare ayarları (vekil, önbellek). | `dns` |
 | POST | `/dns/zones/{id}/purge` | Cloudflare önbelleğini temizler. | `dns` |
 | GET | `/dns/cloudflare` | Hesabın Cloudflare anahtarı durumu. | `dns` |

@@ -185,8 +185,10 @@ fn parse_checksums(output: &CmdOutput) -> Checksums {
         if path.is_empty() || path.starts_with("wp-content/") {
             continue;
         }
-        let in_core_dir = path.starts_with("wp-admin/") || path.starts_with("wp-includes/");
-        if kind == "modified" || in_core_dir {
+        // Yalnızca içeriği değişmiş dosyalar sayılır. "Eksik" ve "fazladan" dosya uyarıları güvenilir
+        // değildir: resmî sağlama listesi bazı sürümlerde paketin kendisiyle uyuşmaz (WordPress 7.1'de
+        // temiz kurulum onlarca böyle uyarı verir) ve her sitede yanlış alarm üretirdi.
+        if kind == "modified" {
             files.push(path.to_string());
         }
     }
@@ -612,8 +614,9 @@ define( 'WP_AUTO_UPDATE_CORE', 'minor' );
         );
         assert_eq!(parse_checksums(&noise), Checksums::Clean);
         // wp-includes içine bırakılmış fazladan dosya sayılır.
-        let extra = output(1, "Warning: File should not exist: wp-includes/kabuk.php\n");
-        assert_eq!(parse_checksums(&extra), Checksums::Modified { files: vec!["wp-includes/kabuk.php".into()] });
+        // Fazladan/eksik dosya uyarıları yanlış alarm ürettiği için sayılmaz.
+        let extra = output(1, "Warning: File should not exist: wp-includes/kabuk.php\nWarning: File doesn't exist: wp-includes/x.php\n");
+        assert_eq!(parse_checksums(&extra), Checksums::Clean);
         let offline = output(1, "Error: Couldn't fetch checksums.\n");
         assert!(matches!(parse_checksums(&offline), Checksums::Unknown(_)));
     }

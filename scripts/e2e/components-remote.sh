@@ -170,6 +170,7 @@ suite backup-ftp restic ftp
 suite templates php-8.3
 suite cli
 suite api-scopes
+suite files-extract
 suite ips dns
 suite redis-account redis
 suite impersonate

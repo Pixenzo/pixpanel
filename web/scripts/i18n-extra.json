@@ -273,7 +273,9 @@
     "HTTP/3 ayarını değiştirdi",
     "Veritabanı uzaktan erişimini açtı",
     "Veritabanı uzaktan erişimini kapattı",
-    "Veritabanı kullanıcısının bağlantı adresini değiştirdi"
+    "Veritabanı kullanıcısının bağlantı adresini değiştirdi",
+    "WordPress güvenlik düzeltmesi uyguladı",
+    "DNS hazır kayıt şablonu uyguladı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",
@@ -407,7 +409,29 @@
     "Ağırlık, port ve hedef",
     "Boşlukla ayrılmış üç değer: ağırlık port hedef. Ad genellikle _hizmet._protokol biçimindedir.",
     "CAA değeri",
-    "Biçim: bayrak etiket \"değer\". Etiket issue, issuewild ya da iodef olabilir."
+    "Biçim: bayrak etiket \"değer\". Etiket issue, issuewild ya da iodef olabilir.",
+    "Google Workspace postası",
+    "Microsoft 365 postası",
+    "Yandex 360 postası",
+    "Alan adı doğrulama",
+    "Posta kullanılmıyor",
+    "Posta Google Workspace (Gmail) üzerinden alınır: Google'ın MX kayıtları ve SPF kaydı eklenir.",
+    "Posta Microsoft 365 (Exchange Online) üzerinden alınır: MX, SPF ve autodiscover kayıtları eklenir.",
+    "Posta Yandex 360 üzerinden alınır: Yandex'in MX kaydı ve SPF kaydı eklenir.",
+    "Google, Microsoft ya da Facebook'un size verdiği doğrulama değerini TXT kaydı olarak ekler.",
+    "Alan adı posta almaz ve göndermez: boş MX kaydı, her göndericiyi reddeden SPF ve DMARC (reject) kaydı eklenir. Sahte postayı engeller.",
+    "MX adresi (isteğe bağlı)",
+    "Boş bırakırsanız alan adından türetilir (ornek-com.mail.protection.outlook.com). Microsoft 365 yönetim merkezi farklı bir adres gösteriyorsa onu yazın.",
+    "Hizmet",
+    "Doğrulama değeri",
+    "Hizmetin gösterdiği değeri olduğu gibi yapıştırın (ör. google-site-verification=…, MS=ms…, facebook-domain-verification=…).",
+    "Google (Search Console, Workspace)",
+    "Microsoft 365",
+    "Facebook / Meta",
+    "var olan MX ve SPF kayıtlarını",
+    "var olan MX, SPF ve autodiscover kayıtlarını",
+    "var olan MX, SPF ve DMARC kayıtlarını",
+    "Bu alan adı bu sunucunun posta sisteminde de tanımlı. MX kayıtları değişirse yeni gelen posta bu sunucuya düşmez."
   ],
   "web/src/pages/Fail2ban.tsx": [
     "Gevşek",
@@ -709,5 +733,16 @@
     "İkincil ad sunucuları",
     "Web sunucusu",
     "HTTP/3 (QUIC)"
+  ],
+  "web/src/pages/SiteWordPressSecurity.tsx": [
+    "Yönetim panelinden dosya düzenleme kapalı",
+    "Hata iletileri ziyaretçilere gösterilmiyor",
+    "wp-config.php dosya izni güvenli",
+    "Güvenlik anahtarları benzersiz",
+    "Site WordPress koruma şablonunu kullanıyor",
+    "Güvenlik sürümleri kendiliğinden kuruluyor",
+    "Çekirdek dosyaları değiştirilmemiş",
+    "“admin” adlı yönetici hesabı yok",
+    "Kullanılmayan eklenti ve temalar"
   ]
 }

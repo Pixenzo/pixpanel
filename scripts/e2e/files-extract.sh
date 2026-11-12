@@ -44,7 +44,10 @@ login $JA $A; login $JB $O
 UA=$(user_id $A)
 # İlk işlem hesabın Linux kullanıcısını ve ev klasörünü oluşturur.
 check "hesabın dosya alanı açılır" "$(fcode $JA $UA '{"op":"list","path":"/"}')" 200
-HOME_A=/home/$A
+# Ev klasörünün üst düzeyi hesaba kapalıdır; sınama hesabın yazabildiği tmp altındaki bir klasörde yürür.
+W=/tmp/px-arsiv
+HOME_A=/home/$A$W
+mkdir -p $HOME_A && chown $A: /home/$A/tmp $HOME_A
 
 # Arşivleri hesabın klasörüne, hesap adına yazar (python3 ile; zip aracı olmayabilir).
 python3 - "$HOME_A" <<'PY'
@@ -80,45 +83,45 @@ BOMB_SIZE=$(stat -c %s $HOME_A/bomba.zip)
 check "bomba arşivi küçük, içeriği büyük" "$([ "$BOMB_SIZE" -lt 1000000 ] && echo evet)" evet
 
 say "Normal arşivler açılır"
-check "zip açılır" "$(fcode $JA $UA "$(extract /kucuk.zip /zip-hedef)")" 200
+check "zip açılır" "$(fcode $JA $UA "$(extract $W/kucuk.zip $W/zip-hedef)")" 200
 check "zip içeriği" "$(cat $HOME_A/zip-hedef/a.txt $HOME_A/zip-hedef/alt/b.txt | tr -d '\n')" "merhabadunya"
 check "dosyalar hesabın kullanıcısına ait" "$(stat -c %U $HOME_A/zip-hedef/a.txt)" "$A"
-check "tar.gz açılır" "$(fcode $JA $UA "$(extract /kucuk.tar.gz /tar-hedef)")" 200
+check "tar.gz açılır" "$(fcode $JA $UA "$(extract $W/kucuk.tar.gz $W/tar-hedef)")" 200
 check "tar.gz içeriği" "$(cat $HOME_A/tar-hedef/c.txt $HOME_A/tar-hedef/alt/d.txt | tr -d '\n')" "merhabadunya"
 # Var olan klasöre açma: aynı adlı klasörler birleşir, var olan dosyalar yerinde kalır.
 mkdir -p $HOME_A/birles/alt && echo kalir > $HOME_A/birles/alt/eski.txt && chown -R $A:$A $HOME_A/birles
-check "var olan klasöre açma" "$(fcode $JA $UA "$(extract /kucuk.zip /birles)")" 200
+check "var olan klasöre açma" "$(fcode $JA $UA "$(extract $W/kucuk.zip $W/birles)")" 200
 check "klasörler birleşir, eski dosya kalır" "$(ls $HOME_A/birles/alt | tr '\n' ' ')" "b.txt eski.txt "
 check "geçici açma klasörü kalmaz" "$(find $HOME_A -name '.pixpanel-acma-*' | wc -l)" 0
-check "istekteki kota alanı yok sayılır" "$(fcode $JA $UA '{"op":"extract","path":"/kucuk.zip","dest":"/kota-hedef","disk_budget":1}')" 200
+check "istekteki kota alanı yok sayılır" "$(fcode $JA $UA '{"op":"extract","path":"'"$W"'/kucuk.zip","dest":"'"$W"'/kota-hedef","disk_budget":1}')" 200
 check "kota alanına rağmen açıldı" "$(ls $HOME_A/kota-hedef | tr '\n' ' ')" "a.txt alt "
 check "açma denetim günlüğünde" "$(sqlite3 $DB "SELECT count(*) > 0 FROM audit_log WHERE action='file.extract' AND target LIKE '/kucuk.zip%'")" 1
 
 say "Zip bombası reddedilir"
-R=$(fop $JA $UA "$(extract /bomba.zip /bomba-hedef)")
+R=$(fop $JA $UA "$(extract $W/bomba.zip $W/bomba-hedef)")
 has "ileti nedeni söyler" "$R" "sıkıştırma oranı"
 has "ileti zip bombasını anar" "$R" "zip bombası"
 check "geride klasör kalmaz" "$([ -e $HOME_A/bomba-hedef ] && echo var || echo yok)" yok
-check "var olan boş klasöre de dosya bırakmaz" "$(mkdir -p $HOME_A/bos-hedef && chown $A:$A $HOME_A/bos-hedef && fcode $JA $UA "$(extract /bomba.zip /bos-hedef)") $(ls -A $HOME_A/bos-hedef | wc -l)" "400 0"
+check "var olan boş klasöre de dosya bırakmaz" "$(mkdir -p $HOME_A/bos-hedef && chown $A:$A $HOME_A/bos-hedef && fcode $JA $UA "$(extract $W/bomba.zip $W/bos-hedef)") $(ls -A $HOME_A/bos-hedef | wc -l)" "400 0"
 check "geçici açma klasörü kalmaz" "$(find $HOME_A -name '.pixpanel-acma-*' | wc -l)" 0
 check "diskte yer tutulmadı" "$(du -sm $HOME_A | cut -f1 | awk '{print ($1 < 50) ? "evet" : "hayır"}')" evet
 
 say "Desteklenmeyen tür ve yol kaçışı"
-R=$(fop $JA $UA "$(extract /kucuk.zip.rar /rar-hedef)")
+R=$(fop $JA $UA "$(extract $W/kucuk.zip.rar $W/rar-hedef)")
 has "desteklenmeyen tür" "$R" "Desteklenen arşiv türleri"
 check "desteklenmeyen türde klasör açılmaz" "$([ -e $HOME_A/rar-hedef ] && echo var || echo yok)" yok
-check "zip: ../ ve mutlak yollu girdiler atlanır, iyisi açılır" "$(fcode $JA $UA "$(extract /disari.zip /a/b)")" 200
+check "zip: ../ ve mutlak yollu girdiler atlanır, iyisi açılır" "$(fcode $JA $UA "$(extract $W/disari.zip $W/a/b)")" 200
 check "zip: iyi dosya hedefte" "$(ls $HOME_A/a/b | tr '\n' ' ')" "iyi.txt "
 check "zip: hedefin dışına yazılmadı" "$(ls $HOME_A/a/disari-zip.txt $HOME_A/disari-zip.txt $HOME_A/mutlak-zip.txt /tmp/disari-zip.txt 2>/dev/null | wc -l)" 0
-check "tar.gz: ../ girdisi hedefin dışına yazamaz" "$(fcode $JA $UA "$(extract /disari.tar.gz /c/d)")" 200
+check "tar.gz: ../ girdisi hedefin dışına yazamaz" "$(fcode $JA $UA "$(extract $W/disari.tar.gz $W/c/d)")" 200
 check "tar.gz: iyi dosya hedefte" "$(ls $HOME_A/c/d | tr '\n' ' ')" "iyi-tar.txt "
 check "tar.gz: hedefin dışına yazılmadı" "$(ls $HOME_A/c/disari-tar.txt $HOME_A/disari-tar.txt 2>/dev/null | wc -l)" 0
-check "hesap klasörünün dışına çıkan hedef" "$(fcode $JA $UA "$(extract /kucuk.zip /../../tmp/kacis)")" 400
+check "hesap klasörünün dışına çıkan hedef" "$(fcode $JA $UA "$(extract $W/kucuk.zip $W/../../tmp/kacis)")" 400
 check "hedefte kaçış yok" "$([ -e /tmp/kacis ] && echo var || echo yok)" yok
 
 say "Yetki"
-check "oturumsuz istek" "$(curl -sk -o /dev/null -w '%{http_code}' -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST $B/files/op -d "{\"scope\":\"user:$UA\",\"request\":$(extract /kucuk.zip /oturumsuz)}")" 401
-check "başka hesabın dosya alanında arşiv açılamaz" "$(fcode $JB $UA "$(extract /kucuk.zip /baska)")" 404
+check "oturumsuz istek" "$(curl -sk -o /dev/null -w '%{http_code}' -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST $B/files/op -d "{\"scope\":\"user:$UA\",\"request\":$(extract $W/kucuk.zip $W/oturumsuz)}")" 401
+check "başka hesabın dosya alanında arşiv açılamaz" "$(fcode $JB $UA "$(extract $W/kucuk.zip $W/baska)")" 404
 check "başka hesabın alanına dosya düşmedi" "$([ -e $HOME_A/baska ] && echo var || echo yok)" yok
 
 say "Temizlik"
