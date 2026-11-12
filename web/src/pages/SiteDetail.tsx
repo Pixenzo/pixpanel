@@ -29,6 +29,7 @@ import { GitSection } from "./SiteGit";
 import { NodeSection } from "./SiteNode";
 import { ProxyRulesSection } from "./SiteProxyRules";
 import { CloneRow } from "./SiteClone";
+import { MigrateRow } from "./SiteMigrate";
 import { SiteRulesSection } from "./SiteRules";
 import { siteKindLabel, SiteToolGrid, useSiteOptions } from "./Sites";
 import { UptimePanel } from "../components/UptimePanel";
@@ -209,6 +210,7 @@ function GeneralTab({ site }: { site: Site }) {
             </div>
           )}
           <CloneRow site={site} />
+          {site.kind !== "proxy" && <MigrateRow site={site} />}
           <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
             <div className="max-w-[60ch]">
               <p className="font-medium">{t("Siteyi sil")}</p>

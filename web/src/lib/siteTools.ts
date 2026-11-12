@@ -3,6 +3,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
+  ArrowDownToLine,
   ArrowRightLeft,
   CalendarClock,
   CornerDownRight,
@@ -159,6 +160,15 @@ export function siteTools(site: Site, me: Me, summary?: SiteSummary, options?: S
     to: `/sites?yeni=alt&ust=${encodeURIComponent(site.domain)}`,
     status: t("blog.{domain} gibi", { domain: site.domain }),
   });
+  if (site.kind !== "proxy") {
+    tools.push({
+      id: "migrate",
+      label: t("Başka sunucudan taşı"),
+      icon: ArrowDownToLine,
+      to: `${base}/settings?tasi=1`,
+      status: t("Eski sunucudan SSH ile çek"),
+    });
+  }
   tools.push({
     id: "settings",
     label: t("Adresler ve yayın"),

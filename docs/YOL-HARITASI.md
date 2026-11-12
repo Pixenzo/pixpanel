@@ -207,7 +207,8 @@ yönlendirmeler (yol ve alan adı), parola korumalı klasör, adres engelleme ve
 ### 15. Taşıma aracı — B, sistem katmanı
 
 - SSH ile başka sunucudan çekme (rsync + döküm); Plesk, cPanel ve HestiaCP yedeklerinden içe aktarma; posta kutularını IMAP ile taşıma (`imapsync`).
-- **Not:** kaynak biçimlerinin her biri ayrı bir araştırma işidir; önce SSH ile çekme yapılır.
+- **Durum (12.11.2026):** SSH ile çekme yapıldı (dosyalar + WordPress veritabanı; ayrıntı DURUM.md). Kalanlar: yedek dosyalarından içe aktarma, posta kutuları, WordPress dışı veritabanları.
+- **Not:** kaynak biçimlerinin her biri ayrı bir araştırma işidir.
 
 ### 16. Python uygulamaları — İLK SÜRÜM TAMAMLANDI (11.11.2026; kalan: `uv` ile çoklu sürüm)
 

@@ -22,6 +22,7 @@ mod health;
 mod hosting;
 mod jobs;
 mod mail;
+mod migrate;
 mod notify;
 mod panelcert;
 mod quota;
@@ -90,6 +91,10 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `ssh` parolayı sormak için bu ikili dosyayı çağırır (taşıma aracı).
+    if let Some(code) = migrate::askpass() {
+        std::process::exit(code);
+    }
     let cli = Cli::parse();
 
     // Yardımcı süreç yetki düşürüp chroot yapacağından olabildiğince yalın

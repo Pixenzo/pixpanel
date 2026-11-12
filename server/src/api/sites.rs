@@ -27,6 +27,8 @@ pub fn router() -> Router<AppState> {
         .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
         .route("/{id}/clone", axum::routing::post(clone_site))
+        .route("/{id}/migrate/probe", axum::routing::post(migrate_probe))
+        .route("/{id}/migrate", axum::routing::post(migrate))
         .route("/{id}/uptime", get(uptime))
         .route("/{id}/stats", get(stats))
         .route("/{id}/node", get(node_status))
@@ -210,6 +212,74 @@ async fn clone_site(State(state): State<AppState>, user: AuthUser, Path(id): Pat
     let target_id = target.id;
     let job_id = state.jobs.start("site.clone", &title, Some(user.id), move |ctx| async move { crate::clone::run(&ctx, &job_state, &source, &target, wordpress).await })?;
     Ok(Json(json!({ "job_id": job_id, "site_id": target_id })))
+}
+
+#[derive(Deserialize)]
+struct MigrateBody {
+    host: String,
+    port: Option<u16>,
+    username: String,
+    #[serde(default)]
+    password: String,
+    #[serde(default)]
+    private_key: String,
+    path: String,
+    #[serde(default)]
+    host_key: String,
+    #[serde(default)]
+    database: bool,
+}
+
+impl MigrateBody {
+    fn source(&self) -> AppResult<crate::migrate::Source> {
+        let mut source = crate::migrate::Source {
+            host: self.host.clone(),
+            port: self.port.unwrap_or(22),
+            username: self.username.clone(),
+            password: self.password.clone(),
+            private_key: self.private_key.clone(),
+            path: self.path.clone(),
+        };
+        source.validate()?;
+        Ok(source)
+    }
+}
+
+/// Taşınacak sitenin bulunduğu sunucuya bağlanmayı dener; sunucu anahtarını ve bulduklarını döner.
+async fn migrate_probe(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<MigrateBody>) -> AppResult<Json<crate::migrate::Probe>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    let source = body.source()?;
+    Ok(Json(crate::migrate::probe(&site, &source).await?))
+}
+
+/// Başka sunucudaki siteyi bu siteye çeker (arka plan görevi).
+async fn migrate(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<MigrateBody>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let site = sites::get(&state.db, &user, id)?;
+    if site.status != "active" {
+        return Err(AppError::bad("Askıdaki siteye taşıma yapılamaz"));
+    }
+    if site.kind == "proxy" {
+        return Err(AppError::bad("Ters vekil sitelerinin dosyası yoktur; taşıma yapılamaz"));
+    }
+    let source = body.source()?;
+    let with_database = body.database;
+    if with_database {
+        if site.kind != "php" {
+            return Err(AppError::bad("Veritabanı yalnızca PHP sitelerine (WordPress) taşınabilir"));
+        }
+        crate::dbms::Engine::Mariadb.require_installed()?;
+        crate::quota::check(&state.db, site.user_id, crate::quota::Resource::Database)?;
+    }
+    auth::audit(&state.db, &user, "site.migrate", &site.domain, &format!("{}:{}", source.host, source.path));
+    let job_state = state.clone();
+    let title = format!("Site taşıma: {} → {}", source.host, site.domain);
+    let host_key = body.host_key;
+    let job_id = state.jobs.start("site.migrate", &title, Some(user.id), move |ctx| async move {
+        crate::migrate::run(&ctx, &job_state, &site, &source, &host_key, with_database).await
+    })?;
+    Ok(Json(json!({ "job_id": job_id })))
 }
 
 async fn options(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Options>> {

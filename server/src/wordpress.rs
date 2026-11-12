@@ -526,6 +526,110 @@ pub async fn clone_database(ctx: &JobCtx, state: &AppState, source: &Site, targe
     Ok(())
 }
 
+// ---- Taşıma ----
+
+/// `wp-config.php` içinde yazılı veritabanı bağlantısı.
+pub struct ConfigDatabase {
+    pub name: String,
+    pub user: String,
+    pub password: String,
+    pub host: String,
+}
+
+/// `wp-config.php` metnindeki bir sabitin değerini okur (yorum satırları sayılmaz).
+fn read_define(config: &str, key: &str) -> Option<String> {
+    let pattern = regex::Regex::new(&format!(r#"(?m)^[ \t]*define\(\s*['"]{key}['"]\s*,\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")\s*\)"#)).ok()?;
+    let found = pattern.captures(config)?;
+    let (raw, single) = match (found.get(1), found.get(2)) {
+        (Some(value), _) => (value.as_str(), true),
+        (_, Some(value)) => (value.as_str(), false),
+        _ => return None,
+    };
+    // PHP tek tırnakta yalnızca \' ve \\ kaçışlarını, çift tırnakta ayrıca \" ve \$ kaçışlarını çözer.
+    let mut value = String::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match (ch, chars.peek().copied()) {
+            ('\\', Some(next)) if next == '\\' || (single && next == '\'') || (!single && (next == '"' || next == '$')) => {
+                value.push(next);
+                chars.next();
+            }
+            _ => value.push(ch),
+        }
+    }
+    Some(value)
+}
+
+/// Ayar dosyası metninden veritabanı bağlantısını çıkarır.
+pub fn parse_config_database(config: &str) -> Option<ConfigDatabase> {
+    Some(ConfigDatabase {
+        name: read_define(config, "DB_NAME")?,
+        user: read_define(config, "DB_USER")?,
+        password: read_define(config, "DB_PASSWORD")?,
+        host: read_define(config, "DB_HOST").unwrap_or_else(|| "localhost".to_string()),
+    })
+}
+
+/// Sitenin yayın klasöründeki `wp-config.php`den veritabanı bağlantısını okur; dosya yoksa `None`.
+pub async fn config_database(site: &Site) -> AppResult<Option<ConfigDatabase>> {
+    let wp = Wp::for_site(site)?;
+    let read = runas::output(runas::command(&wp.user, &wp.docroot, "cat", &["--", "wp-config.php"]), QUICK).await?;
+    if !read.success() {
+        return Ok(None);
+    }
+    parse_config_database(&read.stdout).map(Some).ok_or_else(|| AppError::bad("wp-config.php içindeki veritabanı bilgileri okunamadı; veritabanını elle taşıyın"))
+}
+
+/// Başka yerden getirilen bir WordPress'i bu sunucudaki yeni bir veritabanına bağlar: veritabanı
+/// açılır, `load` onu doldurur, ayar dosyası yeni veritabanını gösterecek şekilde düzeltilir ve
+/// içerikteki adresler sitenin alan adından farklıysa çevrilir. Başarısız olursa veritabanı geri alınır.
+pub async fn adopt_database<F, Fut>(ctx: &JobCtx, state: &AppState, site: &Site, load: F) -> AppResult<()>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = AppResult<()>>,
+{
+    let wp = Wp::for_site(site)?;
+    ensure_cli().await?;
+    ctx.log("Veritabanı oluşturuluyor");
+    let (database, db_user, db_password) = create_database(state, site).await?;
+    let adopted = async {
+        load(database.clone()).await?;
+        let read = runas::output(runas::command(&wp.user, &wp.docroot, "cat", &["--", "wp-config.php"]), QUICK).await?;
+        if !read.success() {
+            return Err(AppError::bad("wp-config.php okunamadı"));
+        }
+        let mut config = read.stdout;
+        for (key, value) in [("DB_NAME", &database), ("DB_USER", &db_user), ("DB_PASSWORD", &db_password), ("DB_HOST", &"localhost".to_string())] {
+            config = replace_define(&config, key, value)
+                .ok_or_else(|| AppError::bad(format!("wp-config.php içinde {key} tanımı bulunamadı; veritabanı ayarı elle düzenlenmiş olabilir")))?;
+        }
+        write_as_user(&wp, "wp-config.php", &config).await.map_err(|_| AppError::internal("wp-config.php yazılamadı"))?;
+        ctx.log(format!("wp-config.php yeni veritabanına bağlandı: {database}"));
+
+        // Site başka bir adla taşındıysa içerikteki adresler yeni ada çevrilir; aynı adla
+        // taşındıysa (olağan durum) dokunulmaz.
+        let old_url = wp.run_ok(&["option", "get", "siteurl"]).await?;
+        let old_host = old_url.split("://").nth(1).unwrap_or("").trim_end_matches('/').to_string();
+        let known = old_host == site.domain || site.aliases.iter().any(|alias| *alias == old_host);
+        if !known && !old_host.is_empty() && !old_host.chars().any(|ch| ch.is_whitespace() || ch == '\'') {
+            let new_host = site.domain.as_str();
+            ctx.log(format!("Adresler çevriliyor: {old_host} → {new_host}"));
+            for scheme in ["https", "http"] {
+                wp.stream(ctx, &["search-replace", &format!("{scheme}://{old_host}"), &format!("http://{new_host}"), "--all-tables", "--skip-columns=guid", "--report-changed-only"], None)
+                    .await?;
+            }
+        }
+        let _ = wp.run(&["cache", "flush"]).await;
+        AppResult::Ok(())
+    }
+    .await;
+    if let Err(err) = adopted {
+        drop_database(state, &database, true).await;
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// Kurulabilirliği görev başlamadan denetler (hata hemen kullanıcıya dönsün diye).
 pub async fn check_installable(site: &Site) -> AppResult<()> {
     ensure_cli().await?;
@@ -863,6 +967,23 @@ async fn write_as_user(wp: &Wp, relative: &str, content: &str) -> AppResult<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_database_is_read() {
+        let config = r#"<?php
+// define('DB_NAME', 'yorum');
+define( 'DB_NAME', 'wp_site' );
+define("DB_USER", "kullanici");
+  define('DB_PASSWORD', 'a\'b\\c"d$e');
+define( 'DB_HOST', 'localhost:3307' );
+"#;
+        let database = parse_config_database(config).unwrap();
+        assert_eq!(database.name, "wp_site");
+        assert_eq!(database.user, "kullanici");
+        assert_eq!(database.password, r#"a'b\c"d$e"#);
+        assert_eq!(database.host, "localhost:3307");
+        assert!(parse_config_database("<?php define('DB_NAME', getenv('X'));").is_none());
+    }
 
     #[test]
     fn define_replacement() {

@@ -232,7 +232,8 @@
     "Uygulamayı başlattı",
     "Uygulamayı durdurdu",
     "Uygulamayı yeniden başlattı",
-    "Redis anahtarını değiştirdi"
+    "Redis anahtarını değiştirdi",
+    "Başka sunucudan site taşıdı"
   ],
   "web/src/pages/BackupPlans.tsx": [
     "Kısa",

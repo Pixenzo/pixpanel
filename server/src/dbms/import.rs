@@ -102,7 +102,18 @@ impl Session {
         match self.engine {
             // Yalnızca döküm aracının ürettiği tanım satırlarına dokunulur (`/*!50013 DEFINER=…`,
             // `CREATE DEFINER=…`); veri satırları `INSERT` ile başlar ve olduğu gibi geçer.
-            Engine::Mariadb => unprivileged("sed", &["-E", r"/^(\/\*![0-9]{5} |CREATE DEFINER=)/ s/ ?DEFINER=`[^`]*`@`[^`]*`//"]),
+            Engine::Mariadb => unprivileged(
+                "sed",
+                &[
+                    "-E",
+                    "-e",
+                    r"/^(\/\*![0-9]{5} |CREATE DEFINER=)/ s/ ?DEFINER=`[^`]*`@`[^`]*`//",
+                    // MySQL 8 dökümlerindeki varsayılan sıralama MariaDB'de yoktur; yalnızca tablo ve
+                    // sütun tanım satırlarında (veri satırları `INSERT` ile başlar) karşılığına çevrilir.
+                    "-e",
+                    r"/^(\)| ) .*utf8mb4_0900_ai_ci/ s/utf8mb4_0900_ai_ci/utf8mb4_unicode_520_ci/g",
+                ],
+            ),
             Engine::Postgresql => unprivileged("cat", &[]),
         }
     }
