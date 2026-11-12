@@ -3204,4 +3204,13 @@ export const en: Record<string, string> = {
   "Bu alan adı bu sunucunun posta sisteminde de tanımlı. MX kayıtları değişirse yeni gelen posta bu sunucuya düşmez.": "This domain is also set up in this server's mail system. If the MX records change, new mail will no longer arrive on this server.",
   "WordPress güvenlik düzeltmesi uyguladı": "Applied a WordPress security fix",
   "DNS hazır kayıt şablonu uyguladı": "Applied a DNS record template",
+  "Sunucunuz kendi kendine bakar; siz sitelerinizle ilgilenin.": "Your server looks after itself, so you can focus on your sites.",
+  "Oturum açın": "Sign in",
+  "Panele girmek için hesap bilgilerinizi yazın.": "Enter your account details to open the panel.",
+  "Sertifikalar kendiliğinden yenilenir": "Certificates renew themselves",
+  "Süresi dolan SSL sertifikası kalmaz.": "No SSL certificate is left to expire.",
+  "Sağlık denetimi sürekli çalışır": "Health checks run all the time",
+  "Çöken servis yeniden başlatılır, sorun size bildirilir.": "A crashed service is restarted and you are told about the problem.",
+  "Yedekler plana göre alınır": "Backups run on schedule",
+  "Siteler, veritabanları ve postalar tek tıkla geri gelir.": "Sites, databases and mail are restored with one click.",
 };

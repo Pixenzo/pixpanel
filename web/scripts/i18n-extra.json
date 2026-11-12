@@ -744,5 +744,13 @@
     "Çekirdek dosyaları değiştirilmemiş",
     "“admin” adlı yönetici hesabı yok",
     "Kullanılmayan eklenti ve temalar"
+  ],
+  "web/src/pages/Login.tsx": [
+    "Sertifikalar kendiliğinden yenilenir",
+    "Süresi dolan SSL sertifikası kalmaz.",
+    "Sağlık denetimi sürekli çalışır",
+    "Çöken servis yeniden başlatılır, sorun size bildirilir.",
+    "Yedekler plana göre alınır",
+    "Siteler, veritabanları ve postalar tek tıkla geri gelir."
   ]
 }

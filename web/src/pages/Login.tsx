@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { Archive, HeartPulse, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Button, Input } from "../components/ui";
 import { ApiError, api, errorMessage } from "../lib/api";
@@ -6,6 +7,13 @@ import { BrandLogo, SupportLink } from "../components/Brand";
 import { brandName, useBrandTitle, useBranding } from "../lib/branding";
 import { t } from "../lib/i18n";
 import { useSession, useTheme } from "../lib/session";
+
+// Marka panelindeki üç satır: panelin yöneticinin yerine yaptığı işler.
+const loginHighlights = [
+  { icon: ShieldCheck, title: "Sertifikalar kendiliğinden yenilenir", text: "Süresi dolan SSL sertifikası kalmaz." },
+  { icon: HeartPulse, title: "Sağlık denetimi sürekli çalışır", text: "Çöken servis yeniden başlatılır, sorun size bildirilir." },
+  { icon: Archive, title: "Yedekler plana göre alınır", text: "Siteler, veritabanları ve postalar tek tıkla geri gelir." },
+];
 
 export function LoginPage() {
   const { refresh } = useSession();
@@ -55,14 +63,48 @@ export function LoginPage() {
   useBrandTitle(branding);
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4 sm:px-6 py-10">
+    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      {/* Marka paneli: yalnız geniş ekranda; telefonda form tek başına durur. */}
+      <aside className="relative hidden flex-col justify-between overflow-hidden bg-rail px-12 py-10 text-rail-ink lg:flex xl:px-16">
+        <div aria-hidden className="pointer-events-none absolute -right-24 -bottom-24 grid grid-cols-2 gap-6 opacity-[0.07]">
+          <span className="size-56 rounded-[2.5rem] bg-rail-ink" />
+          <span className="size-56 rounded-[2.5rem] bg-rail-accent" />
+          <span className="size-56 rounded-[2.5rem] bg-rail-ink" />
+          <span className="size-56 rounded-[2.5rem] bg-rail-ink" />
+        </div>
+        <div className="flex items-center gap-3">
+          <BrandLogo className="size-8" onDark />
+          <span className="text-[19px] font-semibold tracking-[-0.01em]">{brandName(branding)}</span>
+        </div>
+        <div className="relative max-w-[30rem]">
+          <p className="text-[34px] leading-[1.15] font-semibold tracking-[-0.025em] text-balance">{t("Sunucunuz kendi kendine bakar; siz sitelerinizle ilgilenin.")}</p>
+          <ul className="mt-8 flex flex-col gap-4 text-[15px]">
+            {loginHighlights.map((item) => (
+              <li key={item.title} className="flex gap-3.5">
+                <item.icon aria-hidden className="mt-0.5 size-5 shrink-0 text-rail-accent" />
+                <span>
+                  <span className="font-medium">{t(item.title)}</span>
+                  <span className="block opacity-70">{t(item.text)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative font-mono text-[13px] opacity-60">{window.location.hostname}</p>
+      </aside>
+      <main className="grid place-items-center px-4 py-10 sm:px-6">
       <div className="w-full max-w-[26rem]">
-        <div className="mb-8 flex items-center gap-4">
+        <div className="mb-8 flex items-center gap-4 lg:hidden">
           <BrandLogo className="size-11" />
           <div className="min-w-0">
-            <h1 className="text-[27px] leading-[1.1] font-semibold tracking-[-0.02em] break-words">{brandName(branding)}</h1>
+            <p className="text-[27px] leading-[1.1] font-semibold tracking-[-0.02em] break-words">{brandName(branding)}</p>
             <p className="mt-1 font-mono text-[13.5px] text-ink-3">{window.location.hostname}</p>
           </div>
+        </div>
+
+        <div className="mb-7 hidden lg:block">
+          <h1 className="text-[27px] leading-[1.1] font-semibold tracking-[-0.02em]">{t("Oturum açın")}</h1>
+          <p className="mt-2 text-ink-2">{t("Panele girmek için hesap bilgilerinizi yazın.")}</p>
         </div>
 
         <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-line bg-surface p-6 shadow-card sm:p-8">
@@ -137,6 +179,7 @@ export function LoginPage() {
           <code className="font-mono text-ink-2">pixpanel reset-password {username || "admin"}</code>
         </p>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

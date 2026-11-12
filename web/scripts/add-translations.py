@@ -21,6 +21,9 @@ EXTRA = os.path.join(HERE, "i18n-extra.json")
 def main() -> None:
     additions = json.load(io.open(sys.argv[1], encoding="utf-8"))
     extra_additions = additions.pop("__extra__", {})
+    # Düz liste de kabul edilir; kaynak adı olarak çeviri dosyasının adı yazılır.
+    if isinstance(extra_additions, list):
+        extra_additions = {os.path.splitext(os.path.basename(sys.argv[1]))[0]: extra_additions}
 
     text = io.open(DICTIONARY, encoding="utf-8").read().rstrip()
     if not text.endswith("};"):
