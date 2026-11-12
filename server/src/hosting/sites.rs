@@ -489,6 +489,14 @@ pub async fn provision(site: &Site) -> AppResult<()> {
     // Kuralların dayandığı dosyalar yapılandırmadan önce yerinde olmalı.
     crate::hosting::rules::write_password_files(site.id, &site.rules)?;
     crate::hosting::rules::ensure_pages()?;
+    let live = site.status == "active";
+    let cache_wanted = live && site.rules.server_cache.enabled && matches!(site.kind.as_str(), "php" | "proxy" | "node" | "python");
+    if cache_wanted {
+        crate::hosting::rules::ensure_cache_dir(site.id)?;
+    }
+    if live && site.rules.cloudflare_only {
+        crate::hosting::rules::ensure_cloudflare_ranges().await?;
+    }
     nginx::apply(&nginx::SiteConfig {
         id: site.id,
         rules: &site.rules,
@@ -506,6 +514,10 @@ pub async fn provision(site: &Site) -> AppResult<()> {
         template: if nginx::template_allowed(&site.kind, &site.template) { &site.template } else { "default" },
     })
     .await?;
+    // Önbellek kapandıysa klasörü nginx bölgeyi bıraktıktan (yeniden yükleme tamamlandıktan) sonra silinir.
+    if !cache_wanted {
+        crate::hosting::rules::remove_cache_dir(site.id);
+    }
 
     // nginx artık yeni sokete baktığına göre eski sürümün havuzu kaldırılabilir.
     let keep = if site.kind == "php" { site.php_version.as_deref() } else { None };
@@ -516,6 +528,7 @@ pub async fn provision(site: &Site) -> AppResult<()> {
 pub async fn deprovision(site: &Site, delete_files: bool) -> AppResult<()> {
     nginx::remove(&site.domain).await?;
     crate::hosting::rules::remove_password_files(site.id, 0);
+    crate::hosting::rules::remove_cache_dir(site.id);
     node::remove(site.id).await?;
     php::remove_pool_except(site.id, None).await?;
     let ssl_dir = Path::new(nginx::SSL_DIR).join(&site.domain);

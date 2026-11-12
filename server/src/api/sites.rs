@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
         .route("/summary", get(summary))
         .route("/{id}", get(detail).patch(update).delete(remove))
         .route("/{id}/clone", axum::routing::post(clone_site))
+        .route("/{id}/cache/purge", axum::routing::post(purge_cache))
         .route("/{id}/migrate/probe", axum::routing::post(migrate_probe))
         .route("/{id}/migrate", axum::routing::post(migrate))
         .route("/{id}/uptime", get(uptime))
@@ -497,7 +498,7 @@ async fn update(
     if let Some(rules) = body.rules {
         let mut names = vec![site.domain.clone()];
         names.extend(site.aliases.iter().cloned());
-        site.rules = crate::hosting::rules::normalize(rules, &previous.rules, &names).await?;
+        site.rules = crate::hosting::rules::normalize(rules, &previous.rules, &names, &site.kind).await?;
     }
     if let Some(ip) = &body.ip {
         site.ip = crate::addresses::validate_for_site(&state.db, user.is_admin(), site.user_id, ip).await?;
@@ -566,6 +567,16 @@ async fn update(
     }
     auth::audit(&state.db, &user, "site.update", &site.domain, "");
     Ok(Json(site))
+}
+
+/// Sitenin sunucu önbelleğinin içeriğini siler (önbellek kapalıysa bir şey yapılmaz).
+async fn purge_cache(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>) -> AppResult<Json<serde_json::Value>> {
+    user.require(AREA)?;
+    let _guard = state.sys_lock.lock().await;
+    let site = sites::get(&state.db, &user, id)?;
+    crate::hosting::rules::purge_cache(site.id).await?;
+    auth::audit(&state.db, &user, "site.cache.purge", &site.domain, "");
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// Node.js sitesini okur; site başka türdeyse hata döner.

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
 use crate::hosting::atomic_write;
+use crate::hosting::rules::CacheKind;
 use crate::sys::exec;
 
 const BASE_CONF: &str = "/etc/nginx/conf.d/pixpanel.conf";
@@ -306,7 +307,7 @@ async fn reload() -> AppResult<()> {
 }
 
 /// Vekil konum bloğunu yazar. `pass`, `proxy_pass` yönergesinin değeridir.
-fn proxy_location(out: &mut String, location: &str, pass: &str, websocket: bool) {
+fn proxy_location(out: &mut String, location: &str, pass: &str, websocket: bool, extra: &str) {
     let _ = writeln!(out, "    location {location} {{");
     let _ = writeln!(out, "        proxy_pass {pass};");
     out.push_str(
@@ -323,7 +324,16 @@ fn proxy_location(out: &mut String, location: &str, pass: &str, websocket: bool)
              \x20       proxy_set_header Connection $pixpanel_connection;\n",
         );
     }
+    out.push_str(extra);
     out.push_str("    }\n");
+}
+
+/// Vekil hedefinin yalnızca kökü (sonunda `/` olmadan); hedefte yol varsa `None`.
+/// Düzenli ifadeli konumda `proxy_pass` yol içeremez.
+fn proxy_origin(target: &str) -> Option<&str> {
+    let trimmed = target.trim_end_matches('/');
+    let rest = trimmed.split_once("://")?.1;
+    if rest.contains('/') { None } else { Some(trimmed) }
 }
 
 pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
@@ -337,8 +347,15 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
     let mut out = format!("# PixPanel tarafından üretildi ({}). Elle yapılan değişiklikler kaybolur.\n", site.domain);
     // Askıdaki sitede kurallar uygulanmaz; site zaten hiçbir içerik sunmaz.
     let rules = if site.suspended { None } else { Some(site.rules) };
+    // Sunucu önbelleği yalnızca PHP (FastCGI) ve vekil sitelerinde, site yayındayken kurulur.
+    let cache = match &site.backend {
+        _ if site.suspended || !site.rules.server_cache.enabled => CacheKind::Off,
+        Backend::Php { .. } => CacheKind::Fastcgi,
+        Backend::Proxy { .. } => CacheKind::Proxy,
+        Backend::Static { .. } => CacheKind::Off,
+    };
     if let Some(rules) = rules {
-        out.push_str(&crate::hosting::rules::render_preamble(site.id, rules));
+        out.push_str(&crate::hosting::rules::render_preamble(site.id, rules, cache, site.bind));
     }
 
     if redirect_http {
@@ -375,17 +392,26 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
     }
 
     let has_docroot = matches!(site.backend, Backend::Static { .. } | Backend::Php { .. });
-    out.push_str(&crate::hosting::rules::render_server(site.id, site.rules, site.domain, has_docroot));
+    out.push_str(&crate::hosting::rules::render_server(site.id, site.rules, site.domain, has_docroot, cache));
 
     // Yol bazlı vekil kuralları sitenin asıl içeriğinden önce eşleşir (`^~`).
     for rule in site.proxy_rules {
         // Hedefin sonuna `/` eklenirse nginx eşleşen öneki atar; eklenmezse yol olduğu gibi iletilir.
         let pass = if rule.strip_prefix { format!("{}/", rule.target) } else { rule.target.clone() };
-        proxy_location(&mut out, &format!("^~ {}", rule.path), &pass, rule.websocket);
+        proxy_location(&mut out, &format!("^~ {}", rule.path), &pass, rule.websocket, "");
     }
 
     match &site.backend {
-        Backend::Proxy { target, websocket } => proxy_location(&mut out, "/", target, *websocket),
+        Backend::Proxy { target, websocket } => {
+            let cache_lines = crate::hosting::rules::render_cache_location(site.id, site.rules, cache);
+            proxy_location(&mut out, "/", target, *websocket, &cache_lines);
+            // Tarayıcı önbelleği süresi seçildiyse durağan dosyalar için ayrı konum açılır: uygulamanın
+            // kendi önbellek başlıkları gizlenir ve seçilen süre yazılır. Hedefte yol varsa uygulanamaz.
+            if let (Some(expires), Some(origin)) = (crate::hosting::rules::proxy_asset_expires(site.rules), proxy_origin(target)) {
+                let extra = format!("        proxy_hide_header Cache-Control;\n        proxy_hide_header Expires;\n        expires {expires};\n{cache_lines}");
+                proxy_location(&mut out, &crate::hosting::rules::asset_regex(), origin, false, &extra);
+            }
+        }
         Backend::Static { docroot } | Backend::Php { docroot, .. } => {
             let php_socket = match &site.backend {
                 Backend::Php { socket, .. } => Some(*socket),
@@ -406,14 +432,16 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
                 "    location ~* (?:\\.(?:sql|bak|old|orig|swp|dist)|/composer\\.(?:json|lock)|/package(?:-lock)?\\.json)$ {\n        return 404;\n    }\n",
             );
             // Görsel koruması, aynı uzantıları eşleyen genel kuraldan önce yazılır (ilk eşleşen geçerlidir).
-            out.push_str(crate::hosting::rules::render_hotlink(site.rules));
+            out.push_str(&crate::hosting::rules::render_hotlink(site.rules));
             match php_socket {
                 Some(socket) => {
                     out.push_str(php_template_rules(site.template));
                     out.push_str("    location / {\n        try_files $uri $uri/ /index.php?$args;\n    }\n");
                     out.push_str("    location ~ [^/]\\.php(/|$) {\n        include snippets/fastcgi-php.conf;\n");
                     let _ = writeln!(out, "        fastcgi_pass unix:{socket};");
-                    out.push_str("        fastcgi_read_timeout 300s;\n    }\n");
+                    out.push_str("        fastcgi_read_timeout 300s;\n");
+                    out.push_str(&crate::hosting::rules::render_cache_location(site.id, site.rules, cache));
+                    out.push_str("    }\n");
                 }
                 None => out.push_str(match site.template {
                     // Tek sayfalık uygulama: bilinmeyen her adres uygulamanın kendisine düşer.
@@ -423,9 +451,7 @@ pub fn render(site: &SiteConfig<'_>, http2_directive: bool) -> String {
                     _ => "    location / {\n        try_files $uri $uri/ =404;\n    }\n",
                 }),
             }
-            out.push_str(
-                "    location ~* \\.(?:css|js|mjs|jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$ {\n        expires 30d;\n    }\n",
-            );
+            out.push_str(&crate::hosting::rules::render_asset_location(site.rules));
         }
     }
 

@@ -416,6 +416,12 @@ export interface SiteRules {
   maintenance_allowed: string[];
   hotlink_protection: boolean;
   error_pages: { not_found: string; forbidden: string; server_error: string };
+  /** Durağan dosyaların tarayıcıda saklanma süresi: "" (varsayılan, 30 gün), "off", "1h", "1d", "7d", "30d", "1y". */
+  browser_cache: string;
+  /** Sunucu önbelleği (PHP ve vekil siteleri); süre: "1m", "5m", "10m", "30m", "1h", "6h", "1d". */
+  server_cache: { enabled: boolean; ttl: string };
+  /** Yalnızca Cloudflare adreslerinden gelen bağlantılar kabul edilir. */
+  cloudflare_only: boolean;
 }
 
 /** Bir hesabın kendi Redis örneği. Parola yalnızca hesabın kendi görünümünde bulunur. */
