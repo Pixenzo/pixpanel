@@ -220,11 +220,22 @@ pub async fn send_telegram(api_base: &str, token: &str, chat_id: &str, text: &st
     Err(failed(format!("{status} {description}")))
 }
 
+/// Hesabın panelde seçtiği dil; okunamazsa Türkçe.
+pub fn user_language(db: &Db, user_id: i64) -> &'static str {
+    let language: Option<String> = db.call(move |conn| conn.query_row("SELECT language FROM users WHERE id = ?1", [user_id], |row| row.get(0))).ok();
+    crate::i18n::normalize(language.as_deref().unwrap_or("tr"))
+}
+
 /// Olayı, hesabın açık kanallarına gönderir. Gönderim hataları yalnızca günlüğe
 /// yazılır; bildirim gidememesi asıl işi başarısız saymaz.
 pub async fn send_event(state: &AppState, user_id: i64, event: &str, subject: &str, body: &str) {
     // Web kancaları kendi süzgeciyle çalışır; e-posta/Telegram tercihlerinden bağımsızdır.
+    // Kanca gövdesi makineler içindir; kaynak dilde (Türkçe) kalır.
     crate::webhooks::emit(event, Some(user_id), subject, json!({ "subject": subject, "body": body }));
+    // İnsana giden bildirim, alıcının panelde seçtiği dilde yazılır.
+    let language = user_language(&state.db, user_id);
+    let subject = &*crate::i18n::translate(language, subject);
+    let body = &*crate::i18n::translate(language, body);
     let channels = match load_channels(&state.db, user_id) {
         Ok(channels) => channels,
         Err(err) => {

@@ -9,6 +9,7 @@ Bu belgedeki uç tabloları `server/src/api` altındaki yönlendiricilerden çı
 - **Temel adres:** `https://SUNUCU:8443/api/v1`. Aşağıdaki tablolardaki yollar bu adrese eklenir.
 - **Biçim:** istek ve yanıt gövdeleri JSON'dur (`Content-Type: application/json`). Zamanlar Unix saniyesidir. Liste uçlarında sayfalama yoktur; görev listesi son 200 kaydı döner.
 - **Başarı:** `200` ve JSON gövde. Gövdesi olmayan işlemler `{"ok": true}` döner.
+- **Dil:** sunucunun kendi yazdığı metinler (hata iletileri, sağlık bulguları, görev başlıkları ve günlükleri, bileşen açıklamaları) varsayılan olarak Türkçedir. İstekte `Accept-Language: en` gönderilirse İngilizce döner; başlıktaki ilk dil geçerlidir, desteklenmeyen dilde metin Türkçe kalır. Hata kodları (`error.code`), anahtarlar ve kullanıcının girdiği değerler çevrilmez. Canlı akışlarda (`/events`, `/jobs/{id}/stream`) dil başlıktan değil hesabın dil ayarından alınır. Web kancası gövdeleri her zaman Türkçedir.
 - **Dosya yüklemeleri** (`/files/upload`, `/databases/{id}/import`) gövde boyutu sınırı olmayan uçlardır; öteki istek gövdeleri için axum'un varsayılan 2 MB sınırı geçerlidir.
 
 ### Kimlik doğrulama

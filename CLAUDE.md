@@ -11,6 +11,7 @@ Açık kaynak panellerden çıkarılan somut notlar: `docs/arastirma-notlari.md`
 - Kod İngilizce: değişken, fonksiyon, dosya, rota, JSON anahtarı, tablo/sütun adı.
 - Açıklamalar Türkçe: yorumlar, belgeler, kullanıcıya görünen metinler ve hata iletileri.
 - Arayüzde her metin `t("Türkçe metin")` ile sarılır; Türkçe kaynak metin aynı zamanda çeviri anahtarıdır (`web/src/lib/i18n.ts`).
+- Sunucu kodu da her yerde Türkçe metin üretir; çeviri yalnızca yanıt istemciye giderken yapılır (`server/src/i18n.rs`, sözlük `server/i18n/en.json`). Yeni bir ileti eklenince `python scripts/extract-server-i18n.py --check` eksik çeviriyi bildirir. İletiyi parçalardan birleştirmek yerine tek bir `format!` dizesi olarak yazın; birleştirilerek kurulan metinlerin şablonu `server/i18n/extra.json` dosyasına elle eklenir.
 
 ## Yapı
 

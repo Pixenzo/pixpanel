@@ -28,9 +28,10 @@ async fn stream_events(user: AuthUser) -> Sse<impl Stream<Item = Result<SseEvent
     let hello = json!({ "type": "hello", "version": crate::update::VERSION }).to_string();
     let first = stream::once(async move { Ok(SseEvent::default().data(hello)) });
 
+    let language = crate::i18n::normalize(&user.language);
     let live = BroadcastStream::new(events::subscribe()).filter_map(move |item| {
         let line = match item {
-            Ok(envelope) if envelope.visible_to(&user) => serde_json::to_string(&envelope.event).ok(),
+            Ok(envelope) if envelope.visible_to(&user) => Some(crate::i18n::to_json_string(language, &envelope.event)),
             Ok(_) => None,
             // Dinleyici geride kaldı ve olay kaçırdı: arayüz her şeyi baştan sorgular.
             Err(BroadcastStreamRecvError::Lagged(_)) => Some(json!({ "type": "resync" }).to_string()),

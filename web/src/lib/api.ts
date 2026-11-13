@@ -1,4 +1,4 @@
-import { t } from "./i18n";
+import { getLanguage, t } from "./i18n";
 // Panel API'siyle konuşan ince istemci.
 
 const BASE = "/api/v1";
@@ -17,7 +17,8 @@ export class ApiError extends Error {
 export const UNAUTHORIZED_EVENT = "pixpanel:unauthorized";
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "x-pixpanel-csrf": "1" };
+  // Sunucu kendi ürettiği metinleri (hata iletileri, bulgular, görev günlükleri) bu dile çevirir.
+  const headers: Record<string, string> = { "x-pixpanel-csrf": "1", "accept-language": getLanguage() };
   // Dosya yüklemelerinde içerik türünü (sınır değeriyle birlikte) tarayıcı belirler.
   const isForm = body instanceof FormData;
   if (body !== undefined && !isForm) headers["content-type"] = "application/json";

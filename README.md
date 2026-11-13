@@ -6,7 +6,7 @@
 
 **English** · [Türkçe](README.tr.md)
 
-![Sites page](docs/screenshots/en/sites.png)
+![Overview page](docs/screenshots/en/overview.png)
 
 </div>
 
@@ -20,9 +20,10 @@ It is a [Pixenzo](https://github.com/Pixenzo) product. The whole panel is a sing
 
 | | |
 |---|---|
-| ![Site tools](docs/screenshots/en/site.png) Every tool of a site on one page | ![Server status, dark theme](docs/screenshots/en/server-dark.png) Live server metrics (dark theme) |
+| ![Sites](docs/screenshots/en/sites.png) Sites and the tools of each one | ![Site tools](docs/screenshots/en/site.png) Every tool of a site on one page |
+| ![Server status, dark theme](docs/screenshots/en/server-dark.png) Live server metrics (dark theme) | ![Sign in](docs/screenshots/en/login.png) Sign-in page, brandable per reseller |
 | ![Mailboxes](docs/screenshots/en/mail.png) Mail domains and mailboxes | ![Databases](docs/screenshots/en/databases.png) MariaDB and PostgreSQL |
-| ![Backups](docs/screenshots/en/backups.png) Encrypted backups, one-click restore | ![Sign in](docs/screenshots/en/login.png) Sign-in page, brandable per reseller |
+| ![Backups](docs/screenshots/en/backups.png) Encrypted backups, one-click restore | ![Jobs](docs/screenshots/en/jobs.png) Long-running jobs with live logs |
 
 <p align="center"><img src="docs/screenshots/en/mobile.png" width="300" alt="Sites page on a phone"><br>The whole interface works on a phone.</p>
 
@@ -77,7 +78,7 @@ For a release package: `scripts/release.sh <version>`.
 
 ## Languages
 
-The interface is available in Turkish and English; each user picks a language under Account. Messages produced by the server (error messages, health findings, job logs) are currently Turkish only.
+The interface is available in Turkish and English; each user picks a language under Account. Messages produced by the server (error messages, health findings, job logs, notification emails) follow the same choice; API clients select it with the `Accept-Language` header. The `pixpanel` command line and the install script print Turkish only.
 
 ## Documentation
 

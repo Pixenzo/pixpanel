@@ -61,8 +61,10 @@ async fn detail(
     Ok(Json(json!({ "job": info, "log": log })))
 }
 
-fn to_sse(event: &JobEvent) -> Result<Event, Infallible> {
-    Ok(Event::default().data(serde_json::to_string(event).unwrap_or_default()))
+/// Olayı akışa yazar; günlük satırları dinleyenin diline çevrilir (akışlarda dil başlıktan
+/// değil hesaptan alınır: tarayıcı `EventSource` isteğine özel başlık ekleyemez).
+fn to_sse(event: &JobEvent, language: &str) -> Result<Event, Infallible> {
+    Ok(Event::default().data(crate::i18n::to_json_string(language, event)))
 }
 
 async fn stream_job(
@@ -73,13 +75,14 @@ async fn stream_job(
     let (info, _) = state.jobs.get(id)?;
     ensure_visible(&user, &info)?;
 
+    let language = crate::i18n::normalize(&user.language);
     let (log, receiver) = state.jobs.subscribe(id)?;
     // Önce o ana kadar birikmiş günlük gönderilir.
     let backlog: Vec<_> =
-        log.lines().map(|line| to_sse(&JobEvent::Log { line: line.to_string() })).collect();
+        log.lines().map(|line| to_sse(&JobEvent::Log { line: line.to_string() }, language)).collect();
 
     let tail = match receiver {
-        Some(rx) => stream::unfold((rx, false), |(mut rx, finished)| async move {
+        Some(rx) => stream::unfold((rx, false), move |(mut rx, finished)| async move {
             if finished {
                 return None;
             }
@@ -87,7 +90,7 @@ async fn stream_job(
                 match rx.recv().await {
                     Ok(event) => {
                         let done = matches!(event, JobEvent::Done { .. });
-                        return Some((to_sse(&event), (rx, done)));
+                        return Some((to_sse(&event, language), (rx, done)));
                     }
                     Err(RecvError::Lagged(_)) => continue,
                     Err(RecvError::Closed) => return None,
@@ -98,7 +101,7 @@ async fn stream_job(
         None => {
             // Görev çoktan bitmiş; son durum veritabanından okunur.
             let status = state.jobs.get(id)?.0.status;
-            stream::once(async move { to_sse(&JobEvent::Done { status }) }).boxed()
+            stream::once(async move { to_sse(&JobEvent::Done { status }, language) }).boxed()
         }
     };
 

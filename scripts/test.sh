@@ -12,7 +12,7 @@ cd "$ROOT_DIR"
 # Arayüz ikili dosyaya gömüldüğü için derlenmiş hâli de gönderilir.
 test -d web/dist || (cd web && pnpm build >/dev/null)
 
-tar czf - --exclude=server/target server/Cargo.toml server/Cargo.lock server/src web/dist |
+tar czf - --exclude=server/target server/Cargo.toml server/Cargo.lock server/src server/i18n web/dist |
   ssh -o BatchMode=yes "$TARGET_HOST" '
     set -e
     mkdir -p /root/pixpanel-src

@@ -20,7 +20,7 @@ struct Assets;
 
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .nest("/api/v1", api::router().fallback(|| async { AppError::NotFound }))
+        .nest("/api/v1", api::router().fallback(|| async { AppError::NotFound }).layer(middleware::from_fn(translate_response)))
         .route("/tools/{*path}", axum::routing::any(tools_proxy))
         .route("/webmail", axum::routing::get(|| async { axum::response::Redirect::permanent("/webmail/") }))
         .route("/webmail/", axum::routing::any(webmail_proxy))
@@ -29,6 +29,46 @@ pub fn app(state: AppState) -> Router {
         .layer(middleware::from_fn(security_headers))
         .layer(CompressionLayer::new())
         .with_state(state)
+}
+
+/// Çevrilecek JSON yanıtının üst sınırı; daha büyüğü (dosya içeriği, uzun listeler) olduğu gibi geçer.
+const MAX_TRANSLATED_BODY: usize = 4 * 1024 * 1024;
+
+/// API yanıtındaki sunucu metinlerini isteğin diline çevirir (bkz. `i18n`). Kod her yerde
+/// Türkçe metin üretir; çeviri burada, yanıt istemciye giderken yapılır. Akışlar
+/// (`text/event-stream`) ve JSON olmayan yanıtlar bu katmandan değişmeden geçer.
+async fn translate_response(request: Request, next: Next) -> Response {
+    let language = crate::i18n::request_language(request.headers());
+    // Bileşen listesinde `name` alanı sunucunun kendi metnidir ("Roundcube web postası").
+    let extra_keys: &[&str] = if request.uri().path().contains("/components") { &["name"] } else { &[] };
+    let response = next.run(request).await;
+    if language == "tr" {
+        return response;
+    }
+    let is_json = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/json"));
+    if !is_json {
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let bytes = match axum::body::to_bytes(body, MAX_TRANSLATED_BODY).await {
+        Ok(bytes) => bytes,
+        // Sınırı aşan gövde yeniden okunamaz; istemciye anlaşılır bir hata döner.
+        Err(_) => return AppError::internal("Yanıt çevrilemeyecek kadar büyük").into_response(),
+    };
+    let translated = serde_json::from_slice::<serde_json::Value>(&bytes).ok().and_then(|mut value| {
+        crate::i18n::translate_json_with(language, &mut value, extra_keys).then(|| serde_json::to_vec(&value).ok()).flatten()
+    });
+    match translated {
+        Some(body) => {
+            parts.headers.remove(header::CONTENT_LENGTH);
+            Response::from_parts(parts, axum::body::Body::from(body))
+        }
+        None => Response::from_parts(parts, axum::body::Body::from(bytes)),
+    }
 }
 
 /// Veritabanı araçlarına (phpMyAdmin, Adminer) giden istekleri, panel oturumu

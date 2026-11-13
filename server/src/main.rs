@@ -17,6 +17,7 @@ mod dbtrash;
 mod deploy;
 mod dns;
 mod error;
+mod i18n;
 mod events;
 mod fail2ban;
 mod firewall;

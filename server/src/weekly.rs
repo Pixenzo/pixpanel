@@ -340,7 +340,10 @@ fn percent(used: i64, total: i64) -> i64 {
 
 fn disk_line(disk: &DiskGrowth) -> String {
     let growth = match disk.change {
-        Some((delta, days)) => format!("son {days} günde {}{}", if delta >= 0 { "+" } else { "" }, human_bytes(delta)),
+        Some((delta, days)) => {
+            let signed = format!("{}{}", if delta >= 0 { "+" } else { "" }, human_bytes(delta));
+            format!("son {days} günde {signed}")
+        }
         None => "büyüme için henüz yeterli kayıt yok".to_string(),
     };
     format!("{}: %{} dolu ({} / {}), {growth}", disk.mount, percent(disk.used, disk.total), human_bytes(disk.used), human_bytes(disk.total))
@@ -408,16 +411,24 @@ fn sections(digest: &Digest) -> Vec<(String, Vec<String>)> {
     out
 }
 
+/// Özetin metinleri Türkçe kurulur; alıcıya giderken burada çevrilir.
+fn localize(language: &str, text: &str) -> String {
+    crate::i18n::translate(language, text).into_owned()
+}
+
+const FOOTER: &str = "Bu ileti PixPanel tarafından her hafta gönderilir; Sağlık merkezi ayarlarından kapatabilirsiniz.";
+
 /// Düz metin gövde.
-pub fn render_text(digest: &Digest) -> String {
-    let mut text = format!("{}\n", subject(digest));
+pub fn render_text(digest: &Digest, language: &str) -> String {
+    let mut text = format!("{}\n", localize(language, &subject(digest)));
     for (title, lines) in sections(digest) {
+        let title = localize(language, &title);
         text.push_str(&format!("\n{title}\n{}\n", "-".repeat(title.chars().count())));
         for line in lines {
-            text.push_str(&format!("{line}\n"));
+            text.push_str(&format!("{}\n", localize(language, &line)));
         }
     }
-    text.push_str("\nBu ileti PixPanel tarafından her hafta gönderilir; Sağlık merkezi ayarlarından kapatabilirsiniz.\n");
+    text.push_str(&format!("\n{}\n", localize(language, FOOTER)));
     text
 }
 
@@ -426,17 +437,17 @@ fn escape(text: &str) -> String {
 }
 
 /// Sade HTML gövde (satır içi biçimli; e-posta istemcileri stil bloklarını sevmez).
-pub fn render_html(digest: &Digest) -> String {
+pub fn render_html(digest: &Digest, language: &str) -> String {
     let mut html = String::from("<!doctype html><html><body style=\"font-family:Arial,Helvetica,sans-serif;color:#1f2933;max-width:640px;margin:0 auto;padding:16px\">");
-    html.push_str(&format!("<h2 style=\"margin:0 0 12px\">{}</h2>", escape(&subject(digest))));
+    html.push_str(&format!("<h2 style=\"margin:0 0 12px\">{}</h2>", escape(&localize(language, &subject(digest)))));
     for (title, lines) in sections(digest) {
-        html.push_str(&format!("<h3 style=\"margin:20px 0 6px;font-size:15px;border-bottom:1px solid #d9dee3;padding-bottom:4px\">{}</h3><ul style=\"margin:0;padding-left:20px\">", escape(&title)));
+        html.push_str(&format!("<h3 style=\"margin:20px 0 6px;font-size:15px;border-bottom:1px solid #d9dee3;padding-bottom:4px\">{}</h3><ul style=\"margin:0;padding-left:20px\">", escape(&localize(language, &title))));
         for line in lines {
-            html.push_str(&format!("<li style=\"margin:2px 0\">{}</li>", escape(line.trim_start())));
+            html.push_str(&format!("<li style=\"margin:2px 0\">{}</li>", escape(localize(language, &line).trim_start())));
         }
         html.push_str("</ul>");
     }
-    html.push_str("<p style=\"margin-top:24px;font-size:12px;color:#6b7782\">Bu ileti PixPanel tarafından her hafta gönderilir; Sağlık merkezi ayarlarından kapatabilirsiniz.</p></body></html>");
+    html.push_str(&format!("<p style=\"margin-top:24px;font-size:12px;color:#6b7782\">{}</p></body></html>", escape(&localize(language, FOOTER))));
     html
 }
 
@@ -462,10 +473,17 @@ fn admins(db: &Db) -> Vec<i64> {
     .unwrap_or_default()
 }
 
-/// Özeti üretir; `deliver` doğruysa kanallara da gönderir.
-pub async fn build(state: &AppState, deliver: bool) -> AppResult<Delivery> {
+/// Özeti verilen dilde üretir; `deliver` doğruysa kanallara da gönderir.
+pub async fn build(state: &AppState, deliver: bool, language: &str) -> AppResult<Delivery> {
     let digest = gather(state).await?;
-    let mut delivery = Delivery { subject: subject(&digest), text: render_text(&digest), html: render_html(&digest), emailed: Vec::new(), telegram: 0, errors: Vec::new() };
+    let mut delivery = Delivery {
+        subject: localize(language, &subject(&digest)),
+        text: render_text(&digest, language),
+        html: render_html(&digest, language),
+        emailed: Vec::new(),
+        telegram: 0,
+        errors: Vec::new(),
+    };
     if !deliver {
         return Ok(delivery);
     }
@@ -521,7 +539,9 @@ pub async fn run_if_due(state: &AppState) {
     }
     // Önce işaretlenir: gönderim yarıda kalsa bile her dakika yeniden denenmez.
     save_last(&state.db, &Last { at: now(), delivered: 0, errors: Vec::new() });
-    match build(state, true).await {
+    // Zamanlanmış özet tek bir metin olarak gider; dili ilk yöneticinin dilidir.
+    let language = admins(&state.db).first().map(|id| crate::notify::user_language(&state.db, *id)).unwrap_or("tr");
+    match build(state, true, language).await {
         Ok(delivery) => tracing::info!(emailed = delivery.emailed.len(), telegram = delivery.telegram, errors = delivery.errors.len(), "haftalık özet gönderildi"),
         Err(err) => tracing::warn!(error = %err, "haftalık özet hazırlanamadı"),
     }
@@ -635,7 +655,7 @@ mod tests {
 
     #[test]
     fn text_report_covers_every_section() {
-        let text = render_text(&digest());
+        let text = render_text(&digest(), "tr");
         assert!(text.starts_with("PixPanel haftalık özet (02.11.2026 – 09.11.2026)"), "{text}");
         for expected in [
             "10080 denetim turu yapıldı (241920 ayrı kontrol)",
@@ -677,13 +697,13 @@ mod tests {
             wordpress_sites: 0,
             ..digest()
         };
-        let text = render_text(&empty);
+        let text = render_text(&empty, "tr");
         assert!(text.contains("Bekleyen sorun yok.") && text.contains("Bekleyen paket güncellemesi yok.") && text.contains("kayıtlı ziyaret yok"));
     }
 
     #[test]
     fn html_report_escapes_titles() {
-        let html = render_html(&digest());
+        let html = render_html(&digest(), "tr");
         assert!(html.starts_with("<!doctype html>"));
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"), "başlıktaki etiketler kaçışlanmalı");
         assert!(!html.contains("<script>"));

@@ -24,7 +24,7 @@ import { useFeedback } from "../components/feedback";
 import { Button, Checkbox, ErrorBlock, Input, LoadingBlock, Modal, PageHeader, Panel, Select, Spinner, Table, Td, Th } from "../components/ui";
 import { ApiError, api, errorMessage } from "../lib/api";
 import { classNames, formatBytes, formatDateTime } from "../lib/format";
-import { t } from "../lib/i18n";
+import { getLanguage, t } from "../lib/i18n";
 
 const CodeEditor = lazy(() => import("../components/CodeEditor"));
 
@@ -82,6 +82,7 @@ function uploadFile(scope: string, dir: string, file: File, overwrite: boolean, 
     const query = `scope=${encodeURIComponent(scope)}&dir=${encodeURIComponent(dir)}&overwrite=${overwrite}`;
     request.open("POST", `/api/v1/files/upload?${query}`);
     request.setRequestHeader("x-pixpanel-csrf", "1");
+    request.setRequestHeader("accept-language", getLanguage());
     request.upload.onprogress = (event) => event.lengthComputable && onProgress(event.loaded / event.total);
     request.onerror = () => reject(new ApiError(0, "network", t("Yükleme sırasında bağlantı koptu")));
     request.onload = () => {
