@@ -4,6 +4,16 @@ Panelde yapılan her işlem sunucuda `pixpanel` komutuyla da yapılabilir; betik
 
 Komutlar **root** olarak çalıştırılır ve işi kendileri yapmaz: çalışan panelin API'sini çağırırlar. Bu yüzden arayüzdeki doğrulamalar, yetki denetimi ve denetim günlüğü komut satırında da aynen geçerlidir. Parola sorulmaz; komut, yalnızca sunucunun kendisinden geçerli kısa ömürlü bir anahtar üretir ve işi bitince siler. Panel servisi çalışmıyorsa komutlar "panele bağlanılamadı" hatasıyla durur.
 
+## Dil
+
+Komut satırı kurulumda seçilen dille çalışır (`install.sh --lang tr`; seçilmezse İngilizce). Dil `/etc/pixpanel/language` dosyasında durur ve şöyle değiştirilir:
+
+```sh
+pixpanel setlang tr     # ya da en
+```
+
+Yardım metinleri, tablo başlıkları, hata iletileri ve panelden gelen iletiler (görev günlükleri, sağlık bulguları) bu dilde yazılır. Panelin arayüz dili bundan etkilenmez; o her hesabın kendi ayarıdır. clap'in kendi kalıp metinleri (`Usage:`, `Print help`) her iki dilde de İngilizcedir.
+
 ## Hazır komutlar
 
 ```sh
@@ -53,7 +63,7 @@ fi
 ## Yönetim komutları (panel kapalıyken de çalışır)
 
 ```sh
-pixpanel create-admin --username admin
+pixpanel create-admin --username admin                 # --language tr|en: hesabın panel dili
 pixpanel reset-password KULLANICI
 pixpanel disable-two-factor KULLANICI
 ```

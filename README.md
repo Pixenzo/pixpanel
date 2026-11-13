@@ -61,7 +61,7 @@ Debian 13 or Ubuntu 26.04, x86_64, root access. A clean server is recommended.
 curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.sh | bash
 ```
 
-The script verifies the signature of the release files, installs the panel and shows the first admin password once. The panel opens at `https://<server>:8443`. Running the same command again upgrades the panel to the latest release.
+The script speaks English by default; add `--lang tr` for Turkish (`... | bash -s -- --lang tr`). It verifies the signature of the release files, installs the panel and shows the first admin password once. The panel opens at `https://<server>:8443`. Running the same command again upgrades the panel to the latest release.
 
 For an offline install, copy the release files to the server and run `bash install.sh --from-dir <folder>`. To remove the panel: `pixpanel-uninstall` (keeps settings and data) or `pixpanel-uninstall --purge`.
 
@@ -78,7 +78,7 @@ For a release package: `scripts/release.sh <version>`.
 
 ## Languages
 
-The interface is available in Turkish and English. A new account gets its language from the browser on first sign-in (Turkish browsers get Turkish, all others English) and can change it under Account. Everything the server writes for that user (error messages, health findings, job logs, notification emails, API responses) follows the account's language. The `pixpanel` command line and the install script print Turkish only.
+The interface is available in Turkish and English. A new account gets its language from the browser on first sign-in (Turkish browsers get Turkish, all others English) and can change it under Account. Everything the server writes for that user (error messages, health findings, job logs, notification emails, API responses) follows the account's language. The install script and the `pixpanel` command line use the language chosen at install time (English unless `--lang tr` is given); change it later with `pixpanel setlang tr` or `pixpanel setlang en`.
 
 ## Documentation
 

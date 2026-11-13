@@ -41,8 +41,8 @@ ASCII_TEXT = re.compile(r"^[A-Za-z0-9 ,.:;()%'{}!?/+…–—“”\-\[\]]+$")
 HOLE = re.compile(r"\{([^{}]*)\}")
 # Diske yazılan yapılandırma dosyalarının ve betiklerin içeriği çevrilmez.
 GENERATED_FILE = re.compile(r"(#|;|//|<\?php|\[Unit\]|\{BLOCK_START\}|UPDATE |SELECT |INSERT )")
-# Komut satırı çıktısı sunucunun kendi dilinde kalır.
-SKIP_FILES = {"cli.rs", "main.rs"}
+# Bu dosyaların metinleri çevrilmez.
+SKIP_FILES = set()
 
 
 def inside_skipped_macro(before):

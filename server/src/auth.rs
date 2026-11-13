@@ -532,8 +532,11 @@ impl FromRequestParts<AppState> for AuthUser {
             return Err(AppError::Unauthorized);
         }
         let role = Role::parse(&row.role).ok_or(AppError::Unauthorized)?;
-        // Yanıt bu hesabın dilinde yazılır (bkz. `web::translate_response`).
-        if let Some(slot) = parts.extensions.get::<crate::i18n::LanguageSlot>() {
+        // Yanıt bu hesabın dilinde yazılır (bkz. `web::translate_response`). Tarayıcı oturumunda
+        // dil her zaman hesabındır. API anahtarıyla gelen istek dili `Accept-Language` ile açıkça
+        // seçebilir (komut satırı kendi dilini böyle bildirir); seçmezse yine hesabın dili geçerlidir.
+        let explicit_language = via_token && parts.headers.contains_key(axum::http::header::ACCEPT_LANGUAGE);
+        if let Some(slot) = parts.extensions.get::<crate::i18n::LanguageSlot>().filter(|_| !explicit_language) {
             slot.set(&row.language);
         }
         Ok(AuthUser {

@@ -13,6 +13,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
 use crate::auth;
+use crate::i18n::cli as t;
 use crate::config::Config;
 use crate::db::{now, Db};
 
@@ -25,6 +26,7 @@ pub enum ApiCommand {
     ///
     /// Örnek: pixpanel api GET /sites
     ///        pixpanel api POST /sites --data '{"domain":"ornek.com","kind":"static"}'
+    #[command(verbatim_doc_comment)]
     Api {
         /// GET, POST, PUT, PATCH ya da DELETE
         method: String,
@@ -168,7 +170,12 @@ impl Client {
     async fn request(&self, method: &str, path: &str, body: Option<Value>) -> anyhow::Result<(u16, Value)> {
         let method = reqwest::Method::from_bytes(method.to_ascii_uppercase().as_bytes()).map_err(|_| anyhow!("geçersiz yöntem: {method}"))?;
         let path = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
-        let mut request = self.http.request(method, format!("{}{path}", self.base)).bearer_auth(&self.token);
+        // Panelin iletileri (hatalar, görev günlükleri, bulgular) komut satırının dilinde gelir.
+        let mut request = self
+            .http
+            .request(method, format!("{}{path}", self.base))
+            .bearer_auth(&self.token)
+            .header(reqwest::header::ACCEPT_LANGUAGE, crate::i18n::cli_language());
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -244,6 +251,7 @@ fn read_body(data: Option<String>) -> anyhow::Result<Option<Value>> {
 fn print_table(header: &[&str], rows: &[Vec<String>]) {
     let width = |column: usize| rows.iter().map(|row| row[column].chars().count()).chain([header[column].chars().count()]).max().unwrap_or(0);
     let widths: Vec<usize> = (0..header.len()).map(width).collect();
+    // Başlıklar çevrilmiş gelir (`t`); genişlik çevrilmiş metne göre hesaplanır.
     let line = |cells: Vec<String>| {
         let padded: Vec<String> = cells.iter().enumerate().map(|(index, cell)| format!("{cell:<width$}", width = widths[index])).collect();
         println!("{}", padded.join("  ").trim_end());
@@ -285,7 +293,7 @@ async fn run_command(client: &Client, command: ApiCommand) -> anyhow::Result<()>
                 .as_array()
                 .map(|list| list.iter().map(|site| vec![text(site, "domain"), text(site, "kind"), text(site, "owner"), text(site, "ssl_mode"), text(site, "status")]).collect())
                 .unwrap_or_default();
-            print_table(&["ALAN ADI", "TÜR", "SAHİBİ", "SSL", "DURUM"], &rows);
+            print_table(&[&t("ALAN ADI"), &t("TÜR"), &t("SAHİBİ"), "SSL", &t("DURUM")], &rows);
         }
         ApiCommand::Site { action: SiteAction::Add { domain, kind, php, node, target, owner } } => {
             let options = client.call("GET", "/sites/options", None).await?;
@@ -303,12 +311,12 @@ async fn run_command(client: &Client, command: ApiCommand) -> anyhow::Result<()>
                 body["user_id"] = json!(id.ok_or_else(|| anyhow!("hesap bulunamadı: {owner}"))?);
             }
             let site = client.call("POST", "/sites", Some(body)).await?;
-            println!("{} eklendi (no {}).", text(&site, "domain"), text(&site, "id"));
+            println!("{}", t(&format!("{} eklendi (no {}).", text(&site, "domain"), text(&site, "id"))));
         }
         ApiCommand::Site { action: SiteAction::Remove { domain, delete_files } } => {
             let id = site_id(client, &domain).await?;
             client.call("DELETE", &format!("/sites/{id}?delete_files={delete_files}"), None).await?;
-            println!("{domain} kaldırıldı{}.", if delete_files { " (dosyalarıyla birlikte)" } else { " (dosyaları duruyor)" });
+            println!("{}", t(&if delete_files { format!("{domain} kaldırıldı (dosyalarıyla birlikte).") } else { format!("{domain} kaldırıldı (dosyaları duruyor).") }));
         }
         ApiCommand::User { action: UserAction::List } => {
             let users = client.call("GET", "/users", None).await?;
@@ -316,27 +324,27 @@ async fn run_command(client: &Client, command: ApiCommand) -> anyhow::Result<()>
                 .as_array()
                 .map(|list| list.iter().map(|user| vec![text(user, "username"), text(user, "role"), text(user, "package_name"), text(user, "status"), text(user, "email")]).collect())
                 .unwrap_or_default();
-            print_table(&["HESAP", "TÜR", "PAKET", "DURUM", "E-POSTA"], &rows);
+            print_table(&[&t("HESAP"), &t("TÜR"), &t("PAKET"), &t("DURUM"), &t("E-POSTA")], &rows);
         }
         ApiCommand::User { action: UserAction::Add { username, role, password, email } } => {
             let generated = password.is_none();
             let password = password.unwrap_or_else(|| auth::random_password(20));
             client.call("POST", "/users", Some(json!({ "username": username, "role": role, "password": password, "email": email }))).await?;
-            println!("{username} oluşturuldu.");
+            println!("{}", t(&format!("{username} oluşturuldu.")));
             if generated {
-                println!("Parola: {password}");
+                println!("{}", t(&format!("Parola: {password}")));
             }
         }
         ApiCommand::Health => {
             let view = client.call("POST", "/health/check", None).await?;
             let findings = view.pointer("/report/findings").and_then(Value::as_array).cloned().unwrap_or_default();
             if findings.is_empty() {
-                println!("Her şey yolunda.");
+                println!("{}", t("Her şey yolunda."));
             }
             let label = |severity: &str| match severity {
-                "critical" => "KRİTİK",
-                "warning" => "UYARI",
-                _ => "ÖNERİ",
+                "critical" => t("KRİTİK"),
+                "warning" => t("UYARI"),
+                _ => t("ÖNERİ"),
             };
             for finding in &findings {
                 println!("{:<7} {}", label(finding["severity"].as_str().unwrap_or("")), text(finding, "title"));

@@ -18,6 +18,10 @@ except Exception: print('(JSON degil: ' + raw[:200] + ')'); sys.exit()
 try: print($1)
 except Exception as e: print('(alan yok: %s %s)' % (e, raw[:200]))"; }
 
+# Denetimler Türkçe çıktıya göre yazıldı; sınamanın sonunda önceki dil geri konur.
+PREVIOUS_LANG=$(cat /etc/pixpanel/language 2>/dev/null || echo en)
+pixpanel setlang tr >/dev/null
+
 # Önceki koşudan kalanlar.
 pixpanel site remove $SITE --delete-files >/dev/null 2>&1
 OLD=$(pixpanel api GET /users 2>/dev/null | jget "next((u['id'] for u in d if u['username']=='$ACCOUNT'), '')")
@@ -96,5 +100,15 @@ for name in $ACCOUNT ${ACCOUNT}2; do
   id=$(pixpanel api GET /users | jget "next((u['id'] for u in d if u['username']=='$name'), '')")
   check "hesabı sil: $name" "$(rc pixpanel api DELETE "/users/$id")" 0
 done
+say "Dil"
+pixpanel setlang en >/dev/null
+check "İngilizce: tablo başlıkları" "$(pixpanel site list | head -1 | awk '{print $1, $2}')" "DOMAIN TYPE"
+check "İngilizce: hata iletisi" "$(pixpanel reset-password yok-boyle-biri 2>&1)" "Error: user not found: yok-boyle-biri"
+check "İngilizce: panelin iletisi de İngilizce" "$(pixpanel api GET /sites/999999 2>/dev/null | jget 'd["error"]["message"]')" "Record not found"
+check "İngilizce: yardım" "$(pixpanel --help | head -1)" "Server and hosting control panel"
+pixpanel setlang tr >/dev/null
+check "Türkçe: panelin iletisi Türkçe" "$(pixpanel api GET /sites/999999 2>/dev/null | jget 'd["error"]["message"]')" "Kayıt bulunamadı"
+check "geçersiz dil" "$(rc pixpanel setlang de)" 1
+pixpanel setlang "$PREVIOUS_LANG" >/dev/null
 rm -f /tmp/cli-body.json /tmp/cli-wait.txt /tmp/cli-health.txt
 echo "bitti"

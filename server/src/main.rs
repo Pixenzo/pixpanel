@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use rusqlite::params;
 
 use crate::config::Config;
@@ -76,6 +76,9 @@ enum Command {
         username: String,
         #[arg(long)]
         password: Option<String>,
+        /// Hesabın panel dili (`tr`, `en`). Verilmezse ilk girişte tarayıcının dilinden belirlenir.
+        #[arg(long)]
+        language: Option<String>,
     },
     /// Bir kullanıcının parolasını sıfırlar ve yeni parolayı yazdırır
     ResetPassword { username: String },
@@ -93,16 +96,60 @@ enum Command {
     /// Panelin eklediği IP adreslerini kurar; açılışta web sunucusundan önce çalışır
     #[command(hide = true)]
     ApplyAddresses,
+    /// Komut satırının dilini ayarlar (tr ya da en); panelin arayüz diline dokunmaz
+    #[command(name = "setlang")]
+    SetLang {
+        /// tr ya da en
+        language: String,
+    },
     #[command(flatten)]
     Api(cli::ApiCommand),
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     // `ssh` parolayı sormak için bu ikili dosyayı çağırır (taşıma aracı).
     if let Some(code) = migrate::askpass() {
         std::process::exit(code);
     }
-    let cli = Cli::parse();
+    // Yardım metinleri komut satırının dilinde gösterilir.
+    let matches = localize_command(Cli::command()).get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit());
+    if let Err(err) = run(cli) {
+        // Hata iletileri Türkçe yazılır; ekrana komut satırının dilinde çıkar.
+        eprintln!("{} {}", i18n::cli("Hata:"), i18n::cli(&format!("{err:#}")));
+        std::process::exit(1);
+    }
+}
+
+/// Komut ağacındaki açıklama ve yardım metinlerini (Türkçe kaynak) komut satırının diline çevirir.
+fn localize_command(mut command: clap::Command) -> clap::Command {
+    let translate = |text: Option<&clap::builder::StyledStr>| text.map(|text| i18n::cli(&text.to_string()));
+    if let Some(about) = translate(command.get_about()) {
+        command = command.about(about);
+    }
+    if let Some(long_about) = translate(command.get_long_about()) {
+        command = command.long_about(long_about);
+    }
+    let arguments: Vec<String> = command.get_arguments().map(|argument| argument.get_id().to_string()).collect();
+    for id in arguments {
+        command = command.mut_arg(id, |mut argument| {
+            if let Some(help) = translate(argument.get_help()) {
+                argument = argument.help(help);
+            }
+            if let Some(long_help) = translate(argument.get_long_help()) {
+                argument = argument.long_help(long_help);
+            }
+            argument
+        });
+    }
+    let subcommands: Vec<String> = command.get_subcommands().map(|sub| sub.get_name().to_string()).collect();
+    for name in subcommands {
+        command = command.mut_subcommand(name, localize_command);
+    }
+    command
+}
+
+fn run(cli: Cli) -> anyhow::Result<()> {
 
     // Yardımcı süreç yetki düşürüp chroot yapacağından olabildiğince yalın
     // başlar: ne eşzamansız çalışma zamanı kurulur ne de veritabanı açılır.
@@ -111,6 +158,10 @@ fn main() -> anyhow::Result<()> {
     }
     if let Some(Command::ProbeBind { port }) = cli.command {
         std::process::exit(hosting::portguard::run_probe(port));
+    }
+    // Dil ayarı panelin veritabanına ve yapılandırmasına dokunmaz.
+    if let Some(Command::SetLang { language }) = &cli.command {
+        return set_cli_language(language);
     }
 
     tracing_subscriber::fmt()
@@ -131,23 +182,23 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(serve(cfg, db, cli.config)),
-        Command::CreateAdmin { username, password } => create_admin(&db, &username, password),
+        Command::CreateAdmin { username, password, language } => create_admin(&db, &username, password, language),
         Command::ResetPassword { username } => reset_password(&db, &username),
         Command::DisableTwoFactor { username } => {
             let changed = db
                 .call(|conn| conn.execute("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE username = ?1", params![username]))
                 .map_err(|err| anyhow::anyhow!(err.to_string()))?;
             anyhow::ensure!(changed > 0, "kullanıcı bulunamadı: {username}");
-            println!("{username} için iki adımlı doğrulama kapatıldı.");
+            println!("{}", i18n::cli(&format!("{username} için iki adımlı doğrulama kapatıldı.")));
             Ok(())
         }
         Command::Api(command) => cli::run(&cfg, &db, command),
         Command::ApplyAddresses => {
             let added = tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(addresses::apply_managed(&db)).map_err(|err| anyhow::anyhow!(err.to_string()))?;
-            println!("{added} adres kuruldu.");
+            println!("{}", i18n::cli(&format!("{added} adres kuruldu.")));
             Ok(())
         }
-        Command::FsHelper | Command::UpdateWatchdog | Command::ProbeBind { .. } => unreachable!("yardımcı süreçler yukarıda ele alındı"),
+        Command::FsHelper | Command::UpdateWatchdog | Command::ProbeBind { .. } | Command::SetLang { .. } => unreachable!("yardımcı süreçler yukarıda ele alındı"),
     }
 }
 
@@ -251,8 +302,13 @@ fn ensure_panel_certificate(dir: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
     Ok((cert_path, key_path))
 }
 
-fn create_admin(db: &Db, username: &str, password: Option<String>) -> anyhow::Result<()> {
+fn create_admin(db: &Db, username: &str, password: Option<String>, language: Option<String>) -> anyhow::Result<()> {
     let to_anyhow = |err: error::AppError| anyhow::anyhow!(err.to_string());
+    let language = match language.as_deref() {
+        None => String::new(),
+        Some(value @ ("tr" | "en")) => value.to_string(),
+        Some(other) => anyhow::bail!("geçersiz dil: {other} (tr ya da en)"),
+    };
     let generated = password.is_none();
     let password = password.unwrap_or_else(|| auth::random_password(20));
     auth::validate_password(&password).map_err(to_anyhow)?;
@@ -261,17 +317,17 @@ fn create_admin(db: &Db, username: &str, password: Option<String>) -> anyhow::Re
         let tx = conn.transaction()?;
         let id = db::next_user_id(&tx)?;
         tx.execute(
-            // Dil boş bırakılır: ilk girişte tarayıcının diline göre belirlenir.
-            "INSERT INTO users (id, username, password_hash, role, created_at, language) VALUES (?1, ?2, ?3, 'admin', ?4, '')",
-            params![id, username, hash, db::now()],
+            // Dil verilmediyse boş bırakılır: ilk girişte tarayıcının diline göre belirlenir.
+            "INSERT INTO users (id, username, password_hash, role, created_at, language) VALUES (?1, ?2, ?3, 'admin', ?4, ?5)",
+            params![id, username, hash, db::now(), language],
         )?;
         tx.commit()
     })
     .map_err(to_anyhow)?;
-    println!("Yönetici hesabı oluşturuldu.");
-    println!("  Kullanıcı adı: {username}");
+    println!("{}", i18n::cli("Yönetici hesabı oluşturuldu."));
+    println!("{}", i18n::cli(&format!("  Kullanıcı adı: {username}")));
     if generated {
-        println!("  Parola       : {password}");
+        println!("{}", i18n::cli(&format!("  Parola       : {password}")));
     }
     Ok(())
 }
@@ -296,6 +352,65 @@ fn reset_password(db: &Db, username: &str) -> anyhow::Result<()> {
         })
         .map_err(to_anyhow)?;
     anyhow::ensure!(updated > 0, "kullanıcı bulunamadı: {username}");
-    println!("Yeni parola: {password}");
+    println!("{}", i18n::cli(&format!("Yeni parola: {password}")));
     Ok(())
+}
+
+/// `pixpanel setlang`: komut satırının dilini kaydeder.
+fn set_cli_language(language: &str) -> anyhow::Result<()> {
+    let language = language.trim().to_ascii_lowercase();
+    anyhow::ensure!(matches!(language.as_str(), "tr" | "en"), "geçersiz dil: {language} (tr ya da en)");
+    anyhow::ensure!(nix::unistd::geteuid().is_root(), "bu komut root olarak çalıştırılmalıdır (sudo pixpanel …)");
+    let path = Path::new(i18n::CLI_LANGUAGE_FILE);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, format!("{language}\n")).with_context(|| format!("{} yazılamadı", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644))?;
+    }
+    // İleti yeni seçilen dilde yazılır.
+    println!("{}", if language == "en" { "The command line language is now English." } else { "Komut satırının dili Türkçe olarak ayarlandı." });
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Her yardım metninin İngilizcesi sözlükte olmalı; yoksa İngilizce yardımda Türkçe satır kalır.
+    #[test]
+    fn every_help_text_has_an_english_translation() {
+        fn walk(command: &clap::Command, missing: &mut Vec<String>) {
+            let mut texts: Vec<String> = Vec::new();
+            texts.extend(command.get_about().map(ToString::to_string));
+            texts.extend(command.get_long_about().map(ToString::to_string));
+            for argument in command.get_arguments() {
+                texts.extend(argument.get_help().map(ToString::to_string));
+                texts.extend(argument.get_long_help().map(ToString::to_string));
+            }
+            for text in texts {
+                if i18n::translate("en", &text) == text && text.chars().any(|c| "çğıöşüÇĞİÖŞÜ".contains(c)) {
+                    missing.push(text);
+                }
+            }
+            for sub in command.get_subcommands() {
+                walk(sub, missing);
+            }
+        }
+        let mut missing = Vec::new();
+        walk(&Cli::command(), &mut missing);
+        for text in &missing {
+            println!("çevirisi olmayan yardım metni: {text:?}");
+        }
+        assert!(missing.is_empty(), "{} yardım metninin çevirisi yok", missing.len());
+    }
+
+    #[test]
+    fn localized_command_still_parses() {
+        let matches = localize_command(Cli::command()).try_get_matches_from(["pixpanel", "setlang", "tr"]).unwrap();
+        assert!(matches!(Cli::from_arg_matches(&matches).unwrap().command, Some(Command::SetLang { .. })));
+    }
 }

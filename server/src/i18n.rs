@@ -184,6 +184,30 @@ impl LanguageSlot {
     }
 }
 
+/// Komut satırının dilinin saklandığı dosya. Kurulum betiği seçilen dili buraya yazar;
+/// `pixpanel setlang` değiştirir. Panelin kendisi bu dosyaya bakmaz (orada dil hesabındır).
+pub const CLI_LANGUAGE_FILE: &str = "/etc/pixpanel/language";
+
+static CLI_LANGUAGE: OnceLock<&'static str> = OnceLock::new();
+
+/// Komut satırının dili: `PIXPANEL_LANG` ortam değişkeni (kurulum betiği verir), yoksa
+/// `CLI_LANGUAGE_FILE`, o da yoksa İngilizce (kurulumun varsayılanı).
+pub fn cli_language() -> &'static str {
+    CLI_LANGUAGE.get_or_init(|| {
+        let chosen = std::env::var("PIXPANEL_LANG")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| std::fs::read_to_string(CLI_LANGUAGE_FILE).ok())
+            .unwrap_or_else(|| "en".into());
+        normalize(&chosen)
+    })
+}
+
+/// Komut satırının yazdığı metni (Türkçe kaynak) komut satırının diline çevirir.
+pub fn cli(text: &str) -> String {
+    translate(cli_language(), text).into_owned()
+}
+
 /// Panelin desteklediği dil kodu; tanınmayan değer Türkçe sayılır.
 pub fn normalize(language: &str) -> &'static str {
     let tag = language.trim().to_ascii_lowercase();

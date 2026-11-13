@@ -57,8 +57,10 @@ Debian 13 ya da Ubuntu 26.04, x86_64, root erişimi. Temiz bir sunucu önerilir.
 ## Kurulum
 
 ```
-curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.sh | bash -s -- --lang tr
 ```
+
+`--lang tr` verilmezse betik İngilizce yazar.
 
 Betik sürüm dosyalarının imzasını doğrular, paneli kurar ve ilk yönetici parolasını bir kez gösterir. Panel `https://<sunucu>:8443` adresinde açılır. Aynı komut yeniden çalıştırılırsa paneli son sürüme yükseltir.
 
@@ -77,7 +79,7 @@ Sürüm paketi için: `scripts/release.sh <sürüm>`.
 
 ## Diller
 
-Arayüz Türkçe ve İngilizce kullanılabilir. Yeni hesabın dili ilk girişte tarayıcının dilinden belirlenir (Türkçe tarayıcıda Türkçe, ötekilerde İngilizce); kullanıcı sonradan Hesabım sayfasından değiştirebilir. Sunucunun o kullanıcı için yazdığı her şey (hata iletileri, sağlık bulguları, görev günlükleri, bildirim e-postaları, API yanıtları) hesabın diline uyar. `pixpanel` komut satırı ve kurulum betiği yalnızca Türkçe yazar.
+Arayüz Türkçe ve İngilizce kullanılabilir. Yeni hesabın dili ilk girişte tarayıcının dilinden belirlenir (Türkçe tarayıcıda Türkçe, ötekilerde İngilizce); kullanıcı sonradan Hesabım sayfasından değiştirebilir. Sunucunun o kullanıcı için yazdığı her şey (hata iletileri, sağlık bulguları, görev günlükleri, bildirim e-postaları, API yanıtları) hesabın diline uyar. Kurulum betiği ve `pixpanel` komut satırı kurulumda seçilen dille çalışır (`--lang tr` verilmezse İngilizce); sonradan `pixpanel setlang tr` ya da `pixpanel setlang en` ile değiştirilir.
 
 ## Belgeler
 

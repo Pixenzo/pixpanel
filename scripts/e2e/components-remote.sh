@@ -56,7 +56,7 @@ STARTED=$SECONDS
 OUT=$(bash $REL/install.sh --from-dir $REL --admin $ADMIN 2>&1); RC=$?
 check "kurulum ($((SECONDS - STARTED)) sn)" "$RC" 0
 [ "$RC" = 0 ] || { echo "$OUT" | tail -15; exit 1; }
-PASSWORD=$(sed -n 's/.*Parola *: *//p' <<<"$OUT" | head -1)
+PASSWORD=$(sed -n -E 's/.*(Parola|Password) *: *//p' <<<"$OUT" | head -1)
 # Sınama betiklerinin kendi gereksinimi (JSON ayrıştırma, sahte sunucular); panelin değil.
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 >/dev/null 2>&1
 # Telegram ve Cloudflare çağrıları sınama boyunca yerel sahte sunuculara gider.
