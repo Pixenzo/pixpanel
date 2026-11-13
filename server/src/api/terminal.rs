@@ -142,6 +142,11 @@ async fn connect(
     upgrade: WebSocketUpgrade,
 ) -> AppResult<Response> {
     check_origin(&state, &headers)?;
+    // Kabuk yalnızca tarayıcı oturumundan açılır. Bağlantı bir GET isteği olduğu için salt okunur
+    // anahtar da buraya ulaşır; ele geçirilmiş bir anahtar (yöneticininki dahil) kabuk vermemeli.
+    if user.via_token {
+        return Err(AppError::Forbidden);
+    }
     // Yönetici her hedefi açar; hesap yalnızca kendi kabuğunu (SSH düzeyi "Kabuk" ise).
     if !user.is_admin() {
         let ssh_mode: String = state
@@ -192,10 +197,10 @@ fn shell_command(target: &Target) -> CommandBuilder {
             // Hesap kabuğu hesabın kaynak diliminde çalışır (dilim kullanılamıyorsa panelin cgroup'unda) ve
             // panelin ortam değişkenlerini görmez.
             let prefix = if crate::sys::runas::slice_support() { crate::sys::runas::scope_prefix(user.uid) } else { Vec::new() };
-            let mut command = CommandBuilder::new(prefix.first().map_or("setpriv", String::as_str));
+            let mut command = CommandBuilder::new(prefix.first().map_or(crate::sys::runas::SETPRIV, String::as_str));
             if !prefix.is_empty() {
                 command.args(&prefix[1..]);
-                command.arg("setpriv");
+                command.arg(crate::sys::runas::SETPRIV);
             }
             command.env_clear();
             command.args([

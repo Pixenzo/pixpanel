@@ -62,6 +62,15 @@ async fn login(
     state.throttle.check(&ip)?;
 
     let username = body.username.trim().to_string();
+    // Kullanıcı adı başarısız girişte günlüğe yazılır ve o satırı fail2ban okur. İçine satır sonu
+    // konabilseydi saldırgan başka bir adres adına sahte "başarısız giriş" satırları üretip o adresi
+    // engelletebilirdi. Geçerli bir kullanıcı adında bulunamayacak karakter varsa veritabanına bile
+    // sorulmaz; günlüğe ad yerine sabit bir işaret yazılır.
+    if username.len() > 64 || !username.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '@')) {
+        state.throttle.record_failure(&ip);
+        tracing::warn!(%ip, username = "(geçersiz)", "başarısız giriş denemesi");
+        return Err(AppError::bad("Kullanıcı adı ya da parola hatalı"));
+    }
     let found = state.db.call(|conn| {
         conn.query_row(
             "SELECT id, password_hash, status FROM users WHERE username = ?1",
@@ -74,6 +83,9 @@ async fn login(
     let password = body.password;
     let hash = found.as_ref().map(|(_, hash, _)| hash.clone()).unwrap_or_else(|| DUMMY_HASH.clone());
     // Argon2 bilerek yavaştır; eşzamansız çalışanları tıkamamak için ayrı iş parçacığında koşar.
+    // Her doğrulama onlarca MB bellek kullandığı için aynı anda koşanların sayısı da sınırlıdır;
+    // yoksa oturumsuz biri giriş isteği yağdırarak sunucunun belleğini tüketebilirdi.
+    let _slot = auth::PASSWORD_SLOTS.acquire().await.map_err(|err| AppError::internal(err.to_string()))?;
     let valid = tokio::task::spawn_blocking(move || auth::verify_password(&password, &hash))
         .await
         .map_err(|err| AppError::internal(err.to_string()))?;
@@ -86,6 +98,10 @@ async fn login(
             return Err(AppError::bad("Kullanıcı adı ya da parola hatalı"));
         }
     };
+    // Sahibi askıya alınmış alt hesap, parolası doğru olsa da giremez.
+    if auth::parent_suspended(&state.db, user_id)? {
+        return Err(AppError::bad("Kullanıcı adı ya da parola hatalı"));
+    }
     // Parola doğru; iki adımlı doğrulama açıksa ikinci adım da istenir.
     let (totp_enabled, secret, last_step, recovery): (bool, Option<String>, i64, String) = state.db.call(|conn| {
         conn.query_row("SELECT totp_enabled, totp_secret, totp_last_step, recovery_codes FROM users WHERE id = ?1", params![user_id], |row| {
@@ -102,19 +118,29 @@ async fn login(
         let recovery_hash = auth::hash_token(&code.to_ascii_lowercase());
         if let Some(step) = secret.as_deref().and_then(|secret| crate::totp::verify(secret, code, now(), last_step)) {
             // Aynı kod ikinci kez kullanılamasın diye son adım saklanır.
-            state.db.call(|conn| conn.execute("UPDATE users SET totp_last_step = ?1 WHERE id = ?2", params![step, user_id]))?;
+            // Güncelleme koşulludur: aynı kodla aynı anda gelen iki girişten yalnızca biri geçer.
+            let claimed = state.db.call(|conn| conn.execute("UPDATE users SET totp_last_step = ?1 WHERE id = ?2 AND totp_last_step < ?1", params![step, user_id]))?;
+            if claimed == 0 {
+                state.throttle.record_failure(&ip);
+                return Err(AppError::bad("Doğrulama kodu hatalı ya da süresi dolmuş"));
+            }
         } else if let Some(position) = codes.iter().position(|saved| *saved == recovery_hash) {
             // Kurtarma kodu tek kullanımlıktır.
             codes.remove(position);
             let remaining = serde_json::to_string(&codes).map_err(|err| AppError::internal(err.to_string()))?;
-            state.db.call(|conn| conn.execute("UPDATE users SET recovery_codes = ?1 WHERE id = ?2", params![remaining, user_id]))?;
+            let claimed = state.db.call(|conn| conn.execute("UPDATE users SET recovery_codes = ?1 WHERE id = ?2 AND recovery_codes = ?3", params![remaining, user_id, recovery]))?;
+            if claimed == 0 {
+                state.throttle.record_failure(&ip);
+                return Err(AppError::bad("Doğrulama kodu hatalı ya da süresi dolmuş"));
+            }
         } else {
             state.throttle.record_failure(&ip);
             tracing::warn!(%ip, %username, "başarısız giriş denemesi");
             return Err(AppError::bad("Doğrulama kodu hatalı ya da süresi dolmuş"));
         }
     }
-    state.throttle.clear(&ip);
+    // Başarılı giriş adresin sayacını sıfırlamaz: yoksa geçerli bir hesabı olan biri, araya kendi
+    // girişini koyarak başka bir hesabın parolasını sınırsız deneyebilirdi. Sayaç süresiyle söner.
 
     // Yeni açılan hesabın dili boştur; ilk girişte tarayıcının diline göre belirlenir ve
     // sonrasında yalnızca kullanıcı Hesabım sayfasından değiştirir.
@@ -187,9 +213,18 @@ fn require_session(user: &AuthUser) -> AppResult<()> {
     if user.via_token { Err(AppError::Forbidden) } else { Ok(()) }
 }
 
+/// Hassas bir işlemden önce hesabın parolasını sorar. Denemeler hesap başına sınırlıdır:
+/// ele geçirilmiş bir oturum, iki adımlı doğrulamayı kapatmak için parolayı deneyerek bulamamalı.
 fn check_password(state: &AppState, user: &AuthUser, password: &str) -> AppResult<()> {
+    let key = format!("password:{}", user.id);
+    state.throttle.check(&key)?;
     let hash: String = state.db.call(|conn| conn.query_row("SELECT password_hash FROM users WHERE id = ?1", params![user.id], |row| row.get(0)))?;
-    if auth::verify_password(password, &hash) { Ok(()) } else { Err(AppError::bad("Parola hatalı")) }
+    if auth::verify_password(password, &hash) {
+        Ok(())
+    } else {
+        state.throttle.record_failure(&key);
+        Err(AppError::bad("Parola hatalı"))
+    }
 }
 
 async fn two_factor_status(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<serde_json::Value>> {

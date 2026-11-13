@@ -888,6 +888,8 @@ async fn public_password(
     let hash = found.as_ref().map(|(mailbox, _)| mailbox.password_hash.clone()).unwrap_or_else(|| DUMMY_MAILBOX_HASH.clone());
     let current = body.current_password.clone();
     // Argon2 bilerek yavaştır; eşzamansız çalışanları tıkamamak için ayrı iş parçacığında koşar.
+    // Bu uç oturumsuzdur; eşzamanlı doğrulama sayısı girişle ortak sınıra tabidir.
+    let _slot = auth::PASSWORD_SLOTS.acquire().await.map_err(|err| AppError::internal(err.to_string()))?;
     let valid = tokio::task::spawn_blocking(move || auth::verify_password(&current, &hash)).await.map_err(|err| AppError::internal(err.to_string()))?;
     let Some((mailbox, owner_id)) = found.filter(|_| valid) else {
         state.throttle.record_failure(&ip_key);

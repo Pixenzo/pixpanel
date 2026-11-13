@@ -96,6 +96,11 @@ async fn test(State(state): State<AppState>, user: AuthUser, Json(body): Json<Te
     let channels = notify::load_channels(&state.db, user.id)?;
     let subject = "PixPanel deneme bildirimi";
     let text = "Bu ileti bildirim ayarlarınızı sınamak için gönderildi. Ulaştıysa her şey yolunda.";
+    // Deneme iletisi panelin SMTP sunucusundan, hesabın yazdığı adrese gider; sınırsız olsaydı
+    // posta yağdırmaya yarardı. Beş dakikada sekiz denemeyle sınırlıdır.
+    let throttle_key = format!("notify-test:{}", user.id);
+    state.throttle.check(&throttle_key)?;
+    state.throttle.record_failure(&throttle_key);
     // Deneme iletisi de hesabın dilinde gider.
     let language = crate::i18n::normalize(&user.language);
     match body.channel.as_str() {

@@ -193,7 +193,10 @@ check "bayi" "$(code POST /users -d "{\"username\":\"$RESELLER\",\"password\":\"
 RID=$(api GET /users | jget "next(u['id'] for u in d if u['username']=='$RESELLER')")
 check "bayi girişi" "$(login $JR $RESELLER "$PASS")" 200
 # Bayinin müşterisi: bayi açar (iki müşteri), her birine site ve veritabanı.
-check "bayi müşteri açar" "$(status $JR POST /users -d "{\"username\":\"$CUSTOMER2\",\"password\":\"$PASS\",\"role\":\"user\"}")" 200
+# Paketi olan bayi müşterisini paketsiz açamaz (paketsiz hesap sınırsızdır); kendi paketinden pay verir.
+check "bayi müşteriyi paketsiz açamaz" "$(status $JR POST /users -d "{\"username\":\"$CUSTOMER2\",\"password\":\"$PASS\",\"role\":\"user\"}")" 400
+RPK=$(call $JR POST /packages -d '{"name":"e2e-trf-bayi-musteri","limits":{"sites":10,"databases":5,"mailboxes":20,"disk_mb":5000,"traffic_gb":100}}' | jget 'd["id"]')
+check "bayi müşteri açar" "$(status $JR POST /users -d "{\"username\":\"$CUSTOMER2\",\"password\":\"$PASS\",\"role\":\"user\",\"package_id\":$RPK}")" 200
 C2=$(api GET /users | jget "next(u['id'] for u in d if u['username']=='$CUSTOMER2')")
 R1=$(api POST /sites -d "{\"domain\":\"trf-bayi1.test\",\"kind\":\"static\",\"user_id\":$C2}" | jget 'd["id"]')
 R2=$(api POST /sites -d "{\"domain\":\"trf-bayi2.test\",\"kind\":\"static\",\"user_id\":$C2}" | jget 'd["id"]')

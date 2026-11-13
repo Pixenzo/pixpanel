@@ -145,6 +145,36 @@ pub fn app_slice_line(uid: u32) -> String {
     redis_slice_line(uid)
 }
 
+/// Uygulama birimine yazılacak kaynak sınırı satırları. `own_memory_mb` sitenin kendi ayarıdır
+/// (0: ayarlanmamış). Uygulama hesabın diliminde çalışmıyorsa (port koruması açıkken) paketin
+/// işlemci, bellek ve süreç sınırı birime doğrudan yazılır; yoksa uygulama servisi paket sınırının
+/// dışında kalırdı. Bellekte sitenin ayarı ile paket sınırından küçük olan geçerlidir.
+pub fn app_unit_limits(username: &str, uid: u32, own_memory_mb: u32) -> String {
+    let caps = if app_slice_line(uid).is_empty() { load_caps(username) } else { Caps::default() };
+    app_limit_lines(&caps, own_memory_mb)
+}
+
+fn app_limit_lines(caps: &Caps, own_memory_mb: u32) -> String {
+    let mut out = String::new();
+    let package_memory = caps.memory_mb.filter(|value| *value > 0);
+    let memory = match (own_memory_mb as i64, package_memory) {
+        (0, None) => None,
+        (0, Some(package)) => Some(package),
+        (own, None) => Some(own),
+        (own, Some(package)) => Some(own.min(package)),
+    };
+    if let Some(memory) = memory {
+        out.push_str(&format!("MemoryMax={memory}M\n"));
+    }
+    if let Some(cpu) = caps.cpu_percent.filter(|value| *value > 0) {
+        out.push_str(&format!("CPUQuota={cpu}%\n"));
+    }
+    if let Some(tasks) = caps.processes.filter(|value| *value > 0) {
+        out.push_str(&format!("TasksMax={tasks}\n"));
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------------------------
 // Sunucu desteği
 
@@ -496,6 +526,17 @@ mod tests {
         assert_eq!(cpu_percent_between(0, 2_500_000_000, 5.0), Some(50.0));
         assert_eq!(cpu_percent_between(10, 5, 5.0), None);
         assert_eq!(cpu_percent_between(0, 5, 0.0), None);
+    }
+
+    #[test]
+    fn app_unit_gets_the_smaller_memory_limit() {
+        let none = Caps::default();
+        assert_eq!(app_limit_lines(&none, 0), "");
+        assert_eq!(app_limit_lines(&none, 256), "MemoryMax=256M\n");
+        let caps = Caps { cpu_percent: Some(150), memory_mb: Some(512), processes: Some(200), ..Caps::default() };
+        assert_eq!(app_limit_lines(&caps, 0), "MemoryMax=512M\nCPUQuota=150%\nTasksMax=200\n");
+        assert!(app_limit_lines(&caps, 256).starts_with("MemoryMax=256M\n"));
+        assert!(app_limit_lines(&caps, 4096).starts_with("MemoryMax=512M\n"), "site ayarı paket sınırını aşamaz");
     }
 
     #[test]

@@ -312,7 +312,7 @@ async fn run_now(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
                 let home = account.home.to_string_lossy().into_owned();
                 ctx.exec_in(
                     &home,
-                    "setpriv",
+                    crate::sys::runas::SETPRIV,
                     &[
                         &format!("--reuid={}", account.uid),
                         &format!("--regid={}", account.gid),

@@ -2,6 +2,8 @@
 # Taşıma aracı: başka sunucudaki site SSH ile çekilir. "Karşı sunucu" olarak bu makinenin ağ adresi
 # kullanılır: kaynak, yöneticinin WordPress sitesidir (anahtarla, root olarak okunur) ve parolayla
 # giren geçici bir Linux kullanıcısının klasörüdür. Hedef, bir müşteri hesabının siteleridir.
+# Karşı sunucu yerel ağda olduğu için taşımayı yönetici başlatır (müşteri özel ağ adreslerine
+# bağlanamaz); iş yine müşterinin Linux kullanıcısıyla çalışır.
 # Panelin kurulu olduğu makinede çalışır. Kullanım: PX_USER=... PX_PASS=... bash migrate.sh
 set -uo pipefail
 B=https://127.0.0.1:8443/api/v1
@@ -109,22 +111,23 @@ check "yerel adrese çözülen ad" "$(code POST /sites/$D/migrate/probe -d "$(ke
 check "parola ve anahtar birlikte" "$(code POST /sites/$D/migrate/probe -d "$(keybody $SRCDIR "{'password': 'x'}")")" 400
 check "kimlik bilgisi yok" "$(code POST /sites/$D/migrate/probe -d "$(body root $SRCDIR)")" 400
 check "anahtar olmayan metin" "$(code POST /sites/$D/migrate/probe -d "$(body root $SRCDIR "{'private_key': 'merhaba'}")")" 400
+has "müşteri yerel ağdaki sunucuya bağlanamaz" "$(call $JC POST /sites/$D/migrate/probe -d "$(keybody $SRCDIR)")" "Bu adrese bağlanılamaz"
 check "başkasının sitesine taşıma başlatılamaz" "$(status $JC POST /sites/$S/migrate/probe -d "$(keybody $SRCDIR)")" 404
 check "onaysız anahtarla taşıma başlamaz" "$(R=$(api POST /sites/$D/migrate -d "$(keybody $SRCDIR)"); wait_job "$(jget 'd["job_id"]' <<<"$R")")" failed
 
 say "Bağlantı denemesi"
-R=$(call $JC POST /sites/$D/migrate/probe -d "$(keybody $SRCDIR)")
+R=$(call $J POST /sites/$D/migrate/probe -d "$(keybody $SRCDIR)")
 check "klasör bulundu, WordPress tanındı" "$(jget '(d["path_found"], d["wordpress"]["database"], d["can_dump"])' <<<"$R")" "(True, '$SRCDB', True)"
 has "sunucu anahtarının parmak izi" "$(jget 'd["fingerprints"]' <<<"$R")" "SHA256:$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub | awk '{print $2}' | cut -d: -f2)"
 check "veritabanı parolası yanıtta yok" "$(grep -cF "$SRCDBPASS" <<<"$R")" 0
 HOSTKEY=$(jget 'd["host_key"]' <<<"$R")
-check "olmayan klasör" "$(call $JC POST /sites/$D/migrate/probe -d "$(keybody /yok/boyle/klasor)" | jget 'd["path_found"]')" False
-has "yanlış anahtar anlaşılır hata verir" "$(ssh-keygen -q -t ed25519 -N '' -f /tmp/pxmig-yanlis <<<y >/dev/null; call $JC POST /sites/$D/migrate/probe -d "$(KEY=/tmp/pxmig-yanlis; python3 -c "import json; print(json.dumps({'host':'$ADDR','username':'root','path':'$SRCDIR','private_key':open('/tmp/pxmig-yanlis').read()}))")"; rm -f /tmp/pxmig-yanlis /tmp/pxmig-yanlis.pub)" "girişi reddetti"
-has "yanlış parola anlaşılır hata verir" "$(call $JC POST /sites/$T/migrate/probe -d "$(body $OLDUSER '~/public_html' "{'password': 'yanlis-parola'}")")" "girişi reddetti"
-has "kapalı bağlantı noktası anlaşılır hata verir" "$(call $JC POST /sites/$T/migrate/probe -d "$(body $OLDUSER '~/public_html' "{'password': 'x', 'port': 2}")")" "yanıt vermedi"
+check "olmayan klasör" "$(call $J POST /sites/$D/migrate/probe -d "$(keybody /yok/boyle/klasor)" | jget 'd["path_found"]')" False
+has "yanlış anahtar anlaşılır hata verir" "$(ssh-keygen -q -t ed25519 -N '' -f /tmp/pxmig-yanlis <<<y >/dev/null; call $J POST /sites/$D/migrate/probe -d "$(KEY=/tmp/pxmig-yanlis; python3 -c "import json; print(json.dumps({'host':'$ADDR','username':'root','path':'$SRCDIR','private_key':open('/tmp/pxmig-yanlis').read()}))")"; rm -f /tmp/pxmig-yanlis /tmp/pxmig-yanlis.pub)" "girişi reddetti"
+has "yanlış parola anlaşılır hata verir" "$(call $J POST /sites/$T/migrate/probe -d "$(body $OLDUSER '~/public_html' "{'password': 'yanlis-parola'}")")" "girişi reddetti"
+has "kapalı bağlantı noktası anlaşılır hata verir" "$(call $J POST /sites/$T/migrate/probe -d "$(body $OLDUSER '~/public_html' "{'password': 'x', 'port': 2}")")" "yanıt vermedi"
 
 say "WordPress taşıma (anahtarla)"
-JOB=$(call $JC POST /sites/$D/migrate -d "$(keybody $SRCDIR "{'host_key': '''$HOSTKEY''', 'database': True}")" | jget 'd["job_id"]')
+JOB=$(call $J POST /sites/$D/migrate -d "$(keybody $SRCDIR "{'host_key': '''$HOSTKEY''', 'database': True}")" | jget 'd["job_id"]')
 RESULT=$(wait_job "$JOB")
 check "taşıma görevi" "$RESULT" success
 [ "$RESULT" = success ] || joblog "$JOB" | tail -25 | sed 's/^/        /'
@@ -147,15 +150,15 @@ has "denetim günlüğüne yazıldı" "$(api GET '/system/audit?limit=20' | jget
 
 say "Değişen sunucu anahtarı"
 FAKE="pixpanel-migrate ssh-ed25519 $(ssh-keygen -q -t ed25519 -N '' -f /tmp/pxmig-sahte <<<y >/dev/null; awk '{print $2}' /tmp/pxmig-sahte.pub; rm -f /tmp/pxmig-sahte /tmp/pxmig-sahte.pub)"
-JOB=$(call $JC POST /sites/$T/migrate -d "$(keybody $SRCDIR "{'host_key': '$FAKE'}")" | jget 'd["job_id"]')
+JOB=$(call $J POST /sites/$T/migrate -d "$(keybody $SRCDIR "{'host_key': '$FAKE'}")" | jget 'd["job_id"]')
 check "onaylanandan farklı anahtarda taşıma durur" "$(wait_job "$JOB")" failed
 has "nedeni açıklanır" "$(joblog "$JOB")" "anahtarı onayladığınızla uyuşmuyor"
 check "hiçbir dosya gelmedi" "$([ -e /home/$C/sites/$STATIC/public/isaret.txt ] && echo var || echo yok)" yok
 
 say "Düz site taşıma (parolayla)"
-R=$(call $JC POST /sites/$T/migrate/probe -d "$(body $OLDUSER '~/public_html' "{'password': '$OLDPASS'}")")
+R=$(call $J POST /sites/$T/migrate/probe -d "$(body $OLDUSER '~/public_html' "{'password': '$OLDPASS'}")")
 check "klasör bulundu, WordPress yok" "$(jget '(d["path_found"], d["wordpress"])' <<<"$R")" "(True, None)"
-JOB=$(call $JC POST /sites/$T/migrate -d "$(body $OLDUSER '~/public_html' "{'password': '$OLDPASS', 'host_key': '''$(jget 'd["host_key"]' <<<"$R")'''}")" | jget 'd["job_id"]')
+JOB=$(call $J POST /sites/$T/migrate -d "$(body $OLDUSER '~/public_html' "{'password': '$OLDPASS', 'host_key': '''$(jget 'd["host_key"]' <<<"$R")'''}")" | jget 'd["job_id"]')
 RESULT=$(wait_job "$JOB")
 check "taşıma görevi" "$RESULT" success
 [ "$RESULT" = success ] || joblog "$JOB" | tail -25 | sed 's/^/        /'
@@ -173,13 +176,13 @@ rdb() { python3 -c "
 import json, sys
 d = {'host': '$ADDR', 'username': '$OLDUSER', 'path': '~/public_html', 'password': '$OLDPASS', 'host_key': sys.argv[1], 'database': True, 'remote_database': json.loads(sys.argv[2])}
 print(json.dumps(d))" "$HK" "$1"; }
-check "veritabanı adı boşsa reddedilir" "$(status $JC POST /sites/$T/migrate -d "$(rdb '{"name":"","user":"x"}')")" 400
-JOB=$(call $JC POST /sites/$T/migrate -d "$(rdb '{"name":"pxmig_duz","user":"pxmig_duz","password":"yanlis"}')" | jget 'd["job_id"]')
+check "veritabanı adı boşsa reddedilir" "$(status $J POST /sites/$T/migrate -d "$(rdb '{"name":"","user":"x"}')")" 400
+JOB=$(call $J POST /sites/$T/migrate -d "$(rdb '{"name":"pxmig_duz","user":"pxmig_duz","password":"yanlis"}')" | jget 'd["job_id"]')
 check "yanlış veritabanı parolasında görev başarısız" "$(wait_job "$JOB")" failed
 check "yarım kalan veritabanı geri alındı" "$(call $JC GET /databases | jget "len([x for x in d['databases'] if '_db_' in x['name']])")" 0
-JOB=$(call $JC POST /sites/$T/migrate -d "$(rdb '{"name":"pxmig_duz;id","user":"pxmig_duz","password":"x"}')" | jget 'd["job_id"]')
+JOB=$(call $J POST /sites/$T/migrate -d "$(rdb '{"name":"pxmig_duz;id","user":"pxmig_duz","password":"x"}')" | jget 'd["job_id"]')
 check "kabuk karakterli veritabanı adı çalıştırılmaz" "$(wait_job "$JOB") $(call $JC GET /databases | jget "len([x for x in d['databases'] if '_db_' in x['name']])")" "failed 0"
-JOB=$(call $JC POST /sites/$T/migrate -d "$(rdb "$(python3 -c "import json; print(json.dumps({'name':'pxmig_duz','user':'pxmig_duz','password':'Eski\"Db\\\\Parola#7','host':'localhost'}))")")" | jget 'd["job_id"]')
+JOB=$(call $J POST /sites/$T/migrate -d "$(rdb "$(python3 -c "import json; print(json.dumps({'name':'pxmig_duz','user':'pxmig_duz','password':'Eski\"Db\\\\Parola#7','host':'localhost'}))")")" | jget 'd["job_id"]')
 RESULT=$(wait_job "$JOB")
 check "veritabanlı taşıma görevi" "$RESULT" success
 [ "$RESULT" = success ] || joblog "$JOB" | tail -25 | sed 's/^/        /'

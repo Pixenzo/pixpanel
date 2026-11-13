@@ -89,6 +89,16 @@ async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<V
 }
 
 /// Kullanıcı adı ileride Linux kullanıcısına da karşılık geldiğinden kısıtlıdır.
+/// İsteği yapan, kendisine paket atanmış bir bayi mi? Öyleyse müşterileri de paketli olmak zorundadır:
+/// paketsiz hesap sınırsızdır ve bayinin kendi paketindeki tavanları fiilen kaldırırdı.
+fn reseller_bound_by_package(state: &AppState, user: &AuthUser) -> AppResult<bool> {
+    if user.role != Role::Reseller {
+        return Ok(false);
+    }
+    let package: Option<i64> = state.db.call(|conn| conn.query_row("SELECT package_id FROM users WHERE id = ?1", params![user.id], |row| row.get(0)))?;
+    Ok(package.is_some())
+}
+
 pub fn validate_username(username: &str) -> AppResult<()> {
     let mut chars = username.chars();
     let valid = (3..=32).contains(&username.len())
@@ -168,6 +178,11 @@ async fn create(
         (Role::User, Role::Member) => Some(user.id),
         _ => return Err(AppError::Forbidden),
     };
+    // Yeni yönetici yalnızca tarayıcı oturumundan açılır: ele geçirilmiş bir anahtar kendine
+    // iki adımlı doğrulaması olmayan kalıcı bir yönetici hesabı kuramamalı.
+    if user.via_token && role == Role::Admin {
+        return Err(AppError::Forbidden);
+    }
     let username = body.username.trim().to_lowercase();
     validate_username(&username)?;
     // Bu adla bir Linux hesabı duruyorsa (silinmiş bir hesaptan kalan dosyalarıyla birlikte) yeni
@@ -179,6 +194,7 @@ async fn create(
     validate_permissions(&body.permissions)?;
     let package_id = match body.package_id {
         Some(package_id) => Some(assignable_package(&state, &user, package_id, role.as_str())?),
+        None if reseller_bound_by_package(&state, &user)? => return Err(AppError::bad("Müşteri için bir paket seçin; paketsiz hesap sınırsız olur ve kendi paketinizin tavanını aşar")),
         None => None,
     };
 
@@ -268,6 +284,7 @@ async fn reset_two_factor(State(state): State<AppState>, user: AuthUser, Path(id
     let target = load_manageable(&state, &user, id)?;
     state.db.call(|conn| {
         conn.execute("UPDATE users SET totp_enabled = 0, totp_secret = NULL, recovery_codes = '[]' WHERE id = ?1", params![id])?;
+        conn.execute("DELETE FROM api_tokens WHERE user_id = ?1", params![id])?;
         conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![id])
     })?;
     auth::audit(&state.db, &user, "user.2fa.reset", &target.username, "");
@@ -300,6 +317,14 @@ async fn update(
         && body.status.is_none()
         && body.permissions.is_none()
         && body.package_id.is_none();
+    // Hesap kendi parolasını buradan değiştiremez: `/auth/password` mevcut parolayı sorar, bu uç sormaz.
+    if id == user.id && body.password.is_some() {
+        return Err(AppError::Forbidden);
+    }
+    // Parola yalnızca tarayıcı oturumundan değiştirilir (öteki parola uçlarıyla aynı kural).
+    if user.via_token && body.password.is_some() {
+        return Err(AppError::Forbidden);
+    }
     let target = if own_language_only {
         Target { username: user.username.clone(), role: user.role.as_str().to_string(), parent_id: user.parent_id }
     } else {
@@ -326,6 +351,7 @@ async fn update(
     let package_change: Option<Option<i64>> = match body.package_id {
         None => None,
         Some(_) if id == user.id => return Err(AppError::Forbidden),
+        Some(0) if reseller_bound_by_package(&state, &user)? => return Err(AppError::bad("Müşterinin paketi kaldırılamaz; paketsiz hesap sınırsız olur ve kendi paketinizin tavanını aşar")),
         Some(0) => Some(None),
         Some(package_id) => Some(Some(assignable_package(&state, &user, package_id, &target.role)?)),
     };
@@ -358,6 +384,11 @@ async fn update(
         // (askıda ise) alt hesaplarının oturumları kapatılır.
         if password_hash.is_some() || suspended {
             tx.execute("DELETE FROM sessions WHERE user_id = ?1", params![id])?;
+        }
+        // Parolayı hesabı yöneten sıfırlıyorsa neden çoğunlukla ele geçirilmiş bir hesaptır; o hesabın
+        // API anahtarları da iptal edilir, yoksa saldırganın açtığı anahtar geçerli kalırdı.
+        if password_hash.is_some() {
+            tx.execute("DELETE FROM api_tokens WHERE user_id = ?1", params![id])?;
         }
         if suspended {
             tx.execute(

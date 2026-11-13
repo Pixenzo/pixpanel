@@ -83,7 +83,7 @@ async fn tools_proxy(State(state): State<AppState>, request: Request) -> Respons
     if !crate::auth::session_is_valid(&parts, &state) {
         return (StatusCode::UNAUTHORIZED, "Bu sayfa için panelde oturum açmanız gerekiyor.").into_response();
     }
-    forward_to_tools(parts, body).await
+    forward_to_tools(parts, body, "/tools/", TOOLS_BODY_LIMIT).await
 }
 
 /// Web postası (Roundcube) herkese açıktır: posta kutusu sahipleri panel hesabı
@@ -93,13 +93,35 @@ async fn webmail_proxy(request: Request) -> Response {
         return (StatusCode::NOT_FOUND, "Web postası bu sunucuda kurulu değil.").into_response();
     }
     let (parts, body) = request.into_parts();
-    forward_to_tools(parts, body).await
+    forward_to_tools(parts, body, "/webmail/", WEBMAIL_BODY_LIMIT).await
 }
 
+/// Oturumlu araçlara (veritabanı dökümü yükleme) izin verilen gövde boyutu.
+const TOOLS_BODY_LIMIT: u64 = 1024 * 1024 * 1024;
+/// Web postası oturumsuz erişilir; gövde bir e-postanın ekleriyle sınırlıdır.
+const WEBMAIL_BODY_LIMIT: u64 = 64 * 1024 * 1024;
+
 /// İsteği sunucunun içindeki araç sunucusuna aktarır ve yanıtını akıtarak döner.
-async fn forward_to_tools(parts: axum::http::request::Parts, body: axum::body::Body) -> Response {
+///
+/// `prefix`: iletilen yolun kalması gereken yer. Hedef adres çözümlenirken `..` parçaları
+/// sadeleşir; denetlenmeseydi oturumsuz erişilen `/webmail/../tools/…` yolu, oturum isteyen
+/// veritabanı araçlarına ulaşırdı. Bu yüzden denetim, sadeleşmiş adres üzerinde yapılır.
+async fn forward_to_tools(parts: axum::http::request::Parts, body: axum::body::Body, prefix: &str, body_limit: u64) -> Response {
     let path_and_query = parts.uri.path_and_query().map(|value| value.as_str()).unwrap_or("/");
     let target = format!("http://127.0.0.1:{}{path_and_query}", crate::dbtools::PORT);
+    let stays_inside = url::Url::parse(&target).is_ok_and(|url| {
+        let path = url.path().to_ascii_lowercase();
+        url.path().starts_with(prefix) && !path.contains("%2e") && !path.contains("%2f") && !path.contains("%5c") && !path.contains('\\')
+    });
+    if !stays_inside {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    // Bildirilen boyut sınırı aşıyorsa istek hemen geri çevrilir. Boyut bildirilmeyen (parçalı ya da
+    // HTTP/2) gövde ise akarken sayılır ve sınır aşılınca kesilir (aşağıda).
+    let declared = parts.headers.get(header::CONTENT_LENGTH).and_then(|value| value.to_str().ok()).and_then(|value| value.parse::<u64>().ok());
+    if declared.is_some_and(|length| length > body_limit) {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
     let host = parts.headers.get(header::HOST).and_then(|value| value.to_str().ok()).unwrap_or_default().to_string();
 
     let client = match reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build() {
@@ -129,7 +151,16 @@ async fn forward_to_tools(parts: axum::http::request::Parts, body: axum::body::B
     if !cookies.is_empty() {
         forwarded = forwarded.header(header::COOKIE, cookies.join("; "));
     }
-    let upstream = match forwarded.body(reqwest::Body::wrap_stream(body.into_data_stream())).send().await {
+    let mut received: u64 = 0;
+    let limited = futures_util::StreamExt::map(body.into_data_stream(), move |chunk| {
+        let chunk = chunk.map_err(std::io::Error::other)?;
+        received += chunk.len() as u64;
+        if received > body_limit {
+            return Err(std::io::Error::other("istek gövdesi sınırı aştı"));
+        }
+        Ok(chunk)
+    });
+    let upstream = match forwarded.body(reqwest::Body::wrap_stream(limited)).send().await {
         Ok(response) => response,
         Err(_) => return (StatusCode::BAD_GATEWAY, "Veritabanı aracına ulaşılamadı.").into_response(),
     };

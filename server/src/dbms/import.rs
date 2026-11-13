@@ -41,7 +41,7 @@ pub fn mariadb_account(database: &str) -> String {
 /// Yetkisiz kullanıcıyla çalışan bir komut hazırlar. Ortam temizdir; istemci, kimsenin
 /// ev klasöründeki ayar dosyasını okumaz.
 fn unprivileged(program: &str, args: &[&str]) -> Command {
-    let mut command = base_command("setpriv");
+    let mut command = base_command(crate::sys::runas::SETPRIV);
     command.args([&format!("--reuid={NOBODY}"), &format!("--regid={NOBODY}"), "--clear-groups", "--", program]);
     command.args(args);
     command.env_clear().env("PATH", "/usr/bin:/bin").env("HOME", "/nonexistent").env("LC_ALL", "C.UTF-8").current_dir("/");
@@ -87,16 +87,23 @@ impl Session {
         match self.engine {
             Engine::Mariadb => {
                 let user = format!("--user={}", self.role);
-                let mut command = unprivileged("mariadb", &["--no-defaults", "--default-character-set=utf8mb4", "--protocol=socket", &user, "--", &self.database]);
+                // `--sandbox`: dökümün içindeki istemci komutları (`\!`, `system`, `source`, `tee`) çalışmaz;
+                // yoksa döküm yükleyen müşteri sunucuda `nobody` olarak komut çalıştırabilirdi.
+                let mut command =
+                    unprivileged("mariadb", &["--no-defaults", "--sandbox", "--default-character-set=utf8mb4", "--protocol=socket", &user, "--", &self.database]);
                 command.env("MYSQL_PWD", &self.password);
                 command
             }
             Engine::Postgresql => {
+                // Döküm okunmadan önce istemci kısıtlı kipe alınır: `\restrict` sonrasında ters bölülü
+                // komutların hiçbiri (`\!`, `\copy … program`, `\o |komut`, `\i`) çalışmaz; kipten çıkmak
+                // için gereken anahtar rastgeledir ve dökümü yazan onu bilemez.
+                let restrict = format!("\\restrict {}", auth::random_token(24));
                 let mut args = vec!["-X", "-q"];
                 if self.strict {
                     args.extend(["-v", "ON_ERROR_STOP=1"]);
                 }
-                args.extend(["-h", "127.0.0.1", "-U", &self.role, "-d", &self.database, "-f", "-"]);
+                args.extend(["-h", "127.0.0.1", "-U", &self.role, "-d", &self.database, "-c", &restrict, "-f", "-"]);
                 let mut command = unprivileged("psql", &args);
                 command.env("PGPASSWORD", &self.password);
                 command
@@ -121,7 +128,9 @@ impl Session {
                     r"/^(\)| ) .*utf8mb4_0900_ai_ci/ s/utf8mb4_0900_ai_ci/utf8mb4_unicode_520_ci/g",
                 ],
             ),
-            Engine::Postgresql => unprivileged("cat", &[]),
+            // pg_dump'ın kendi yazdığı `\restrict` / `\unrestrict` satırları atılır: istemci zaten kısıtlı
+            // kiptedir ve bu satırlar orada hata verir (katı kipte yüklemeyi durdururdu).
+            Engine::Postgresql => unprivileged("sed", &["-E", "-e", r"/^\\(un)?restrict /d"]),
         }
     }
 

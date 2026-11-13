@@ -50,9 +50,17 @@ pub fn should_wrap(placement: Placement, scope_supported: bool, account_has_limi
 /// süreci olduğu gibi bir cgroup kapsamına alır ve komutu aynı süreçte çalıştırır (`exec`): standart
 /// girdi/çıktı/hata ve çıkış kodu aynen korunur, `--pipe`/`--wait` gerekmez. Kapsam iş bitince
 /// kendiliğinden kalkar (`--collect`).
+/// Yetkiyi düşüren programlar her zaman tam yolla çağrılır. Çağıranlar komutun `PATH` değerine
+/// kullanıcının yazabildiği klasörler ekler (sitenin `.venv/bin` klasörü gibi) ve program adı yalın
+/// verilseydi panel onu, henüz root iken, o klasörde arardı: müşteri oraya `setpriv` adında bir dosya
+/// koyup root olarak kod çalıştırabilirdi. Tam yol verilince `PATH` yalnızca yetki düştükten sonra,
+/// asıl programı (`pip`, `git`) bulmak için kullanılır.
+pub const SETPRIV: &str = "/usr/bin/setpriv";
+pub const SYSTEMD_RUN: &str = "/usr/bin/systemd-run";
+
 pub fn scope_prefix(uid: u32) -> Vec<String> {
     vec![
-        "systemd-run".into(),
+        SYSTEMD_RUN.into(),
         "--scope".into(),
         format!("--slice={}", crate::hosting::resource_limits::slice_name(uid)),
         "--quiet".into(),
@@ -99,10 +107,10 @@ pub fn command_in(user: &SysUser, cwd: &Path, program: &str, args: &[&str], plac
     let mut cmd = if wrap {
         let prefix = scope_prefix(user.uid);
         let mut cmd = Command::new(&prefix[0]);
-        cmd.args(&prefix[1..]).arg("setpriv");
+        cmd.args(&prefix[1..]).arg(SETPRIV);
         cmd
     } else {
-        Command::new("setpriv")
+        Command::new(SETPRIV)
     };
     cmd.arg(format!("--reuid={}", user.uid))
         .arg(format!("--regid={}", user.gid))
@@ -180,7 +188,7 @@ mod tests {
     #[test]
     fn scope_line_targets_the_account_slice() {
         let prefix = scope_prefix(1001);
-        assert_eq!(prefix[0], "systemd-run");
+        assert_eq!(prefix[0], "/usr/bin/systemd-run");
         assert!(prefix.contains(&"--scope".to_string()));
         assert!(prefix.contains(&"--slice=user-1001.slice".to_string()));
         assert!(prefix.contains(&"--quiet".to_string()));
@@ -222,7 +230,7 @@ mod tests {
     fn command_line_is_unchanged_without_scope_support() {
         // Destek sınanmadığı sürece (birim testlerinde) her yerleşim eski yolu kullanır.
         let plain = argv(&command(&sample_user(), Path::new("/tmp"), "git", &["status"]));
-        assert_eq!(plain, ["setpriv", "--reuid=1001", "--regid=1001", "--init-groups", "--", "git", "status"]);
+        assert_eq!(plain, ["/usr/bin/setpriv", "--reuid=1001", "--regid=1001", "--init-groups", "--", "git", "status"]);
         assert_eq!(argv(&heavy_command(&sample_user(), Path::new("/tmp"), "git", &["status"])), plain);
     }
 

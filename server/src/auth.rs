@@ -210,6 +210,21 @@ pub fn session_cookie(token: &str, max_age: i64, secure: bool) -> String {
     format!("{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}{secure}")
 }
 
+/// Alt hesabın bağlı olduğu hesap askıda mı? Alt hesap olmayanlarda her zaman `false`.
+pub fn parent_suspended(db: &Db, user_id: i64) -> AppResult<bool> {
+    Ok(db.call(move |conn| {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM users u JOIN users p ON p.id = u.parent_id
+                            WHERE u.id = ?1 AND u.role = 'member' AND p.status != 'active')",
+            params![user_id],
+            |row| row.get(0),
+        )
+    })?)
+}
+
+/// Aynı anda koşabilecek parola doğrulaması sayısı (oturumsuz uçlar için; bkz. `api::auth::login`).
+pub static PASSWORD_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+
 /// Başarısız giriş denemelerini IP başına sınırlar.
 #[derive(Default)]
 pub struct LoginThrottle {
@@ -220,7 +235,25 @@ impl LoginThrottle {
     const WINDOW_SECS: i64 = 300;
     const MAX_FAILURES: u32 = 8;
 
+    /// Sayacın anahtarı. IPv6'da tek bir aboneye /64 blok verildiği için adresin ilk yarısı
+    /// kullanılır; yoksa saldırgan her denemede bloktan yeni bir adres seçip sınırı hiç görmezdi.
+    /// Adres olmayan anahtarlar (`mailbox:…` gibi) olduğu gibi kalır.
+    fn key(ip: &str) -> String {
+        let (prefix, address) = match ip.rsplit_once("-ip:") {
+            Some((prefix, address)) => (format!("{prefix}-ip:"), address),
+            None => (String::new(), ip),
+        };
+        match address.parse::<std::net::Ipv6Addr>() {
+            Ok(v6) => {
+                let s = v6.segments();
+                format!("{prefix}{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+            }
+            Err(_) => ip.to_string(),
+        }
+    }
+
     pub fn check(&self, ip: &str) -> AppResult<()> {
+        let ip = &Self::key(ip);
         let mut map = self.attempts.lock().unwrap_or_else(|p| p.into_inner());
         let current = now();
         map.retain(|_, (_, since)| current - *since < Self::WINDOW_SECS);
@@ -232,12 +265,12 @@ impl LoginThrottle {
 
     pub fn record_failure(&self, ip: &str) {
         let mut map = self.attempts.lock().unwrap_or_else(|p| p.into_inner());
-        let entry = map.entry(ip.to_string()).or_insert((0, now()));
+        let entry = map.entry(Self::key(ip)).or_insert((0, now()));
         entry.0 += 1;
     }
 
     pub fn clear(&self, ip: &str) {
-        self.attempts.lock().unwrap_or_else(|p| p.into_inner()).remove(ip);
+        self.attempts.lock().unwrap_or_else(|p| p.into_inner()).remove(&Self::key(ip));
     }
 }
 
@@ -491,6 +524,11 @@ impl FromRequestParts<AppState> for AuthUser {
         };
 
         if row.status != "active" {
+            return Err(AppError::Unauthorized);
+        }
+        // Alt hesap, sahibinin kaynakları üzerinde çalışır; sahibi askıya alınmışsa o da giremez
+        // (oturumu ya da API anahtarı dursa bile).
+        if row.role == "member" && parent_suspended(&state.db, row.id)? {
             return Err(AppError::Unauthorized);
         }
         let role = Role::parse(&row.role).ok_or(AppError::Unauthorized)?;

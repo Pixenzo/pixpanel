@@ -297,7 +297,7 @@ struct RemoteDatabase {
 }
 
 impl MigrateBody {
-    fn source(&self) -> AppResult<crate::migrate::Source> {
+    fn source(&self, user: &AuthUser) -> AppResult<crate::migrate::Source> {
         let mut source = crate::migrate::Source {
             host: self.host.clone(),
             port: self.port.unwrap_or(22),
@@ -305,6 +305,7 @@ impl MigrateBody {
             password: self.password.clone(),
             private_key: self.private_key.clone(),
             path: self.path.clone(),
+            trusted: user.is_admin(),
         };
         source.validate()?;
         Ok(source)
@@ -315,7 +316,7 @@ impl MigrateBody {
 async fn migrate_probe(State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>, Json(body): Json<MigrateBody>) -> AppResult<Json<crate::migrate::Probe>> {
     user.require(AREA)?;
     let site = sites::get(&state.db, &user, id)?;
-    let source = body.source()?;
+    let source = body.source(&user)?;
     Ok(Json(crate::migrate::probe(&site, &source).await?))
 }
 
@@ -329,7 +330,7 @@ async fn migrate(State(state): State<AppState>, user: AuthUser, Path(id): Path<i
     if site.kind == "proxy" {
         return Err(AppError::bad("Ters vekil sitelerinin dosyası yoktur; taşıma yapılamaz"));
     }
-    let source = body.source()?;
+    let source = body.source(&user)?;
     let manual = match body.remote_database.take().filter(|_| body.database) {
         Some(remote) => {
             let fits = |value: &str, max: usize| !value.is_empty() && value.len() <= max && !value.chars().any(char::is_control);

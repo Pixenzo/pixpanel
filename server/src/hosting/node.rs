@@ -264,9 +264,7 @@ fn render_unit(site_id: i64, domain: &str, user: &SysUser, root: &Path, settings
         env =config_file(site_id, "env").display(),
         script = config_file(site_id, "sh").display(),
     );
-    if settings.memory_mb > 0 {
-        unit.push_str(&format!("MemoryMax={}M\n", settings.memory_mb));
-    }
+    unit.push_str(&crate::hosting::resource_limits::app_unit_limits(&user.name, user.uid, settings.memory_mb));
     unit.push_str("\n[Install]\nWantedBy=multi-user.target\n");
     unit
 }

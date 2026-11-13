@@ -54,6 +54,9 @@ pub struct Source {
     pub password: String,
     pub private_key: String,
     pub path: String,
+    /// İsteği yönetici yaptı: aynı yerel ağdaki eski sunucudan taşıma (özel ağ adresleri) serbesttir.
+    /// Öteki hesaplar yalnızca internetteki adreslere bağlanır.
+    pub trusted: bool,
 }
 
 #[derive(Serialize)]
@@ -158,11 +161,9 @@ async fn resolve(source: &Source) -> AppResult<IpAddr> {
         IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
         other => other,
     };
-    let forbidden = match ip {
-        IpAddr::V4(v4) => v4.is_loopback() || v4.is_unspecified() || v4.is_link_local() || v4.is_multicast() || v4.is_broadcast(),
-        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || (v6.segments()[0] & 0xffc0) == 0xfe80,
-    };
-    if forbidden {
+    // Web kancalarıyla aynı kural: yerel, bağlantı-yerel ve özel ağ adresleri (10/8, 192.168/16,
+    // fc00::/7…) yasaktır; yoksa bu uç iç ağdaki makineleri taramaya ve SSH parolası denemeye yarardı.
+    if crate::webhooks::is_blocked(ip, source.trusted) {
         return Err(bad("Bu adrese bağlanılamaz; taşınacak sitenin bulunduğu başka bir sunucunun adresini yazın"));
     }
     Ok(ip)
@@ -618,7 +619,7 @@ mod tests {
     use super::*;
 
     fn source(path: &str) -> Source {
-        Source { host: "Eski.Ornek.com ".into(), port: 22, username: "musteri".into(), password: "gizli".into(), private_key: String::new(), path: path.into() }
+        Source { host: "Eski.Ornek.com ".into(), port: 22, username: "musteri".into(), password: "gizli".into(), private_key: String::new(), path: path.into(), trusted: false }
     }
 
     #[test]
