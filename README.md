@@ -14,7 +14,7 @@ PixPanel manages sites, databases, mail, DNS and backups on your own server from
 
 It is a [Pixenzo](https://github.com/Pixenzo) product. The whole panel is a single static binary with the web interface embedded in it; there is no runtime to install and no separate web server for the panel.
 
-> **Status:** version 0.1.0 is feature-complete and tested end to end on clean Debian 13 and Ubuntu 26.04 machines, but no release has been published yet. Until then the panel is installed from source (see [Installation](#installation)).
+> **Status:** [version 0.1.0](https://github.com/Pixenzo/pixpanel/releases/latest) is the first public release. It is tested end to end on clean Debian 13 and Ubuntu 26.04 machines, but it has not run in production yet; try it on a server you can afford to rebuild.
 
 ## Screenshots
 
@@ -62,7 +62,7 @@ curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.
 
 The script verifies the signature of the release files, installs the panel and shows the first admin password once. The panel opens at `https://<server>:8443`. Running the same command again upgrades the panel to the latest release.
 
-No release has been published yet, so for now build from source and install with `install.sh --from-dir <folder>` (see [`docs/infra/surum-yayinlama.md`](docs/infra/surum-yayinlama.md), in Turkish).
+For an offline install, copy the release files to the server and run `bash install.sh --from-dir <folder>`. To remove the panel: `pixpanel-uninstall` (keeps settings and data) or `pixpanel-uninstall --purge`.
 
 ## Building from source
 

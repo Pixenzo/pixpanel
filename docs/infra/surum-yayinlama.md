@@ -51,7 +51,9 @@ update_url = "https://github.com/Pixenzo/pixpanel/releases/latest/download"   # 
 
 ## Dağıtım
 
-`Pixenzo/pixpanel` 13.11.2026'da açık depo yapıldı; yukarıdaki GitHub adresleri kimlik sormadan indirilebilir. Tek satırlık kurulum komutu ve paneldeki güncelleme denetimi ilk sürüm GitHub'da yayınlandığında çalışmaya başlar (henüz yayınlanmış sürüm yok; o zamana kadar kurulum `--from-dir` ile yapılır).
+`Pixenzo/pixpanel` 13.11.2026'da açık depo yapıldı; yukarıdaki GitHub adresleri kimlik sormadan indirilebilir. İlk sürüm (v0.1.0) aynı gün yayınlandı: yayından önce paket `install.sh` sınamasından (190 Debian 13, 191 Ubuntu 26.04) geçti; yayından sonra tek satırlık kurulum komutu iki temiz konteynerde GitHub'dan çalıştırıldı (imza doğrulandı, servis ayağa kalktı) ve test panelindeki sürüm denetimi GitHub'dan `0.1.0` okudu. GitHub üzerinden gerçek bir yükseltme (eski sürümden yenisine) ancak ikinci sürümle sınanabilir.
+
+Derleme, imzalama ve sınamalar yereldedir; depoda GitHub Actions tanımı yoktur. Sürüm notları elle yazılır (`gh release create … --notes-file`).
 
 ## Sınamalar
 

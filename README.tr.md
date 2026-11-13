@@ -14,7 +14,7 @@ PixPanel siteleri, veritabanlarını, postayı, DNS'i ve yedekleri kendi sunucun
 
 Bir [Pixenzo](https://github.com/Pixenzo) ürünüdür. Panelin tamamı tek bir statik ikili dosyadır, arayüz içine gömülüdür; ayrıca kurulacak bir çalışma ortamı ya da panel için ayrı bir web sunucusu yoktur.
 
-> **Durum:** 0.1.0 sürümünün özellikleri tamamlandı ve temiz Debian 13 ile Ubuntu 26.04 makinelerinde uçtan uca sınandı, ancak henüz yayınlanmış bir sürüm yok. O zamana kadar panel kaynaktan kurulur (bkz. [Kurulum](#kurulum)).
+> **Durum:** [0.1.0](https://github.com/Pixenzo/pixpanel/releases/latest) ilk açık sürümdür. Temiz Debian 13 ve Ubuntu 26.04 makinelerinde uçtan uca sınandı, ancak henüz canlı ortamda çalışmadı; yeniden kurmayı göze alabileceğiniz bir sunucuda deneyin.
 
 ## Ekran görüntüleri
 
@@ -62,7 +62,7 @@ curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.
 
 Betik sürüm dosyalarının imzasını doğrular, paneli kurar ve ilk yönetici parolasını bir kez gösterir. Panel `https://<sunucu>:8443` adresinde açılır. Aynı komut yeniden çalıştırılırsa paneli son sürüme yükseltir.
 
-Henüz yayınlanmış bir sürüm yoktur; o zamana kadar panel kaynaktan derlenip `install.sh --from-dir <klasör>` ile kurulur (bkz. [`docs/infra/surum-yayinlama.md`](docs/infra/surum-yayinlama.md)).
+Çevrimdışı kurulum için sürüm dosyalarını sunucuya kopyalayıp `bash install.sh --from-dir <klasör>` çalıştırın. Kaldırmak için: `pixpanel-uninstall` (ayar ve veriler kalır) ya da `pixpanel-uninstall --purge`.
 
 ## Kaynaktan derleme
 
