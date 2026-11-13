@@ -33,7 +33,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (query.data) setLanguage(query.data.language);
+    // Dil hesabın kendi ayarıdır; henüz belirlenmemişse (boş) ekrandaki dil korunur.
+    if (query.data?.language) setLanguage(query.data.language);
   }, [query.data]);
 
   // Herhangi bir istek 401 dönerse oturum düşmüş demektir.

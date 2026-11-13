@@ -12,12 +12,25 @@ const dictionaries: Record<string, Dictionary> = {
 
 const LANGUAGE_KEY = "pixpanel-language";
 
-/** Son bilinen dil tarayıcıda saklanır; böylece sayfa açılırken ilk çizim doğru dille yapılır. */
+/**
+ * Tarayıcının diline göre panel dili: Türkçe tarayıcıda Türkçe, ötekilerde İngilizce.
+ * Giriş ekranı bu dille açılır; hesabın dili henüz belirlenmemişse ilk girişte hesaba da bu kaydedilir.
+ */
+export function browserLanguage(): string {
+  const preferred = (navigator.languages?.[0] ?? navigator.language ?? "tr").toLowerCase();
+  return preferred.startsWith("tr") ? "tr" : "en";
+}
+
+/**
+ * Son oturum açan hesabın dili tarayıcıda saklanır; böylece sayfa açılırken ilk çizim doğru dille yapılır.
+ * Kayıt yoksa (bu tarayıcıda hiç oturum açılmamışsa) tarayıcının dili kullanılır.
+ */
 function storedLanguage(): string {
   try {
-    return localStorage.getItem(LANGUAGE_KEY) ?? "tr";
+    const saved = localStorage.getItem(LANGUAGE_KEY);
+    return saved === "tr" || saved === "en" ? saved : browserLanguage();
   } catch {
-    return "tr";
+    return browserLanguage();
   }
 }
 

@@ -130,11 +130,11 @@ struct SendBody {
 }
 
 /// Haftalık özeti şimdi üretir ve (önizleme değilse) bildirim kanallarına gönderir.
-async fn send_weekly(State(state): State<AppState>, user: AuthUser, headers: axum::http::HeaderMap, body: Option<Json<SendBody>>) -> AppResult<Json<crate::weekly::Delivery>> {
+async fn send_weekly(State(state): State<AppState>, user: AuthUser, body: Option<Json<SendBody>>) -> AppResult<Json<crate::weekly::Delivery>> {
     user.require_admin()?;
     let preview = body.map(|Json(body)| body.preview).unwrap_or(false);
-    // Özet, isteği yapan yöneticinin panelde kullandığı dilde üretilir.
-    let delivery = crate::weekly::build(&state, !preview, crate::i18n::request_language(&headers)).await?;
+    // Önizleme isteği yapan yöneticinin dilindedir; gönderimde her alıcı kendi dilinde alır.
+    let delivery = crate::weekly::build(&state, !preview, crate::i18n::normalize(&user.language)).await?;
     if !preview {
         auth::audit(&state.db, &user, "health.weekly_report.send", "", &format!("{} e-posta, {} Telegram", delivery.emailed.len(), delivery.telegram));
     }

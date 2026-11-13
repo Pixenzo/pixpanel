@@ -77,7 +77,7 @@ Sürüm paketi için: `scripts/release.sh <sürüm>`.
 
 ## Diller
 
-Arayüz Türkçe ve İngilizce kullanılabilir; her kullanıcı dilini Hesabım sayfasından seçer. Sunucunun ürettiği metinler (hata iletileri, sağlık bulguları, görev günlükleri, bildirim e-postaları) de aynı dile uyar; API istemcileri dili `Accept-Language` başlığıyla seçer. `pixpanel` komut satırı ve kurulum betiği yalnızca Türkçe yazar.
+Arayüz Türkçe ve İngilizce kullanılabilir. Yeni hesabın dili ilk girişte tarayıcının dilinden belirlenir (Türkçe tarayıcıda Türkçe, ötekilerde İngilizce); kullanıcı sonradan Hesabım sayfasından değiştirebilir. Sunucunun o kullanıcı için yazdığı her şey (hata iletileri, sağlık bulguları, görev günlükleri, bildirim e-postaları, API yanıtları) hesabın diline uyar. `pixpanel` komut satırı ve kurulum betiği yalnızca Türkçe yazar.
 
 ## Belgeler
 

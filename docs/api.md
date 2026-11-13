@@ -9,7 +9,7 @@ Bu belgedeki uç tabloları `server/src/api` altındaki yönlendiricilerden çı
 - **Temel adres:** `https://SUNUCU:8443/api/v1`. Aşağıdaki tablolardaki yollar bu adrese eklenir.
 - **Biçim:** istek ve yanıt gövdeleri JSON'dur (`Content-Type: application/json`). Zamanlar Unix saniyesidir. Liste uçlarında sayfalama yoktur; görev listesi son 200 kaydı döner.
 - **Başarı:** `200` ve JSON gövde. Gövdesi olmayan işlemler `{"ok": true}` döner.
-- **Dil:** sunucunun kendi yazdığı metinler (hata iletileri, sağlık bulguları, görev başlıkları ve günlükleri, bileşen açıklamaları) varsayılan olarak Türkçedir. İstekte `Accept-Language: en` gönderilirse İngilizce döner; başlıktaki ilk dil geçerlidir, desteklenmeyen dilde metin Türkçe kalır. Hata kodları (`error.code`), anahtarlar ve kullanıcının girdiği değerler çevrilmez. Canlı akışlarda (`/events`, `/jobs/{id}/stream`) dil başlıktan değil hesabın dil ayarından alınır. Web kancası gövdeleri her zaman Türkçedir.
+- **Dil:** sunucunun kendi yazdığı metinler (hata iletileri, sağlık bulguları, görev başlıkları ve günlükleri, bileşen açıklamaları) isteği yapan hesabın dil ayarında döner (`tr` ya da `en`; `PATCH /users/{id}` ile `{language}`). API anahtarıyla yapılan isteklerde anahtarın sahibinin dili geçerlidir. Oturum yoksa (giriş hataları) ya da hesabın dili henüz belirlenmemişse `Accept-Language` başlığındaki ilk dile bakılır; o da yoksa metin Türkçedir. Yeni açılan hesabın dili boştur ve ilk başarılı girişte belirlenir: giriş gövdesindeki `language` (arayüz tarayıcının dilini gönderir), yoksa `Accept-Language`. Hata kodları (`error.code`), anahtarlar ve kullanıcının girdiği değerler çevrilmez. Web kancası gövdeleri her zaman Türkçedir.
 - **Dosya yüklemeleri** (`/files/upload`, `/databases/{id}/import`) gövde boyutu sınırı olmayan uçlardır; öteki istek gövdeleri için axum'un varsayılan 2 MB sınırı geçerlidir.
 
 ### Kimlik doğrulama
@@ -119,7 +119,7 @@ Komut satırı: `pixpanel api METODA /yol [--data ...] [--wait]` bu API'yi geçi
 
 | Yöntem | Yol | Açıklama | Yetki |
 | --- | --- | --- | --- |
-| POST | `/auth/login` | Giriş: `{username, password, code?}`; oturum çerezini kurar. | Genel |
+| POST | `/auth/login` | Giriş: `{username, password, code?, language?}`; oturum çerezini kurar. `language` (`tr`/`en`) yalnızca dili henüz belirlenmemiş hesapta kaydedilir. | Genel |
 | POST | `/auth/logout` | Oturumu kapatır, çerezi siler. | Giriş |
 | POST | `/auth/impersonate/stop` | Başka hesap adına açılmış oturumu kapatıp asıl hesaba döner. | Oturum |
 | GET | `/auth/me` | Kimlik, rol, yetki alanları, dil; anahtarla çağrılıyorsa `token_scope`. | Giriş |

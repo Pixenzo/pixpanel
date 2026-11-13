@@ -494,6 +494,10 @@ impl FromRequestParts<AppState> for AuthUser {
             return Err(AppError::Unauthorized);
         }
         let role = Role::parse(&row.role).ok_or(AppError::Unauthorized)?;
+        // Yanıt bu hesabın dilinde yazılır (bkz. `web::translate_response`).
+        if let Some(slot) = parts.extensions.get::<crate::i18n::LanguageSlot>() {
+            slot.set(&row.language);
+        }
         Ok(AuthUser {
             id: row.id,
             username: row.username,

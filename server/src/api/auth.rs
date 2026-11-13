@@ -41,6 +41,9 @@ struct LoginBody {
     /// İki adımlı doğrulama açıksa: uygulamadaki 6 haneli kod ya da bir kurtarma kodu.
     #[serde(default)]
     code: String,
+    /// Tarayıcının dili (`tr` ya da `en`); hesabın dili henüz belirlenmemişse ilk girişte bu kaydedilir.
+    #[serde(default)]
+    language: String,
 }
 
 /// Var olmayan kullanıcıda da aynı süreyi harcamak için kullanılan sahte özet;
@@ -112,6 +115,11 @@ async fn login(
         }
     }
     state.throttle.clear(&ip);
+
+    // Yeni açılan hesabın dili boştur; ilk girişte tarayıcının diline göre belirlenir ve
+    // sonrasında yalnızca kullanıcı Hesabım sayfasından değiştirir.
+    let detected = if matches!(body.language.as_str(), "tr" | "en") { body.language.as_str() } else { crate::i18n::request_language(&headers) };
+    state.db.call(|conn| conn.execute("UPDATE users SET language = ?1 WHERE id = ?2 AND language = ''", params![detected, user_id]))?;
 
     // Daha önce giriş yapılmamış bir adresse hesap sahibine haber verilir.
     let (known_ip, first_login): (bool, bool) = state.db.call(|conn| {

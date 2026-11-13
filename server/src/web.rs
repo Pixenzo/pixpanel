@@ -34,14 +34,19 @@ pub fn app(state: AppState) -> Router {
 /// Çevrilecek JSON yanıtının üst sınırı; daha büyüğü (dosya içeriği, uzun listeler) olduğu gibi geçer.
 const MAX_TRANSLATED_BODY: usize = 4 * 1024 * 1024;
 
-/// API yanıtındaki sunucu metinlerini isteğin diline çevirir (bkz. `i18n`). Kod her yerde
+/// API yanıtındaki sunucu metinlerini hesabın diline çevirir (bkz. `i18n`). Dil, isteği yapan
+/// hesabın kendi ayarıdır; oturum yoksa ya da hesabın dili henüz belirlenmemişse isteğin
+/// `Accept-Language` başlığına bakılır. Kod her yerde
 /// Türkçe metin üretir; çeviri burada, yanıt istemciye giderken yapılır. Akışlar
 /// (`text/event-stream`) ve JSON olmayan yanıtlar bu katmandan değişmeden geçer.
-async fn translate_response(request: Request, next: Next) -> Response {
-    let language = crate::i18n::request_language(request.headers());
+async fn translate_response(mut request: Request, next: Next) -> Response {
+    let header_language = crate::i18n::request_language(request.headers());
+    let slot = crate::i18n::LanguageSlot::default();
+    request.extensions_mut().insert(slot.clone());
     // Bileşen listesinde `name` alanı sunucunun kendi metnidir ("Roundcube web postası").
     let extra_keys: &[&str] = if request.uri().path().contains("/components") { &["name"] } else { &[] };
     let response = next.run(request).await;
+    let language = slot.get().unwrap_or(header_language);
     if language == "tr" {
         return response;
     }

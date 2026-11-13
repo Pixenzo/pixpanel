@@ -17,7 +17,8 @@ export class ApiError extends Error {
 export const UNAUTHORIZED_EVENT = "pixpanel:unauthorized";
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  // Sunucu kendi ürettiği metinleri (hata iletileri, bulgular, görev günlükleri) bu dile çevirir.
+  // Sunucu metinlerini hesabın kendi diline çevirir; bu başlık yalnızca oturum yokken
+  // (giriş ekranındaki hata iletileri) kullanılır.
   const headers: Record<string, string> = { "x-pixpanel-csrf": "1", "accept-language": getLanguage() };
   // Dosya yüklemelerinde içerik türünü (sınır değeriyle birlikte) tarayıcı belirler.
   const isForm = body instanceof FormData;

@@ -5,7 +5,7 @@ import { Button, Input } from "../components/ui";
 import { ApiError, api, errorMessage } from "../lib/api";
 import { BrandLogo, SupportLink } from "../components/Brand";
 import { brandName, useBrandTitle, useBranding } from "../lib/branding";
-import { t } from "../lib/i18n";
+import { browserLanguage, t } from "../lib/i18n";
 import { useSession, useTheme } from "../lib/session";
 
 // Marka panelindeki üç satır: panelin yöneticinin yerine yaptığı işler.
@@ -32,7 +32,9 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.post("/auth/login", needsCode ? { username, password, code: code.trim() } : { username, password });
+      // Hesabın dili henüz belirlenmemişse sunucu ilk girişte tarayıcının dilini kaydeder.
+      const language = browserLanguage();
+      await api.post("/auth/login", needsCode ? { username, password, code: code.trim(), language } : { username, password, language });
       await refresh();
     } catch (failure) {
       if (failure instanceof ApiError && failure.code === "two_factor_required") {

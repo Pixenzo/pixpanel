@@ -96,19 +96,21 @@ async fn test(State(state): State<AppState>, user: AuthUser, Json(body): Json<Te
     let channels = notify::load_channels(&state.db, user.id)?;
     let subject = "PixPanel deneme bildirimi";
     let text = "Bu ileti bildirim ayarlarınızı sınamak için gönderildi. Ulaştıysa her şey yolunda.";
+    // Deneme iletisi de hesabın dilinde gider.
+    let language = crate::i18n::normalize(&user.language);
     match body.channel.as_str() {
         "email" => {
             let to = if channels.email_to.is_empty() { user.email.clone() } else { channels.email_to };
             if to.is_empty() {
                 return Err(AppError::bad("Önce bir e-posta adresi kaydedin"));
             }
-            notify::send_email(&notify::load_smtp(&state.db)?, &to, subject, text).await?;
+            notify::send_email(&notify::load_smtp(&state.db)?, &to, &crate::i18n::translate(language, subject), &crate::i18n::translate(language, text)).await?;
         }
         "telegram" => {
             if channels.telegram_token.is_empty() || channels.telegram_chat_id.is_empty() {
                 return Err(AppError::bad("Önce bot anahtarını ve sohbet kimliğini kaydedin"));
             }
-            let message = format!("{subject}\n\n{text}");
+            let message = format!("{}\n\n{}", crate::i18n::translate(language, subject), crate::i18n::translate(language, text));
             notify::send_telegram(&state.cfg.telegram_api, &channels.telegram_token, &channels.telegram_chat_id, &message).await?;
         }
         _ => return Err(AppError::bad("Geçersiz bildirim kanalı")),
@@ -178,6 +180,7 @@ struct SmtpTestBody {
 async fn test_smtp(State(state): State<AppState>, user: AuthUser, Json(body): Json<SmtpTestBody>) -> AppResult<Json<serde_json::Value>> {
     user.require_admin()?;
     let smtp = notify::load_smtp(&state.db)?;
-    notify::send_email(&smtp, body.to.trim(), "PixPanel SMTP denemesi", "SMTP ayarlarınız çalışıyor.").await?;
+    let language = crate::i18n::normalize(&user.language);
+    notify::send_email(&smtp, body.to.trim(), &crate::i18n::translate(language, "PixPanel SMTP denemesi"), &crate::i18n::translate(language, "SMTP ayarlarınız çalışıyor.")).await?;
     Ok(Json(json!({ "ok": true })))
 }

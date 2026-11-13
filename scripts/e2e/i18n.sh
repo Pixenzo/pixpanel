@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Sunucu metinlerinin çevirisi (Accept-Language, akışlar, haftalık özet). Test makinesinde çalışır.
+# Sunucu metinlerinin çevirisi: dil hesabın kendi ayarından gelir; oturum yokken tarayıcının
+# diline bakılır; yeni hesabın dili ilk girişte belirlenir. Test makinesinde çalışır.
 # Kullanım: PX_USER=... PX_PASS=... bash i18n.sh
 set -uo pipefail
 B=https://127.0.0.1:8443/api/v1
 J=/tmp/pxjar-i18n
+JN=/tmp/pxjar-i18n-new
 DB=i18ne2e
-# api <dil> <yöntem> <yol> [curl seçenekleri]; dil boşsa başlık gönderilmez.
+NEWUSER=dildeneme
+NEWPASS='Dil-Deneme-24680'
+# api <başlık dili> <yöntem> <yol> [curl seçenekleri]; dil boşsa Accept-Language gönderilmez.
 api() { local l=$1 m=$2 p=$3; shift 3; curl -sk -b $J -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' ${l:+-H "accept-language: $l"} -X "$m" "$B$p" "$@"; }
+# anon: oturumsuz istek.
+anon() { local l=$1 m=$2 p=$3; shift 3; curl -sk -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' ${l:+-H "accept-language: $l"} -X "$m" "$B$p" "$@"; }
 say() { printf '\n== %s\n' "$*"; }
 check() { if [ "$2" = "$3" ]; then echo "  OK   $1"; else echo "  HATA $1: beklenen=[$3] gelen=[$2]"; fi; }
 has() { if grep -qF -- "$3" <<<"$2"; then echo "  OK   $1"; else echo "  HATA $1: [$3] bulunamadı: [$(tr -d '\n' <<<"$2" | head -c 300)]"; fi; }
@@ -22,38 +28,84 @@ except Exception as e: print('(alan yok: %s %s)' % (e, raw[:200]))"; }
 turkish_lines() { python3 -c "
 import sys,re
 print(sum(1 for line in sys.stdin.read().split('\n') if re.search('[çğıöşüÇĞİÖŞÜ]', line)))"; }
+message() { jget 'd["error"]["message"]'; }
 
-rm -f $J
+rm -f $J $JN
 api "" POST /auth/login -d "{\"username\":\"$PX_USER\",\"password\":\"$PX_PASS\"}" >/dev/null
 ME=$(api "" GET /auth/me | jget 'd.get("id") or d["user"]["id"]')
+# lang <dil>: oturumdaki hesabın dilini değiştirir.
+lang() { api "" PATCH "/users/$ME" -d "{\"language\":\"$1\"}" >/dev/null; }
 
-say "Hata iletileri isteğin diline göre"
-check "başlık yoksa Türkçe" "$(api "" GET /sites/99999999 | jget 'd["error"]["message"]')" "Kayıt bulunamadı"
-check "en → İngilizce" "$(api en GET /sites/99999999 | jget 'd["error"]["message"]')" "Record not found"
-check "tarayıcı biçimli başlıkta ilk dil geçerli" "$(api 'en-US,en;q=0.9,tr;q=0.8' GET /sites/99999999 | jget 'd["error"]["message"]')" "Record not found"
-check "tr-TR → Türkçe" "$(api 'tr-TR,en;q=0.9' GET /sites/99999999 | jget 'd["error"]["message"]')" "Kayıt bulunamadı"
-check "desteklenmeyen dil Türkçe kalır" "$(api de GET /sites/99999999 | jget 'd["error"]["message"]')" "Kayıt bulunamadı"
-check "hata kodu değişmez" "$(api en GET /sites/99999999 | jget 'd["error"]["code"]')" "not_found"
-check "durum kodu değişmez" "$(api en GET /sites/99999999 -o /dev/null -w '%{http_code}')" 404
-BAD=$(api en POST /databases -d '{"engine":"mariadb","name":"x y"}')
+say "Oturum yokken tarayıcının dili geçerli"
+check "başlık yoksa Türkçe" "$(anon "" GET /sites | message)" "Oturum açmanız gerekiyor"
+check "en başlığıyla İngilizce" "$(anon en GET /sites | message | turkish_lines)" 0
+check "tarayıcı biçimli başlıkta ilk dil geçerli" "$(anon 'en-US,en;q=0.9,tr;q=0.8' GET /sites | message | turkish_lines)" 0
+check "tr-TR başlığıyla Türkçe" "$(anon 'tr-TR,en;q=0.9' GET /sites | message)" "Oturum açmanız gerekiyor"
+has "hata kodu değişmez" "$(anon en GET /sites)" '"unauthorized"'
+check "hatalı girişin iletisi İngilizce" "$(anon en POST /auth/login -d '{"username":"yok-boyle-biri","password":"yanlis"}' | message | turkish_lines)" 0
+has "hatalı girişin iletisi Türkçe" "$(anon tr POST /auth/login -d '{"username":"yok-boyle-biri","password":"yanlis"}')" "Kullanıcı adı ya da parola hatalı"
+
+say "Oturum varken hesabın dili geçerli, başlık değil"
+lang tr
+check "hesap Türkçe, başlık en → Türkçe" "$(api en GET /sites/99999999 | message)" "Kayıt bulunamadı"
+lang en
+check "hesap İngilizce, başlık yok → İngilizce" "$(api "" GET /sites/99999999 | message)" "Record not found"
+check "hesap İngilizce, başlık tr → İngilizce" "$(api tr GET /sites/99999999 | message)" "Record not found"
+check "hata kodu değişmez" "$(api "" GET /sites/99999999 | jget 'd["error"]["code"]')" "not_found"
+check "durum kodu değişmez" "$(api "" GET /sites/99999999 -o /dev/null -w '%{http_code}')" 404
+BAD=$(api "" POST /databases -d '{"engine":"mariadb","name":"x y"}')
 has "doğrulama hatası İngilizce" "$BAD" "Database name"
-check "doğrulama hatasında Türkçe harf kalmaz" "$(jget 'd["error"]["message"]' <<<"$BAD" | turkish_lines)" 0
-has "aynı hata Türkçe" "$(api tr POST /databases -d '{"engine":"mariadb","name":"x y"}')" "Veritabanı adı"
-ANON=$(curl -sk -H 'accept-language: en' $B/sites)
-check "oturumsuz istekte de çevrilir" "$(jget 'd["error"]["message"]' <<<"$ANON" | turkish_lines)" 0
-has "oturumsuz hata kodu" "$ANON" '"unauthorized"'
-check "hatalı girişin iletisi İngilizce" "$(curl -sk -H 'accept-language: en' -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST $B/auth/login -d '{"username":"yok-boyle-biri","password":"yanlis"}' | jget 'd["error"]["message"]' | turkish_lines)" 0
-
-say "Listelerdeki sunucu metinleri"
-COMP=$(api en GET /components)
+check "doğrulama hatasında Türkçe harf kalmaz" "$(message <<<"$BAD" | turkish_lines)" 0
+COMP=$(api "" GET /components)
 has "bileşen adı çevrilir" "$COMP" "Roundcube webmail"
 lacks "bileşen adı Türkçe kalmaz" "$COMP" "web postası"
 check "bileşen açıklamalarında Türkçe kalmaz" "$(jget '"\n".join(str(c.get("description","")) for c in (d if isinstance(d, list) else d.get("components", [])))' <<<"$COMP" | turkish_lines)" 0
-has "Türkçe istekte bileşen adı Türkçe" "$(api tr GET /components)" "Roundcube web postası"
-HEALTH=$(api en GET /health)
+HEALTH=$(api "" GET /health)
 check "bulgu başlık ve ayrıntılarında Türkçe kalmaz" "$(jget '"\n".join(f["title"] + "\n" + f["detail"] for f in d["report"]["findings"])' <<<"$HEALTH" | turkish_lines)" 0
-check "bulgu anahtarları değişmez" "$(jget 'sorted(f["key"] for f in d["report"]["findings"])' <<<"$HEALTH")" "$(api tr GET /health | jget 'sorted(f["key"] for f in d["report"]["findings"])')"
-check "kullanıcı verisi olan alanlar çevrilmez (site listesi aynı)" "$(api en GET /sites | jget 'sorted(s["domain"] for s in d)')" "$(api tr GET /sites | jget 'sorted(s["domain"] for s in d)')"
+EN_KEYS=$(jget 'sorted(f["key"] for f in d["report"]["findings"])' <<<"$HEALTH")
+EN_SITES=$(api "" GET /sites | jget 'sorted(s["domain"] for s in d)')
+check "çevrilen yanıt geçerli JSON" "$(jget 'type(d).__name__' <<<"$HEALTH")" dict
+check "çevrilen yanıtın türü JSON" "$(api "" GET /health -o /dev/null -w '%{content_type}')" "application/json"
+check "olay akışı akış olarak kalır" "$(curl -sk -o /dev/null -m 2 -w '%{content_type}' -b $J $B/events)" "text/event-stream"
+WEEKLY=$(api "" POST /health/weekly-report/send -d '{"preview":true}')
+has "haftalık özetin konusu İngilizce" "$(jget 'd["subject"]' <<<"$WEEKLY")" "PixPanel weekly summary"
+has "bölüm başlıkları İngilizce" "$(jget 'd["text"]' <<<"$WEEKLY")" "Checks and fixes"
+has "alt bilgi İngilizce" "$(jget 'd["text"]' <<<"$WEEKLY")" "sent by PixPanel every week"
+has "HTML gövde de İngilizce" "$(jget 'd["html"]' <<<"$WEEKLY")" "Certificates and backups"
+lang tr
+has "hesap Türkçeyken bileşen adı Türkçe" "$(api en GET /components)" "Roundcube web postası"
+has "hesap Türkçeyken doğrulama hatası Türkçe" "$(api en POST /databases -d '{"engine":"mariadb","name":"x y"}')" "Veritabanı adı"
+check "bulgu anahtarları dile göre değişmez" "$EN_KEYS" "$(api "" GET /health | jget 'sorted(f["key"] for f in d["report"]["findings"])')"
+check "kullanıcı verisi olan alanlar çevrilmez (site listesi aynı)" "$EN_SITES" "$(api "" GET /sites | jget 'sorted(s["domain"] for s in d)')"
+has "hesap Türkçeyken haftalık özet Türkçe" "$(api en POST /health/weekly-report/send -d '{"preview":true}' | jget 'd["text"]')" "Denetimler ve düzeltmeler"
+
+say "Yeni hesabın dili ilk girişte tarayıcıdan belirlenir"
+newuser() {
+  local old
+  old=$(api "" GET /users | jget "next((u['id'] for u in d if u['username']=='$NEWUSER'), '')")
+  [ -n "$old" ] && api "" DELETE "/users/$old" >/dev/null
+  api "" POST /users -d "{\"username\":\"$NEWUSER\",\"password\":\"$NEWPASS\",\"role\":\"user\",\"email\":\"\"}" >/dev/null
+}
+userlang() { api "" GET /users | jget "next(u['language'] for u in d if u['username']=='$NEWUSER')"; }
+newuser
+check "yeni hesabın dili boş (henüz belirlenmedi)" "[$(userlang)]" "[]"
+anon "" POST /auth/login -d "{\"username\":\"$NEWUSER\",\"password\":\"yanlis-parola\",\"language\":\"en\"}" >/dev/null
+check "hatalı giriş dili belirlemez" "[$(userlang)]" "[]"
+anon "" POST /auth/login -c $JN -d "{\"username\":\"$NEWUSER\",\"password\":\"$NEWPASS\",\"language\":\"en\"}" >/dev/null
+check "ilk girişte tarayıcı dili kaydedilir" "$(userlang)" en
+check "yeni hesap yanıtları kendi dilinde alır" "$(curl -sk -b $JN $B/sites/99999999 | message)" "Record not found"
+check "kimlik ucunda dil görünür" "$(curl -sk -b $JN $B/auth/me | jget 'd.get("language") or d["user"]["language"]')" en
+anon "" POST /auth/login -d "{\"username\":\"$NEWUSER\",\"password\":\"$NEWPASS\",\"language\":\"tr\"}" >/dev/null
+check "sonraki girişler dili değiştirmez" "$(userlang)" en
+newuser
+anon "tr-TR,tr;q=0.9" POST /auth/login -d "{\"username\":\"$NEWUSER\",\"password\":\"$NEWPASS\"}" >/dev/null
+check "dil bildirilmezse başlıktan alınır (tr)" "$(userlang)" tr
+newuser
+anon "en-GB" POST /auth/login -d "{\"username\":\"$NEWUSER\",\"password\":\"$NEWPASS\",\"language\":\"xx\"}" >/dev/null
+check "geçersiz dil değeri yok sayılır, başlık geçerli (en)" "$(userlang)" en
+api "" DELETE "/users/$(api "" GET /users | jget "next(u['id'] for u in d if u['username']=='$NEWUSER')")" >/dev/null
+rm -f $JN
+check "var olan hesabın dili değişmedi" "$(api "" GET /auth/me | jget 'd.get("language") or d["user"]["language"]')" tr
 
 say "Görev başlığı, günlüğü ve canlı akışı"
 OLD=$(api "" GET /databases | jget "next((x['id'] for x in d.get('databases', d) if x['name']=='$DB'), '')")
@@ -65,31 +117,17 @@ for _ in $(seq 1 30); do
   [ "$(api "" GET "/jobs/$JOB" | jget 'd["job"]["status"]')" != running ] && break
   sleep 0.5
 done
-check "görev başlığı Türkçe" "$(api tr GET "/jobs/$JOB" | jget 'd["job"]["title"]')" "$DB veritabanı denetleniyor"
-check "görev başlığı İngilizce" "$(api en GET "/jobs/$JOB" | jget 'd["job"]["title"]')" "Checking database $DB"
-has "görev günlüğü İngilizce" "$(api en GET "/jobs/$JOB" | jget 'd["log"]')" "Checking database $DB"
-has "görev günlüğü Türkçe" "$(api tr GET "/jobs/$JOB" | jget 'd["log"]')" "$DB veritabanı denetleniyor"
-has "görev listesinde başlık İngilizce" "$(api en GET '/jobs?limit=20')" "Checking database $DB"
-# Akışlarda dil başlıktan değil hesaptan alınır (EventSource başlık gönderemez).
+check "görev başlığı Türkçe" "$(api en GET "/jobs/$JOB" | jget 'd["job"]["title"]')" "$DB veritabanı denetleniyor"
+has "görev günlüğü Türkçe" "$(api en GET "/jobs/$JOB" | jget 'd["log"]')" "$DB veritabanı denetleniyor"
 has "hesap dili Türkçeyken akış Türkçe" "$(timeout 4 curl -skN -b $J "$B/jobs/$JOB/stream")" "$DB veritabanı denetleniyor"
-api "" PATCH "/users/$ME" -d '{"language":"en"}' >/dev/null
+lang en
+check "görev başlığı İngilizce" "$(api "" GET "/jobs/$JOB" | jget 'd["job"]["title"]')" "Checking database $DB"
+has "görev günlüğü İngilizce" "$(api "" GET "/jobs/$JOB" | jget 'd["log"]')" "Checking database $DB"
+has "görev listesinde başlık İngilizce" "$(api "" GET '/jobs?limit=20')" "Checking database $DB"
 STREAM=$(timeout 4 curl -skN -b $J "$B/jobs/$JOB/stream")
-api "" PATCH "/users/$ME" -d '{"language":"tr"}' >/dev/null
+lang tr
 has "hesap dili İngilizceyken akış İngilizce" "$STREAM" "Checking database $DB"
 has "akış bitiş olayını taşır" "$STREAM" '"type":"done"'
 check "hesap dili geri alındı" "$(api "" GET /auth/me | jget 'd.get("language") or d["user"]["language"]')" tr
 api "" DELETE "/databases/$ID" >/dev/null
-
-say "Haftalık özet"
-WEEKLY=$(api en POST /health/weekly-report/send -d '{"preview":true}')
-has "konu İngilizce" "$(jget 'd["subject"]' <<<"$WEEKLY")" "PixPanel weekly summary"
-has "bölüm başlıkları İngilizce" "$(jget 'd["text"]' <<<"$WEEKLY")" "Checks and fixes"
-has "alt bilgi İngilizce" "$(jget 'd["text"]' <<<"$WEEKLY")" "sent by PixPanel every week"
-has "HTML gövde de İngilizce" "$(jget 'd["html"]' <<<"$WEEKLY")" "Certificates and backups"
-has "Türkçe istekte özet Türkçe" "$(api tr POST /health/weekly-report/send -d '{"preview":true}' | jget 'd["text"]')" "Denetimler ve düzeltmeler"
-
-say "Çeviri katmanı başka yanıtlara dokunmaz"
-check "olay akışı akış olarak kalır" "$(curl -sk -o /dev/null -m 2 -w '%{content_type}' -H 'accept-language: en' -b $J $B/events)" "text/event-stream"
-check "JSON yanıtın türü değişmez" "$(api en GET /sites -o /dev/null -w '%{content_type}')" "application/json"
-check "çevrilen yanıt geçerli JSON" "$(api en GET /health | jget 'type(d).__name__')" dict
 rm -f $J

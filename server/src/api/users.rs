@@ -188,8 +188,9 @@ async fn create(
         let tx = conn.transaction()?;
         let id = crate::db::next_user_id(&tx)?;
         tx.execute(
-            "INSERT INTO users (id, username, email, password_hash, role, parent_id, permissions, created_at, package_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            // Dil boş bırakılır: hesabın sahibi ilk girişinde tarayıcısının diline göre belirlenir.
+            "INSERT INTO users (id, username, email, password_hash, role, parent_id, permissions, created_at, package_id, language)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, '')",
             params![id, username, body.email.trim(), hash, role.as_str(), parent_id, permissions, now(), package_id],
         )?;
         tx.commit()?;

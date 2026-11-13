@@ -165,6 +165,25 @@ fn dictionary(language: &str) -> Option<&'static Dictionary> {
     }
 }
 
+/// İsteği yapan hesabın dili. Çeviri katmanı bunu isteğe boş olarak ekler; kimlik doğrulanınca
+/// `AuthUser` doldurur, yanıt dönerken katman okur. Böylece dil, hesabın kendi ayarından gelir
+/// ve ayrıca veritabanına sorulmaz.
+#[derive(Clone, Default)]
+pub struct LanguageSlot(std::sync::Arc<OnceLock<&'static str>>);
+
+impl LanguageSlot {
+    /// Hesabın dilini kaydeder; dili henüz belirlenmemiş hesapta (boş değer) bir şey yapmaz.
+    pub fn set(&self, language: &str) {
+        if !language.trim().is_empty() {
+            let _ = self.0.set(normalize(language));
+        }
+    }
+
+    pub fn get(&self) -> Option<&'static str> {
+        self.0.get().copied()
+    }
+}
+
 /// Panelin desteklediği dil kodu; tanınmayan değer Türkçe sayılır.
 pub fn normalize(language: &str) -> &'static str {
     let tag = language.trim().to_ascii_lowercase();
@@ -175,8 +194,9 @@ pub fn normalize(language: &str) -> &'static str {
     }
 }
 
-/// İsteğin `Accept-Language` başlığındaki ilk dil. Arayüz bu başlığı panelde seçili dille
-/// gönderir; başlık yoksa (betikler, API istemcileri) metinler Türkçe kalır.
+/// İsteğin `Accept-Language` başlığındaki ilk dil. Yalnızca hesabın dili bilinmediğinde
+/// kullanılır: oturum açılmamış isteklerde (giriş ekranı) ve dili henüz belirlenmemiş hesapta.
+/// Başlık da yoksa metinler Türkçe kalır.
 pub fn request_language(headers: &HeaderMap) -> &'static str {
     let value = headers.get(axum::http::header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()).unwrap_or("");
     let first = value.split(',').next().unwrap_or("").split(';').next().unwrap_or("");
@@ -434,6 +454,16 @@ mod tests {
         assert_eq!(request_language(&headers), "en");
         headers.insert(axum::http::header::ACCEPT_LANGUAGE, "tr-TR,en;q=0.9".parse().unwrap());
         assert_eq!(request_language(&headers), "tr");
+    }
+
+    #[test]
+    fn language_slot_keeps_the_account_language() {
+        let slot = LanguageSlot::default();
+        assert_eq!(slot.get(), None);
+        slot.set("");
+        assert_eq!(slot.get(), None, "dili belirlenmemiş hesap başlığa bırakılır");
+        slot.clone().set("en");
+        assert_eq!(slot.get(), Some("en"));
     }
 
     #[test]

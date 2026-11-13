@@ -78,7 +78,7 @@ For a release package: `scripts/release.sh <version>`.
 
 ## Languages
 
-The interface is available in Turkish and English; each user picks a language under Account. Messages produced by the server (error messages, health findings, job logs, notification emails) follow the same choice; API clients select it with the `Accept-Language` header. The `pixpanel` command line and the install script print Turkish only.
+The interface is available in Turkish and English. A new account gets its language from the browser on first sign-in (Turkish browsers get Turkish, all others English) and can change it under Account. Everything the server writes for that user (error messages, health findings, job logs, notification emails, API responses) follows the account's language. The `pixpanel` command line and the install script print Turkish only.
 
 ## Documentation
 

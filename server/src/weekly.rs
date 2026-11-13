@@ -473,43 +473,47 @@ fn admins(db: &Db) -> Vec<i64> {
     .unwrap_or_default()
 }
 
-/// Özeti verilen dilde üretir; `deliver` doğruysa kanallara da gönderir.
+/// Özeti üretir. Dönen metin `language` dilindedir (önizleme için); `deliver` doğruysa kanallara
+/// da gönderilir ve her yönetici özeti kendi hesabının dilinde alır. Ayarlardaki ek alıcı adresi
+/// bir hesaba bağlı olmadığı için ilk yöneticinin dilinde yazılır.
 pub async fn build(state: &AppState, deliver: bool, language: &str) -> AppResult<Delivery> {
     let digest = gather(state).await?;
-    let mut delivery = Delivery {
-        subject: localize(language, &subject(&digest)),
-        text: render_text(&digest, language),
-        html: render_html(&digest, language),
-        emailed: Vec::new(),
-        telegram: 0,
-        errors: Vec::new(),
-    };
+    let render = |language: &str| (localize(language, &subject(&digest)), render_text(&digest, language), render_html(&digest, language));
+    let (own_subject, own_text, own_html) = render(language);
+    let mut delivery = Delivery { subject: own_subject, text: own_text, html: own_html, emailed: Vec::new(), telegram: 0, errors: Vec::new() };
     if !deliver {
         return Ok(delivery);
     }
     let smtp = crate::notify::load_smtp(&state.db).unwrap_or_default();
-    let mut recipients: Vec<String> = Vec::new();
+    // (adres, dil): aynı adres iki kez yazılmaz, ilk gelen geçerlidir.
+    let mut recipients: Vec<(String, &'static str)> = Vec::new();
+    let admin_ids = admins(&state.db);
+    let first_language = admin_ids.first().map(|id| crate::notify::user_language(&state.db, *id)).unwrap_or("tr");
     let settings = load_settings(&state.db);
     if !settings.email_to.is_empty() {
-        recipients.push(settings.email_to.clone());
+        recipients.push((settings.email_to.clone(), first_language));
     }
-    let admin_ids = admins(&state.db);
+    // Web kancası gövdesi makineler içindir; kaynak dilde kalır.
+    let (hook_subject, hook_text, _) = render("tr");
     for admin in &admin_ids {
-        crate::webhooks::emit("weekly_report", Some(*admin), &delivery.subject, json!({ "subject": delivery.subject, "body": delivery.text }));
+        crate::webhooks::emit("weekly_report", Some(*admin), &hook_subject, json!({ "subject": hook_subject, "body": hook_text }));
         let Ok(channels) = crate::notify::load_channels(&state.db, *admin) else { continue };
-        if channels.email_enabled && !channels.email_to.is_empty() && !recipients.contains(&channels.email_to) {
-            recipients.push(channels.email_to.clone());
+        let admin_language = crate::notify::user_language(&state.db, *admin);
+        if channels.email_enabled && !channels.email_to.is_empty() && !recipients.iter().any(|(to, _)| *to == channels.email_to) {
+            recipients.push((channels.email_to.clone(), admin_language));
         }
         if channels.telegram_enabled {
-            let text = format!("{}\n\n{}", delivery.subject, delivery.text);
+            let (subject, text, _) = render(admin_language);
+            let text = format!("{subject}\n\n{text}");
             match crate::notify::send_telegram(&state.cfg.telegram_api, &channels.telegram_token, &channels.telegram_chat_id, &text).await {
                 Ok(()) => delivery.telegram += 1,
                 Err(err) => delivery.errors.push(err.to_string()),
             }
         }
     }
-    for to in recipients {
-        match crate::notify::send_email_html(&smtp, &to, &delivery.subject, &delivery.text, &delivery.html).await {
+    for (to, recipient_language) in recipients {
+        let (subject, text, html) = render(recipient_language);
+        match crate::notify::send_email_html(&smtp, &to, &subject, &text, &html).await {
             Ok(()) => delivery.emailed.push(to),
             Err(err) => delivery.errors.push(format!("{to}: {err}")),
         }
@@ -539,9 +543,7 @@ pub async fn run_if_due(state: &AppState) {
     }
     // Önce işaretlenir: gönderim yarıda kalsa bile her dakika yeniden denenmez.
     save_last(&state.db, &Last { at: now(), delivered: 0, errors: Vec::new() });
-    // Zamanlanmış özet tek bir metin olarak gider; dili ilk yöneticinin dilidir.
-    let language = admins(&state.db).first().map(|id| crate::notify::user_language(&state.db, *id)).unwrap_or("tr");
-    match build(state, true, language).await {
+    match build(state, true, "tr").await {
         Ok(delivery) => tracing::info!(emailed = delivery.emailed.len(), telegram = delivery.telegram, errors = delivery.errors.len(), "haftalık özet gönderildi"),
         Err(err) => tracing::warn!(error = %err, "haftalık özet hazırlanamadı"),
     }

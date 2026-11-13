@@ -261,7 +261,8 @@ fn create_admin(db: &Db, username: &str, password: Option<String>) -> anyhow::Re
         let tx = conn.transaction()?;
         let id = db::next_user_id(&tx)?;
         tx.execute(
-            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?1, ?2, ?3, 'admin', ?4)",
+            // Dil boş bırakılır: ilk girişte tarayıcının diline göre belirlenir.
+            "INSERT INTO users (id, username, password_hash, role, created_at, language) VALUES (?1, ?2, ?3, 'admin', ?4, '')",
             params![id, username, hash, db::now()],
         )?;
         tx.commit()
