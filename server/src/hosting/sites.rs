@@ -245,7 +245,7 @@ pub fn validate_public_dir(value: &str) -> AppResult<String> {
 
 /// Yerel adreste müşteri sitelerinin vekilleyemeyeceği portlar: panel, veritabanı araçları, DNS ve
 /// posta süzgeci yönetim uçları, veritabanları. Bu servisler yerel bağlantıya güvenir.
-const INTERNAL_PORTS: &[u16] = &[8443, 8446, 8053, 11332, 11333, 11334, 3306, 5432, 6379, 953, 783, 9911];
+const INTERNAL_PORTS: &[u16] = &[8443, 8444, 8446, 8053, 11332, 11333, 11334, 3306, 5432, 6379, 953, 783, 9911];
 
 /// Hedef, sunucunun içinden ulaşılıp dışarıya açılmaması gereken bir adres mi?
 ///

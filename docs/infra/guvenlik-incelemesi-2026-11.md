@@ -42,7 +42,7 @@
 
 Düşük önemli ya da tasarım kararı gerektirenler; ayrıca ele alınmalı.
 
-- **Aynı kökende üçüncü taraf uygulamalar:** Roundcube, phpMyAdmin ve Adminer panelle aynı kökende çalışır ve içerik güvenlik politikası (CSP) yoktur. Bu uygulamalardan birinde bir XSS (örneğin gelen bir HTML e-postada), aynı tarayıcıda panel oturumu açık bir yöneticinin yetkisiyle API'yi çağırabilir. Kalıcı çözüm araçları ayrı bir alt alan adına ya da porta taşımaktır.
+- **Aynı kökende üçüncü taraf uygulamalar:** Roundcube, phpMyAdmin ve Adminer panelle aynı kökende çalışır ve içerik güvenlik politikası (CSP) yoktur. Bu uygulamalardan birinde bir XSS (örneğin gelen bir HTML e-postada), aynı tarayıcıda panel oturumu açık bir yöneticinin yetkisiyle API'yi çağırabilir. **Çözüldü (13.11.2026):** araçlar panelle aynı adreste ama ayrı kökende, kendi portunda (`tools_port`, varsayılan 8444) çalışır; alan adı gerekmez. Panel `/tools/` ve `/webmail/` isteklerini oraya yönlendirir (307), araçların panel oturum çerezini ezen `Set-Cookie` yanıtları süzülür. Sınama: `security.sh` "ayrı kökende" bölümü.
 - **Yerel araç sunucusu:** `127.0.0.1:8446` aynı makinedeki müşteri koduna açıktır. Panel oturum denetimi atlanır ve `X-Real-IP` sahtelenebilir; Roundcube'un adres başına giriş sınırı bu yolla aşılabilir.
 - **Bayi ve askıya alma:** bayi, yöneticinin askıya aldığı müşterisini yeniden etkinleştirebilir.
 - **Olay akışı:** yalnızca dosya yetkisi olan alt hesap da sahibinin bütün görev başlıklarını görür.

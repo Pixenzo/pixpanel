@@ -10,6 +10,7 @@
 #   --from-dir YOL   dosyaları indirmek yerine bu klasörden al (çevrimdışı kurulum)
 #   --port PORT      panelin dinleyeceği port (varsayılan 8443; yalnızca ilk kurulumda)
 #   --admin AD       ilk yönetici hesabının adı (varsayılan admin)
+#   --no-databases   ilk kurulumda MariaDB ve PostgreSQL'i kurma (sonradan Bileşenler sayfasından kurulur)
 #   --force          desteklenmeyen dağıtımda da kur
 #
 # Betik yeniden çalıştırılırsa paneli son sürüme yükseltir; ayarlara ve verilere dokunmaz.
@@ -21,6 +22,7 @@ FROM_DIR=""
 PORT=8443
 ADMIN=admin
 FORCE=0
+DATABASES=1
 LANGUAGE=""
 
 # Sürümleri imzalayan anahtarın açık yarısı. İmzası bu anahtarla doğrulanmayan dosya kurulmaz.
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
     --port) need "$1" "${2:-}"; PORT="$2"; shift 2 ;;
     --admin) need "$1" "${2:-}"; ADMIN="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
+    --no-databases) DATABASES=0; shift ;;
     *) die "$(m 'bilinmeyen seçenek' 'unknown option'): $1" ;;
   esac
 done
@@ -93,8 +96,10 @@ ARCHIVE="pixpanel-linux-$ARCH.tar.gz"
 
 say "$(m 'Gerekli paketler kuruluyor' 'Installing required packages')"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq ca-certificates curl openssl tar >/dev/null
+# Panel arka planda paket işlemi yürütüyor olabilir (ör. güncelleme denetimi); kilit beklenir.
+APT_WAIT=(-o DPkg::Lock::Timeout=600)
+apt-get "${APT_WAIT[@]}" update -qq
+apt-get "${APT_WAIT[@]}" install -y -qq ca-certificates curl openssl tar >/dev/null
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -137,6 +142,8 @@ install -d -m 755 "$CONFIG_DIR"
 install -d -m 711 "$DATA_DIR"
 if [ ! -f "$CONFIG_DIR/config.toml" ]; then
   printf 'listen_port = %s\n' "$PORT" > "$CONFIG_DIR/config.toml"
+  # Araçlar varsayılan olarak 8444'te çalışır; panel portu o seçildiyse bir sonrakine geçer.
+  [ "$PORT" = 8444 ] && printf 'tools_port = 8445\n' >> "$CONFIG_DIR/config.toml"
   chmod 600 "$CONFIG_DIR/config.toml"
 else
   PORT="$(sed -n 's/^listen_port *= *\([0-9]\+\).*/\1/p' "$CONFIG_DIR/config.toml" | head -1)"
@@ -167,10 +174,31 @@ for _ in $(seq 1 30); do
 done
 [ "$STARTED" = 1 ] || die "$(m 'panel başlamadı; ayrıntı için' 'the panel did not start; for details run'): journalctl -u pixpanel -n 50"
 
+# İlk kurulumda iki veritabanı sunucusu da panelin kendi bileşen kurulumuyla kurulur (panelin
+# beklediği ayarlar, yerel erişim ve güvenlik adımları böylece tek yerde kalır). Kurulamayan
+# olursa kurulum durmaz; yönetici Bileşenler sayfasından yeniden dener.
+if [ "$FIRST_INSTALL" = 1 ] && [ "$DATABASES" = 1 ]; then
+  for component in mariadb postgresql; do
+    case "$component" in mariadb) label=MariaDB ;; *) label=PostgreSQL ;; esac
+    say "$(m "$label kuruluyor" "Installing $label")"
+    if "$BINARY" api POST "/components/$component/install" --wait >"$WORK/$component.log" 2>&1; then
+      :
+    elif grep -q 'HTTP 409' "$WORK/$component.log"; then
+      # Sunucuda zaten kurulu (ör. silinip yeniden kurulan panel): yapılacak bir şey yok.
+      say "$(m "$label zaten kurulu" "$label is already installed")"
+    else
+      tail -n 15 "$WORK/$component.log" | sed 's/^/    /' >&2
+      say "$(m "UYARI: $label kurulamadı; panelin Bileşenler sayfasından yeniden deneyebilirsiniz" "WARNING: $label could not be installed; you can retry from the Components page of the panel")"
+    fi
+  done
+fi
+
 ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo
 say "$(m "PixPanel $VERSION hazır" "PixPanel $VERSION is ready")"
 echo "    $(m Adres Address): https://${ADDRESS:-$(m sunucu-adresi server-address)}:$PORT"
+TOOLS_PORT="$(sed -n 's/^tools_port *= *\([0-9]\+\).*/\1/p' "$CONFIG_DIR/config.toml" | head -1)"
+echo "    $(m 'Veritabanı araçları ve web postası' 'Database tools and webmail'): https://${ADDRESS:-$(m sunucu-adresi server-address)}:${TOOLS_PORT:-8444} ($(m 'bu port da dışarıya açık olmalı' 'this port must be reachable too'))"
 if [ -n "$CREDENTIALS" ]; then
   echo
   printf '%s\n' "$CREDENTIALS" | sed 's/^/    /'

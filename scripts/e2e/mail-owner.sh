@@ -8,6 +8,7 @@
 set -uo pipefail
 B=https://127.0.0.1:8443/api/v1
 P=https://127.0.0.1:8443
+TOOLS=https://127.0.0.1:8444
 J=/tmp/pxjar-mowner
 JC=/tmp/pxjar-mowner-cust
 W=/tmp/pxjar-mowner-rc
@@ -176,21 +177,21 @@ if [ "$WEBMAIL" = "True" ]; then
   check "sürücü dosyası kurulu" "$(test -f /usr/share/roundcube/plugins/password/drivers/pixpanel.php && echo var)" var
   check "yapılandırma dosyası yalnız web grubuna okunur" "$(stat -c '%U %a' /etc/roundcube/config.inc.php)" "root 640"
   RCPASS='Roundcube-Parola-77'
-  PAGE=$(curl -sk -c $W "$P/webmail/"); TOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$PAGE" | cut -d'"' -f4)
-  LOGIN=$(curl -sk -b $W -c $W -o /dev/null -w '%{http_code} %{redirect_url}' "$P/webmail/?_task=login" --data-urlencode "_token=$TOKEN" -d '_task=login&_action=login&_timezone=Europe/Istanbul' --data-urlencode "_user=veli@$DOM" --data-urlencode "_pass=$MAIL_PASS")
+  PAGE=$(curl -sk -c $W "$TOOLS/webmail/"); TOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$PAGE" | cut -d'"' -f4)
+  LOGIN=$(curl -sk -b $W -c $W -o /dev/null -w '%{http_code} %{redirect_url}' "$TOOLS/webmail/?_task=login" --data-urlencode "_token=$TOKEN" -d '_task=login&_action=login&_timezone=Europe/Istanbul' --data-urlencode "_user=veli@$DOM" --data-urlencode "_pass=$MAIL_PASS")
   has "web postasına giriş" "$LOGIN" "_task=mail"
-  FORM=$(curl -sk -b $W -c $W "$P/webmail/?_task=settings&_action=plugin.password")
+  FORM=$(curl -sk -b $W -c $W "$TOOLS/webmail/?_task=settings&_action=plugin.password")
   has "parola formu açıldı" "$FORM" "_newpasswd"
   RCTOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$FORM" | head -1 | cut -d'"' -f4)
-  curl -sk -b $W -c $W -o /tmp/rc-weak.html "$P/webmail/?_task=settings&_action=plugin.password-save" --data-urlencode "_token=$RCTOKEN" \
+  curl -sk -b $W -c $W -o /tmp/rc-weak.html "$TOOLS/webmail/?_task=settings&_action=plugin.password-save" --data-urlencode "_token=$RCTOKEN" \
     --data-urlencode "_curpasswd=$MAIL_PASS" --data-urlencode '_newpasswd=kisa' --data-urlencode '_confpasswd=kisa'
   check "zayıf parola web postasından da değişmez" "$(mf login veli@$DOM)" ok
-  curl -sk -b $W -c $W -o /tmp/rc-save.html "$P/webmail/?_task=settings&_action=plugin.password-save" --data-urlencode "_token=$RCTOKEN" \
+  curl -sk -b $W -c $W -o /tmp/rc-save.html "$TOOLS/webmail/?_task=settings&_action=plugin.password-save" --data-urlencode "_token=$RCTOKEN" \
     --data-urlencode "_curpasswd=$MAIL_PASS" --data-urlencode "_newpasswd=$RCPASS" --data-urlencode "_confpasswd=$RCPASS"
   check "web postasından parola değişti (eski parola kesildi)" "$(mf login veli@$DOM)" fail
   check "web postasından parola değişti (yeni parola geçerli)" "$(MAIL_PASS=$RCPASS mf login veli@$DOM)" ok
   check "panelden parola geri alındı" "$(code PATCH /mail/mailboxes/$VELI -d "{\"password\":\"$MAIL_PASS\"}")" 200
-  SIEVEPAGE=$(curl -sk -b $W -c $W "$P/webmail/?_task=settings&_action=plugin.managesieve")
+  SIEVEPAGE=$(curl -sk -b $W -c $W "$TOOLS/webmail/?_task=settings&_action=plugin.managesieve")
   has "filtreler sayfası açılıyor" "$SIEVEPAGE" "managesieve"
 else
   echo "  ATLANDI web postası kurulu değil"

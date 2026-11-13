@@ -62,7 +62,7 @@ curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.
 
 `--lang tr` verilmezse betik İngilizce yazar.
 
-Betik sürüm dosyalarının imzasını doğrular, paneli kurar ve ilk yönetici parolasını bir kez gösterir. Panel `https://<sunucu>:8443` adresinde açılır. Aynı komut yeniden çalıştırılırsa paneli son sürüme yükseltir.
+Betik sürüm dosyalarının imzasını doğrular, paneli kurar ve ilk yönetici parolasını bir kez gösterir. Panel `https://<sunucu>:8443` adresinde açılır; phpMyAdmin, Adminer ve web postası güvenlik için panelden ayrı olarak 8444 portunda çalışır, iki port da açık olmalı. İlk kurulumda MariaDB ve PostgreSQL de kurulur (`--no-databases` ile atlanır). Aynı komut yeniden çalıştırılırsa paneli son sürüme yükseltir.
 
 Çevrimdışı kurulum için sürüm dosyalarını sunucuya kopyalayıp `bash install.sh --from-dir <klasör>` çalıştırın. Kaldırmak için: `pixpanel-uninstall` (ayar ve veriler kalır) ya da `pixpanel-uninstall --purge`.
 

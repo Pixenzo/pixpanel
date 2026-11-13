@@ -265,6 +265,21 @@ async fn serve(cfg: Config, db: Db, config_path: PathBuf) -> anyhow::Result<()> 
         tracing::error!(error = %err, "güvenlik duvarı kuralları yüklenemedi");
     }
 
+    // Hazır araçlar (phpMyAdmin, Adminer, web postası) panelden ayrı kökende, kendi portunda
+    // sunulur (bkz. `web::tools_app`). Port açılamazsa panel yine çalışır; araçlar açılmaz.
+    let tools = web::tools_app(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
+    let tools_addr = SocketAddr::new(cfg.listen_addr, cfg.tools_port);
+    let tools_tls = tls.clone();
+    tokio::spawn(async move {
+        let result = match tools_tls {
+            Some(tls) => axum_server::bind_rustls(tools_addr, tls).serve(tools).await,
+            None => axum_server::bind(tools_addr).serve(tools).await,
+        };
+        if let Err(err) = result {
+            tracing::error!(error = %err, "araç sunucusu {tools_addr} adresinde başlatılamadı");
+        }
+    });
+
     let app = web::app(state).into_make_service_with_connect_info::<SocketAddr>();
     let addr = SocketAddr::new(cfg.listen_addr, cfg.listen_port);
 

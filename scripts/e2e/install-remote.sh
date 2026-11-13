@@ -8,6 +8,7 @@ J=/tmp/pxjar-install
 say() { printf '\n== %s\n' "$*"; }
 check() { if [ "$2" = "$3" ]; then echo "  OK   $1"; else echo "  HATA $1: beklenen=[$3] gelen=[$2]"; fi; }
 has() { if grep -qF -- "$3" <<<"$2"; then echo "  OK   $1"; else echo "  HATA $1: [$3] bulunamadı: [$(tr -d '\n' <<<"$2" | tail -c 300)]"; fi; }
+hasnt() { if grep -qF -- "$3" <<<"$2"; then echo "  HATA $1: [$3] bulundu"; else echo "  OK   $1"; fi; }
 login() { curl -sk -o /dev/null -w '%{http_code}' -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X POST $B/auth/login -d "{\"username\":\"$1\",\"password\":\"$2\"}"; }
 . /etc/os-release
 RELEASE=$(cat $REL/VERSION)
@@ -60,6 +61,12 @@ check "komut satırı yardımı Türkçe" "$(/usr/local/bin/pixpanel --help | he
 check "veritabanı yalnız root'a açık" "$(stat -c '%a %U' /var/lib/pixpanel/pixpanel.db)" "600 root"
 login yonetici "$PASSWORD" >/dev/null
 check "yöneticinin panel dili seçilen dil" "$(curl -sk -b $J $B/auth/me | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("language") or d["user"]["language"])')" tr
+check "MariaDB kurulumla geldi" "$(systemctl is-active mariadb)" active
+check "PostgreSQL kurulumla geldi" "$(systemctl is-active postgresql)" active
+has "kurulum veritabanlarını bildirdi" "$OUT" "MariaDB kuruluyor"
+check "araç portu dinliyor" "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8444/nope)" 404
+check "paneldeki /webmail/ araç portuna yönlenir" "$(curl -sk -o /dev/null -w '%{redirect_url}' https://127.0.0.1:8443/webmail/)" "https://127.0.0.1:8444/webmail/"
+has "kurulum araç portunu bildirdi" "$OUT" ":8444"
 
 say "Yeniden çalıştırma (yükseltme)"
 OUT=$(bash $REL/install.sh --from-dir $REL --port 9999 2>&1); RC=$?
@@ -94,6 +101,8 @@ OUT=$(bash $REL/install.sh --from-dir $REL 2>&1); RC=$?
 check "kurulum" "$RC" 0
 has "çıktı İngilizce" "$OUT" "PixPanel $RELEASE is ready"
 has "parola İngilizce başlıkla" "$OUT" "Password:"
+has "kurulu veritabanı yeniden kurulmaz" "$OUT" "MariaDB is already installed"
+hasnt "veritabanı uyarısı yok" "$OUT" "could not be installed"
 PASSWORD=$(sed -n 's/.*Password *: *//p' <<<"$OUT" | head -1)
 check "varsayılan dil kaydedildi" "$(cat /etc/pixpanel/language)" en
 check "yöneticinin panel dili boş (ilk girişte tarayıcıdan)" "[$(python3 -c "import sqlite3; print(sqlite3.connect('/var/lib/pixpanel/pixpanel.db').execute(\"select language from users where username='admin'\").fetchone()[0])")]" "[]"

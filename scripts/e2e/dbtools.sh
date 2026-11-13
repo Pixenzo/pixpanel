@@ -3,6 +3,8 @@
 # Kullanım: PX_USER=... PX_PASS=... bash dbtools.sh
 set -uo pipefail
 P=https://127.0.0.1:8443
+# Araçlar panelden ayrı kökende, kendi portunda yayınlanır.
+T=https://127.0.0.1:8444
 B=$P/api/v1
 J=/tmp/pxjar-tools
 api() { local m=$1 p=$2; shift 2; curl -sk -b $J -c $J -H 'x-pixpanel-csrf: 1' -H 'content-type: application/json' -X "$m" "$B$p" "$@"; }
@@ -30,13 +32,13 @@ PGNAME=$(echo "$OV" | jget 'next(x["name"] for x in d["databases"] if x["engine"
 say "phpMyAdmin ($MYNAME)"
 URL=$(api POST /databases/$MY/open | jget 'd["url"]')
 has "adres üretildi" "$URL" "/tools/phpmyadmin/pixpanel-signon.php?token="
-check "panel oturumu olmadan erişim" "$(curl -sk -o /dev/null -w '%{http_code}' "$P$URL")" 401
+check "panel oturumu olmadan erişim" "$(curl -sk -o /dev/null -w '%{http_code}' "$T$URL")" 401
 check "araç sunucusu dışarıya kapalı" "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://$(hostname -I | awk '{print $1}'):8446/tools/phpmyadmin/")" 000
-PAGE=$(curl -skL -b $J -c $J "$P$URL")
+PAGE=$(curl -skL -b $J -c $J "$T$URL")
 has "phpMyAdmin açıldı" "$PAGE" "phpMyAdmin"
 has "veritabanı seçili" "$PAGE" "$MYNAME"
-check "anahtar ikinci kez kullanılamaz" "$(curl -sk -o /dev/null -w '%{http_code}' -b $J "$P$URL")" 403
-check "iç klasörler kapalı" "$(curl -sk -o /dev/null -w '%{http_code}' -b $J "$P/tools/phpmyadmin/libraries/classes/Config.php")" 404
+check "anahtar ikinci kez kullanılamaz" "$(curl -sk -o /dev/null -w '%{http_code}' -b $J "$T$URL")" 403
+check "iç klasörler kapalı" "$(curl -sk -o /dev/null -w '%{http_code}' -b $J "$T/tools/phpmyadmin/libraries/classes/Config.php")" 404
 TEMP=$(mariadb -N -e "SELECT user FROM mysql.user WHERE user LIKE 'pxt\_%'" | head -1)
 has "geçici hesap oluştu" "$TEMP" "pxt_"
 has "geçici hesap yalnızca bu veritabanında yetkili" "$(mariadb -N -e "SHOW GRANTS FOR '$TEMP'@'localhost'" | grep -v USAGE)" "\`$MYNAME\`"
@@ -45,11 +47,11 @@ check "başka veritabanına yetkisi yok" "$(mariadb -N -e "SHOW GRANTS FOR '$TEM
 say "Adminer ($PGNAME)"
 URL=$(api POST /databases/$PG/open | jget 'd["url"]')
 has "adres üretildi" "$URL" "/tools/adminer/?token="
-PAGE=$(curl -skL -b $J -c $J "$P$URL")
+PAGE=$(curl -skL -b $J -c $J "$T$URL")
 has "Adminer açıldı" "$PAGE" "Adminer"
 has "veritabanına bağlandı" "$PAGE" "$PGNAME"
 if printf '%s' "$PAGE" | grep -qiE 'name="auth\[password\]"|Invalid credentials|Unable to connect'; then echo "  HATA giriş formu ya da bağlantı hatası göründü"; else echo "  OK   giriş formu gösterilmedi"; fi
-check "anahtar ikinci kez kullanılamaz" "$(curl -sk -o /dev/null -w '%{http_code}' "$P$URL" -b /tmp/none-$$ -H "cookie: $(grep pixpanel_session $J | awk '{print $6"="$7}')")" 403
+check "anahtar ikinci kez kullanılamaz" "$(curl -sk -o /dev/null -w '%{http_code}' "$T$URL" -b /tmp/none-$$ -H "cookie: $(grep pixpanel_session $J | awk '{print $6"="$7}')")" 403
 
 say "Geçici hesapların temizliği"
 sqlite3 /var/lib/pixpanel/pixpanel.db "UPDATE db_tool_sessions SET expires_at = 1" 2>/dev/null || python3 -c "

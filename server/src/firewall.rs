@@ -102,8 +102,8 @@ pub fn presets(cfg: &crate::config::Config) -> Vec<Preset> {
         Preset {
             key: "panel",
             label: "PixPanel",
-            description: "Bu panelin kendisi.",
-            tcp: vec![cfg.listen_port.to_string()],
+            description: "Bu panelin kendisi ve hazır araçları (phpMyAdmin, Adminer, web postası).",
+            tcp: vec![cfg.listen_port.to_string(), cfg.tools_port.to_string()],
             udp: Vec::new(),
             critical: true,
         },

@@ -61,7 +61,7 @@ Debian 13 or Ubuntu 26.04, x86_64, root access. A clean server is recommended.
 curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.sh | bash
 ```
 
-The script speaks English by default; add `--lang tr` for Turkish (`... | bash -s -- --lang tr`). It verifies the signature of the release files, installs the panel and shows the first admin password once. The panel opens at `https://<server>:8443`. Running the same command again upgrades the panel to the latest release.
+The script speaks English by default; add `--lang tr` for Turkish (`... | bash -s -- --lang tr`). It verifies the signature of the release files, installs the panel and shows the first admin password once. The panel opens at `https://<server>:8443`; phpMyAdmin, Adminer and webmail run on port 8444 (kept apart from the panel for security), so open both ports. MariaDB and PostgreSQL are installed on first install (skip with `--no-databases`). Running the same command again upgrades the panel to the latest release.
 
 For an offline install, copy the release files to the server and run `bash install.sh --from-dir <folder>`. To remove the panel: `pixpanel-uninstall` (keeps settings and data) or `pixpanel-uninstall --purge`.
 

@@ -212,7 +212,7 @@
  "Bu oturum terminal açamaz": "This session cannot open a terminal",
  "Bu paketi {1} hesap kullanıyor; önce o hesaplara başka paket atayın": "{1} accounts use this plan; assign those accounts a different plan first",
  "Bu panel alan adı başka bir bayiye bağlı": "This panel domain is linked to another reseller",
- "Bu panelin kendisi.": "This panel itself.",
+ "Bu panelin kendisi ve hazır araçları (phpMyAdmin, Adminer, web postası).": "This panel itself and its built-in tools (phpMyAdmin, Adminer, webmail).",
  "Bu posta alanı artık yok; önce Posta sayfasından alan adını ve kutuları yeniden oluşturun": "This mail domain no longer exists; first recreate the domain and mailboxes from the Mail page",
  "Bu sayfa için panelde oturum açmanız gerekiyor.": "You need to sign in to the panel to view this page.",
  "Bu sertifikayı siz yüklediniz; yenisini SSL sayfasından yükleyin": "You uploaded this certificate yourself; upload a new one from the SSL page",

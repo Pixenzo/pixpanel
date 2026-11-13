@@ -15,6 +15,10 @@ pub struct Config {
     pub listen_addr: IpAddr,
     /// Panelin dinlediği port.
     pub listen_port: u16,
+    /// Hazır araçların (phpMyAdmin, Adminer, web postası) yayınlandığı port. Araçlar panelden
+    /// ayrı bir kökende (aynı adres, başka port) çalışır: birinde çıkan bir betik açığı
+    /// (ör. gelen bir HTML e-postası) panel sayfalarını okuyamaz, API'yi çağıramaz.
+    pub tools_port: u16,
     /// Veritabanı, sertifikalar ve çalışma dosyalarının tutulduğu klasör.
     pub data_dir: PathBuf,
     /// Kapatılırsa panel düz HTTP ile çalışır (yalnızca ters vekil arkasında önerilir).
@@ -44,6 +48,7 @@ impl Default for Config {
         Self {
             listen_addr: "0.0.0.0".parse().expect("geçerli adres"),
             listen_port: 8443,
+            tools_port: 8444,
             data_dir: PathBuf::from("/var/lib/pixpanel"),
             tls: true,
             session_ttl_secs: 12 * 3600,

@@ -123,7 +123,7 @@ install_component mail yes && {
   check "Dovecot ve Rspamd çalışıyor" "$(systemctl is-active dovecot rspamd | tr '\n' ' ')" "active active "
   check "SMTP dinliyor" "$(ss -ltnH 'sport = :25' | wc -l | sed 's/[1-9][0-9]*/var/')" var
 }
-install_component roundcube no && check "web postası yayında" "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8443/webmail/)" 200
+install_component roundcube no && check "web postası yayında" "$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8444/webmail/)" 200
 
 # Özellik sınamaları bu yeni kurulmuş makinede koşar; bir bileşen eksik yapılandırılmışsa
 # burada ortaya çıkar. Her betiğin yalnızca hata satırları ve sayıları gösterilir.

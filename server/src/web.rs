@@ -21,14 +21,73 @@ struct Assets;
 pub fn app(state: AppState) -> Router {
     Router::new()
         .nest("/api/v1", api::router().fallback(|| async { AppError::NotFound }).layer(middleware::from_fn(translate_response)))
-        .route("/tools/{*path}", axum::routing::any(tools_proxy))
-        .route("/webmail", axum::routing::get(|| async { axum::response::Redirect::permanent("/webmail/") }))
-        .route("/webmail/", axum::routing::any(webmail_proxy))
-        .route("/webmail/{*path}", axum::routing::any(webmail_proxy))
+        // Araçlar panelin kökeninde sunulmaz; eski bağlantılar araç portuna yönlendirilir.
+        .route("/tools/{*path}", axum::routing::any(to_tools_origin))
+        .route("/webmail", axum::routing::any(to_tools_origin))
+        .route("/webmail/", axum::routing::any(to_tools_origin))
+        .route("/webmail/{*path}", axum::routing::any(to_tools_origin))
         .fallback(static_file)
         .layer(middleware::from_fn(security_headers))
         .layer(CompressionLayer::new())
         .with_state(state)
+}
+
+/// Hazır araçların (phpMyAdmin, Adminer, Roundcube) ayrı porttaki sunucusu.
+///
+/// Tarayıcı kökeni şema + ad + porttur; araçlar bu yüzden panelle aynı adreste, ama başka
+/// bir kökende çalışır ve alan adı gerektirmez. Araçlardan birinde çıkan bir betik açığı
+/// panel sayfalarını okuyamaz: API yanıtları çapraz kökenli olduğundan okunamaz, değişiklik
+/// isteyen uçlar CSRF başlığı ister (başlık ön denetim gerektirir, panel izin vermez),
+/// terminal `Origin` denetler ve panel çerçeve içinde açılmaz.
+/// Çerezler porta göre ayrılmaz; panelin oturum çerezi burada da gelir, veritabanı araçlarının
+/// oturum denetimi onunla yapılır ve çerez araçlara aktarılmaz (bkz. `forward_to_tools`).
+pub fn tools_app(state: AppState) -> Router {
+    Router::new()
+        .route("/", axum::routing::get(|| async { axum::response::Redirect::to("/webmail/") }))
+        .route("/tools/{*path}", axum::routing::any(tools_proxy))
+        .route("/webmail", axum::routing::get(|| async { axum::response::Redirect::permanent("/webmail/") }))
+        .route("/webmail/", axum::routing::any(webmail_proxy))
+        .route("/webmail/{*path}", axum::routing::any(webmail_proxy))
+        .fallback(|| async { StatusCode::NOT_FOUND })
+        .layer(middleware::from_fn(tools_headers))
+        .layer(CompressionLayer::new())
+        .with_state(state)
+}
+
+/// Paneldeki `/tools/…` ve `/webmail/…` isteğini aynı adresin araç portuna yönlendirir.
+/// Yöntem ve gövde korunur (307).
+async fn to_tools_origin(State(state): State<AppState>, request: Request) -> Response {
+    // HTTP/2'de `Host` başlığı yoktur; adres isteğin `:authority` alanındadır.
+    let host = request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| request.uri().authority().map(|authority| authority.as_str()))
+        .unwrap_or_default();
+    let Some(name) = host_name(host) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let scheme = if state.cfg.tls { "https" } else { "http" };
+    let path = request.uri().path_and_query().map(|value| value.as_str()).unwrap_or("/");
+    let location = format!("{scheme}://{name}:{}{path}", state.cfg.tools_port);
+    match HeaderValue::from_str(&location) {
+        Ok(location) => (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, location)]).into_response(),
+        Err(_) => StatusCode::BAD_REQUEST.into_response(),
+    }
+}
+
+/// `Host` başlığından port dışındaki adı alır (`[::1]:8443` → `[::1]`). Ad yalnızca alan
+/// adı ya da IP adresi karakterleri içerebilir; başka bir şey yönlendirmeye girmez.
+fn host_name(host: &str) -> Option<&str> {
+    let name = if host.starts_with('[') {
+        &host[..=host.find(']')?]
+    } else {
+        host.rsplit_once(':').map_or(host, |(name, _)| name)
+    };
+    let valid = !name.is_empty()
+        && name.len() <= 255
+        && name.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b':' | b'[' | b']'));
+    valid.then_some(name)
 }
 
 /// Çevrilecek JSON yanıtının üst sınırı; daha büyüğü (dosya içeriği, uzun listeler) olduğu gibi geçer.
@@ -122,7 +181,13 @@ async fn forward_to_tools(parts: axum::http::request::Parts, body: axum::body::B
     if declared.is_some_and(|length| length > body_limit) {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
-    let host = parts.headers.get(header::HOST).and_then(|value| value.to_str().ok()).unwrap_or_default().to_string();
+    let host = parts
+        .headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| parts.uri.authority().map(|authority| authority.as_str()))
+        .unwrap_or_default()
+        .to_string();
 
     let client = match reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build() {
         Ok(client) => client,
@@ -167,9 +232,14 @@ async fn forward_to_tools(parts: axum::http::request::Parts, body: axum::body::B
 
     let mut response = Response::builder().status(upstream.status());
     for (name, value) in upstream.headers() {
-        if !matches!(name.as_str(), "connection" | "transfer-encoding" | "keep-alive") {
-            response = response.header(name, value);
+        if matches!(name.as_str(), "connection" | "transfer-encoding" | "keep-alive") {
+            continue;
         }
+        // Çerezler porta göre ayrılmadığından bir araç panelin oturum çerezini ezebilirdi.
+        if name == header::SET_COOKIE && value.to_str().map_or(true, |cookie| cookie.trim_start().starts_with(&panel_cookie)) {
+            continue;
+        }
+        response = response.header(name, value);
     }
     response
         .body(axum::body::Body::from_stream(upstream.bytes_stream()))
@@ -200,25 +270,25 @@ fn serve_asset(path: &str, file: rust_embed::EmbeddedFile) -> Response {
         .into_response()
 }
 
-async fn security_headers(request: Request, next: Next) -> Response {
-    // Vekillenen araçlar kendi güvenlik başlıklarını gönderir; panelin katı içerik
-    // ilkesi onların satır içi betiklerini engellerdi.
-    let proxied_tool = request.uri().path().starts_with("/tools/");
-    let webmail = request.uri().path().starts_with("/webmail");
+/// Araç sunucusunun başlıkları. Araçlar kendi satır içi betiklerini kullandığından panelin
+/// katı içerik ilkesi uygulanmaz; korunma, panelden ayrı kökende çalışmalarından gelir.
+async fn tools_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
-    if proxied_tool {
-        return response;
-    }
+    let headers = response.headers_mut();
+    headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    // Araçlar kendi kökenleri dışında çerçeve içinde açılmaz (tıklama tuzağı). Aracın kendi
+    // gönderdiği (daha sıkı olabilecek) başlık korunur.
+    headers.entry("x-frame-options").or_insert(HeaderValue::from_static("SAMEORIGIN"));
+    response
+}
+
+async fn security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
     let headers = response.headers_mut();
     let mut set = |name: &'static str, value: &'static str| {
         headers.insert(name, HeaderValue::from_static(value));
     };
     set("x-content-type-options", "nosniff");
-    if webmail {
-        // Roundcube kendi satır içi betiklerini kullanır; panelin içerik ilkesi uygulanmaz.
-        set("x-frame-options", "SAMEORIGIN");
-        return response;
-    }
     set("x-frame-options", "DENY");
     set("referrer-policy", "same-origin");
     set(
@@ -227,4 +297,21 @@ async fn security_headers(request: Request, next: Next) -> Response {
          font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::host_name;
+
+    #[test]
+    fn host_name_drops_port_and_rejects_odd_hosts() {
+        assert_eq!(host_name("192.168.1.25:8443"), Some("192.168.1.25"));
+        assert_eq!(host_name("panel.example.com"), Some("panel.example.com"));
+        assert_eq!(host_name("[2001:db8::1]:8443"), Some("[2001:db8::1]"));
+        assert_eq!(host_name("[::1]"), Some("[::1]"));
+        assert_eq!(host_name(""), None);
+        assert_eq!(host_name("evil.com/x:8443"), None);
+        assert_eq!(host_name("a@b:8443"), None);
+        assert_eq!(host_name("[::1"), None);
+    }
 }

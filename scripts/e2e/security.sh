@@ -5,6 +5,7 @@
 set -uo pipefail
 B=https://127.0.0.1:8443/api/v1
 P=https://127.0.0.1:8443
+T=https://127.0.0.1:8444
 J=/tmp/pxjar-sec
 JC=/tmp/pxjar-sec-customer
 JM=/tmp/pxjar-sec-member
@@ -68,16 +69,26 @@ else
   echo "  (Python bileşeni kurulu değil; bu bölüm atlandı)"
 fi
 
+say "Hazır araçlar panelden ayrı kökende (port 8444)"
+check "paneldeki /tools/ araç portuna yönlenir" "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "$P/tools/phpmyadmin/index.php?x=1")" "307 https://127.0.0.1:8444/tools/phpmyadmin/index.php?x=1"
+check "paneldeki /webmail/ araç portuna yönlenir" "$(curl -sk -o /dev/null -w '%{http_code} %{redirect_url}' "$P/webmail/")" "307 https://127.0.0.1:8444/webmail/"
+check "panel kendi kökeninde araç içeriği sunmaz" "$(curl -sk "$P/webmail/" | grep -c rcmloginuser)" 0
+check "araç portunda panel API'si yok" "$(curl -sk -o /dev/null -w '%{http_code}' "$T/api/v1/auth/me")" 404
+check "araç portunda panel arayüzü yok" "$(curl -sk -o /dev/null -w '%{http_code}' "$T/index.html")" 404
+check "yönlendirmeye sahte Host girmez" "$(curl -sk -o /dev/null --http1.1 -w '%{http_code}' -H 'host: evil.test/x' "$P/webmail/")" 400
+check "panel araç kökenine CORS izni vermez" "$(curl -sk -o /dev/null -D - -b $J -H "origin: $T" "$B/auth/me" | grep -ci '^access-control-allow')" 0
+check "araç kökeninden değişiklik isteği (CSRF başlıksız) reddedilir" "$(curl -sk -o /dev/null -w '%{http_code}' -b $J -H "origin: $T" -H 'content-type: text/plain' -X POST "$B/health/check")" 403
+
 say "Web postası yolundan veritabanı araçlarına oturumsuz erişim"
-check "/webmail/../tools/ engellenir" "$(curl -sk --path-as-is -o /dev/null -w '%{http_code}' "$P/webmail/../tools/phpmyadmin/index.php")" 404
-check "kodlanmış nokta (%2e%2e) engellenir" "$(curl -sk --path-as-is -o /dev/null -w '%{http_code}' "$P/webmail/%2e%2e/tools/phpmyadmin/index.php")" 404
-check "kodlanmış bölü (%2f) engellenir" "$(curl -sk --path-as-is -o /dev/null -w '%{http_code}' "$P/webmail/..%2ftools/phpmyadmin/index.php")" 404
-check "oturumsuz /tools/ yine kapalı" "$(curl -sk -o /dev/null -w '%{http_code}' "$P/tools/phpmyadmin/index.php")" 401
-WM=$(curl -sk -o /dev/null -w '%{http_code}' "$P/webmail/")
+check "/webmail/../tools/ engellenir" "$(curl -sk --path-as-is -o /dev/null -w '%{http_code}' "$T/webmail/../tools/phpmyadmin/index.php")" 404
+check "kodlanmış nokta (%2e%2e) engellenir" "$(curl -sk --path-as-is -o /dev/null -w '%{http_code}' "$T/webmail/%2e%2e/tools/phpmyadmin/index.php")" 404
+check "kodlanmış bölü (%2f) engellenir" "$(curl -sk --path-as-is -o /dev/null -w '%{http_code}' "$T/webmail/..%2ftools/phpmyadmin/index.php")" 404
+check "oturumsuz /tools/ yine kapalı" "$(curl -sk -o /dev/null -w '%{http_code}' "$T/tools/phpmyadmin/index.php")" 401
+WM=$(curl -sk -o /dev/null -w '%{http_code}' "$T/webmail/")
 check "web postası açılmaya devam eder" "$([ "$WM" = 200 ] || [ "$WM" = 404 ] && echo ok || echo "$WM")" ok
-check "web postasına sınırı aşan gövde gönderilemez" "$(curl -sk --http1.1 -o /dev/null -w '%{http_code}' -m 10 -X POST -H 'content-length: 99999999999' --data-binary 'x' "$P/webmail/" 2>/dev/null)" 413
+check "web postasına sınırı aşan gövde gönderilemez" "$(curl -sk --http1.1 -o /dev/null -w '%{http_code}' -m 10 -X POST -H 'content-length: 99999999999' --data-binary 'x' "$T/webmail/" 2>/dev/null)" 413
 # Boyutu bildirilmeyen gövde akarken kesilir: 70 MB gönderilirken bağlantı yarıda kalır ya da hata döner.
-BIG=$(head -c 70000000 /dev/zero | curl -sk -o /dev/null -w '%{http_code}' -m 30 -X POST -H 'transfer-encoding: chunked' --data-binary @- "$P/webmail/" 2>/dev/null)
+BIG=$(head -c 70000000 /dev/zero | curl -sk -o /dev/null -w '%{http_code}' -m 30 -X POST -H 'transfer-encoding: chunked' --data-binary @- "$T/webmail/" 2>/dev/null)
 check "boyutu bildirilmeyen büyük gövde de kesilir" "$([ "$BIG" = 200 ] && echo gecti || echo kesildi)" kesildi
 
 say "Müşterinin vekil sitesiyle iç servislere ulaşma"

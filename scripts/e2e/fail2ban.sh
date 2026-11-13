@@ -110,8 +110,8 @@ release
 say "Web postası"
 # Üçüncü denemede engel başlar; dördüncüsü zaman aşımına takılıp engel süresini tüketirdi.
 for i in 1 2 3; do
-  W=$(mktemp); PAGE=$(curl -sk -m 8 -c "$W" "https://$HOST:8443/webmail/"); TOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$PAGE" | cut -d'"' -f4)
-  curl -sk -m 8 -o /dev/null -b "$W" "https://$HOST:8443/webmail/?_task=login" --data-urlencode "_token=$TOKEN" -d '_task=login&_action=login&_timezone=UTC' --data-urlencode '_user=yok@deneme.test' --data-urlencode '_pass=yanlis-parola'; rm -f "$W"
+  W=$(mktemp); PAGE=$(curl -sk -m 8 -c "$W" "https://$HOST:8444/webmail/"); TOKEN=$(grep -o 'name="_token" value="[^"]*"' <<<"$PAGE" | cut -d'"' -f4)
+  curl -sk -m 8 -o /dev/null -b "$W" "https://$HOST:8444/webmail/?_task=login" --data-urlencode "_token=$TOKEN" -d '_task=login&_action=login&_timezone=UTC' --data-urlencode '_user=yok@deneme.test' --data-urlencode '_pass=yanlis-parola'; rm -f "$W"
 done
 sleep 4
 check "web postası gerçek adresi günlüğe yazıyor" "$($PCT journalctl -t roundcube --no-pager -n 20 | grep -c "from $MYIP" | awk '{print ($1 >= 3) ? "evet" : "hayir"}')" evet
