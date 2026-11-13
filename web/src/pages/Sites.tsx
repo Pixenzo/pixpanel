@@ -359,7 +359,7 @@ export function siteKindLabel(site: Site): string {
 }
 
 /** Liste sütunları geniş ekranda hizalı durur: aç/kapa, alan adı, durum, disk, trafik, kısayollar. */
-const ROW_GRID = "flex flex-wrap items-center gap-x-4 gap-y-2 lg:grid lg:grid-cols-[2.125rem_minmax(0,1fr)_10.5rem_5rem_6.5rem_13rem]";
+const ROW_GRID = "flex flex-wrap items-center gap-x-4 gap-y-2 @4xl:grid @4xl:grid-cols-[2.125rem_minmax(0,1fr)_10.5rem_5rem_6.5rem_13rem]";
 
 /** Satırdaki kısayollar: en sık açılan araçlar tek tıkla. */
 const QUICK_TOOLS = ["files", "databases", "logs", "settings"];
@@ -406,9 +406,9 @@ function SiteCard({
         >
           <ChevronRight className={classNames("size-4 transition-transform", expanded && "rotate-90")} />
         </button>
-        <div className={classNames("min-w-0 flex-1 max-lg:basis-[calc(100%-4rem)]", nested && "lg:pl-5")}>
+        <div className={classNames("min-w-0 flex-1 @max-4xl:basis-[calc(100%-4rem)]", nested && "@4xl:pl-5")}>
           <div className="flex items-center gap-2">
-            {nested && <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-ink-3 max-lg:hidden" />}
+            {nested && <CornerDownRight aria-hidden className="size-3.5 shrink-0 text-ink-3 @max-4xl:hidden" />}
             <Link to={`/sites/${site.id}`} className="truncate font-mono text-[15.5px] font-medium tracking-[-0.01em] hover:text-accent">
               {site.domain}
             </Link>
@@ -452,10 +452,10 @@ function SiteCard({
             </span>
           )}
         </p>
-        <p className="tabular font-mono text-[13px] text-ink-2 max-lg:hidden" title={t("Site klasörünün boyutu")}>
+        <p className="tabular font-mono text-[13px] text-ink-2 @max-4xl:hidden" title={t("Site klasörünün boyutu")}>
           {summary?.disk_bytes != null ? formatBytes(summary.disk_bytes) : "—"}
         </p>
-        <p className="tabular font-mono text-[13px] text-ink-2 max-lg:hidden" title={t("Bu ayki trafik")}>
+        <p className="tabular font-mono text-[13px] text-ink-2 @max-4xl:hidden" title={t("Bu ayki trafik")}>
           {summary ? (
             <>
               {formatBytes(summary.month_bytes)}
@@ -487,7 +487,7 @@ function SiteCard({
       </div>
       {expanded && (
         <div id={panelId} className="border-t border-line bg-surface">
-          <dl className="flex flex-wrap gap-x-8 gap-y-2 border-b border-line px-5 py-3 text-[13.5px] lg:hidden">
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 border-b border-line px-5 py-3 text-[13.5px] @4xl:hidden">
             <div className="flex gap-2">
               <dt className="text-ink-3">{t("Disk")}</dt>
               <dd className="tabular font-mono">{summary?.disk_bytes != null ? formatBytes(summary.disk_bytes) : "—"}</dd>
@@ -519,7 +519,7 @@ function SideRail() {
   const disk = overview.data?.disks.find((item) => item.mount === "/") ?? overview.data?.disks[0];
 
   return (
-    <aside className="flex flex-col gap-5 xl:w-72 xl:shrink-0">
+    <aside className="grid items-start gap-5 md:grid-cols-2 2xl:flex 2xl:w-72 2xl:flex-col 2xl:items-stretch 2xl:shrink-0">
       {current && overview.data && (
         <Panel
           title={t("Sunucu")}
@@ -642,7 +642,7 @@ export function SitesPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
+    <div className="flex flex-col gap-6 2xl:flex-row 2xl:items-start">
       <div className="min-w-0 flex-1">
         <PageHeader
           title={t("Siteler")}
@@ -695,8 +695,8 @@ export function SitesPage() {
                 <EmptyState title={t("Aramanıza uyan site yok")} description={t("Alan adının bir bölümünü ya da hesabın adını yazmayı deneyin.")} />
               </Panel>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-                <div className={classNames(ROW_GRID, "border-b border-line bg-sunken/50 px-3 py-2 text-[12.5px] font-medium text-ink-3 max-lg:hidden sm:px-4")}>
+              <div className="@container overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+                <div className={classNames(ROW_GRID, "border-b border-line bg-sunken/50 px-3 py-2 text-[12.5px] font-medium text-ink-3 @max-4xl:hidden sm:px-4")}>
                   <span />
                   <span>{t("Alan adı")}</span>
                   <span>{t("Durum")}</span>

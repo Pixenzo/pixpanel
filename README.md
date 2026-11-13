@@ -1,55 +1,98 @@
+<div align="center">
+
 # PixPanel
 
-Kendi sunucunuzda çalışan web barındırma paneli. Siteleri, veritabanlarını, postayı, DNS'i ve yedekleri tek yerden yönetir; sertifika yenileme, güncelleme, yedekleme ve sağlık denetimi gibi tekrarlayan işleri kendisi yapar.
+**A self-hosted web hosting control panel that does the routine work for you.**
 
-Bir [Pixenzo](https://github.com/Pixenzo) ürünüdür. Tek bir statik ikili dosya olarak kurulur; arayüz ikilinin içine gömülüdür.
+**English** · [Türkçe](README.tr.md)
 
-## Neler yapar
+![Sites page](docs/screenshots/en/sites.png)
 
-- **Siteler:** nginx, site başına ayrı kullanıcıyla PHP-FPM (PHP 7.4–8.5), Node.js ve Python uygulamaları, statik siteler; Git ile yayınlama, hazırlık ortamı, site kopyalama.
-- **SSL:** Let's Encrypt (HTTP-01 ve joker sertifika için DNS-01), kendi sertifikanızı yükleme, otomatik yenileme, HTTP/3.
-- **Veritabanları:** MariaDB, PostgreSQL, Redis; phpMyAdmin ve Adminer; içe aktarma, uzaktan erişim (TLS zorunlu), silinenler için çöp kutusu.
-- **Posta:** Postfix, Dovecot, Rspamd, Roundcube; DKIM, karantina, posta listeleri, isteğe bağlı virüs taraması.
-- **DNS:** PowerDNS ile yerel bölgeler, DNSSEC, ikincil sunucu; Cloudflare bağlantısı.
-- **Yedekleme:** restic ile yerel, SFTP, S3 ve FTP hedefleri; zamanlanmış planlar, tek tıkla geri yükleme.
-- **WordPress:** kurulum, güncelleme, güvenlik sıkılaştırma, gece bakımı, alt klasördeki kurulumlar.
-- **Hesaplar:** yönetici, bayi, müşteri ve alt hesap; paketler ve kotalar, trafik sınırı, bayi markası, iki adımlı doğrulama, kapsamlı API anahtarları.
-- **Sunucu:** canlı ölçümler, servis yönetimi, güvenlik duvarı ve fail2ban, sistem güncellemeleri, sağlık merkezi ve haftalık özet.
-- **Taşıma:** başka sunucudan SSH ile site taşıma; cPanel, Plesk ve HestiaCP yedek dosyalarından içe aktarma.
+</div>
 
-## Gereksinimler
+PixPanel manages sites, databases, mail, DNS and backups on your own server from one place. The chores a web admin repeats every week are handled by the panel itself: certificates renew, security updates install, backups run on schedule, crashed services restart, and a health check every minute tells you what needs attention and offers a one-click fix.
 
-Debian 13 ya da Ubuntu 26.04, x86_64, root erişimi. Temiz bir sunucu önerilir.
+It is a [Pixenzo](https://github.com/Pixenzo) product. The whole panel is a single static binary with the web interface embedded in it; there is no runtime to install and no separate web server for the panel.
 
-## Kurulum
+> **Status:** version 0.1.0 is feature-complete and tested end to end on clean Debian 13 and Ubuntu 26.04 machines, but no release has been published yet. Until then the panel is installed from source (see [Installation](#installation)).
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Site tools](docs/screenshots/en/site.png) Every tool of a site on one page | ![Server status, dark theme](docs/screenshots/en/server-dark.png) Live server metrics (dark theme) |
+| ![Mailboxes](docs/screenshots/en/mail.png) Mail domains and mailboxes | ![Databases](docs/screenshots/en/databases.png) MariaDB and PostgreSQL |
+| ![Backups](docs/screenshots/en/backups.png) Encrypted backups, one-click restore | ![Sign in](docs/screenshots/en/login.png) Sign-in page, brandable per reseller |
+
+<p align="center"><img src="docs/screenshots/en/mobile.png" width="300" alt="Sites page on a phone"><br>The whole interface works on a phone.</p>
+
+## Features
+
+- **Sites:** nginx, PHP-FPM with a separate Linux user per site (PHP 7.4–8.5), Node.js and Python apps, static sites; deploy with Git, staging environments, site cloning.
+- **SSL:** Let's Encrypt (HTTP-01, and DNS-01 for wildcard certificates), custom certificates, automatic renewal, HTTP/3.
+- **Databases:** MariaDB, PostgreSQL, Redis; phpMyAdmin and Adminer; imports, remote access (TLS required), a trash for deleted databases.
+- **Mail:** Postfix, Dovecot, Rspamd, Roundcube; DKIM, quarantine, mailing lists, optional virus scanning.
+- **DNS:** local zones with PowerDNS, DNSSEC, secondary servers; Cloudflare integration.
+- **Backups:** restic to local, SFTP, S3 and FTP destinations; scheduled plans, one-click restore.
+- **WordPress:** install, update, hardening, nightly maintenance, installs in subfolders.
+- **Accounts:** admin, reseller, customer and sub-accounts; packages and quotas, traffic limits, reseller branding, two-factor authentication, scoped API keys.
+- **Server:** live metrics, service management, firewall and fail2ban, system updates, health center and weekly summary.
+- **Migration:** pull a site from another server over SSH; import from cPanel, Plesk and HestiaCP backup files.
+
+## What the panel does on its own
+
+- Issues certificates for sites that have none and renews them before they expire.
+- Installs operating system security updates daily.
+- Restarts web, database and mail services that crash.
+- Checks every site once a minute and reports the ones that stop responding.
+- Runs backup plans and prunes old copies.
+- Optionally updates WordPress sites overnight, taking a backup first.
+
+Each of these can be switched off on the Overview page.
+
+## Requirements
+
+Debian 13 or Ubuntu 26.04, x86_64, root access. A clean server is recommended.
+
+## Installation
 
 ```
 curl -fsSL https://github.com/Pixenzo/pixpanel/releases/latest/download/install.sh | bash
 ```
 
-Betik sürüm dosyalarının imzasını doğrular, paneli kurar ve ilk yönetici parolasını bir kez gösterir. Panel `https://<sunucu>:8443` adresinde açılır. Aynı komut yeniden çalıştırılırsa paneli son sürüme yükseltir.
+The script verifies the signature of the release files, installs the panel and shows the first admin password once. The panel opens at `https://<server>:8443`. Running the same command again upgrades the panel to the latest release.
 
-Henüz yayınlanmış bir sürüm yoktur; o zamana kadar panel kaynaktan derlenip `install.sh --from-dir <klasör>` ile kurulur (bkz. [`docs/infra/surum-yayinlama.md`](docs/infra/surum-yayinlama.md)).
+No release has been published yet, so for now build from source and install with `install.sh --from-dir <folder>` (see [`docs/infra/surum-yayinlama.md`](docs/infra/surum-yayinlama.md), in Turkish).
 
-## Kaynaktan derleme
+## Building from source
 
-Arka uç Rust (axum, SQLite), arayüz React 19 + Vite + Tailwind 4.
+The backend is Rust (axum, SQLite); the interface is React 19 + Vite + Tailwind 4.
 
 ```
 cd web && pnpm install && pnpm build
 cd ../server && cargo build --release
 ```
 
-Sürüm paketi için: `scripts/release.sh <sürüm>`.
+For a release package: `scripts/release.sh <version>`.
 
-## Belgeler
+## Languages
 
-- [`docs/DURUM.md`](docs/DURUM.md): neyin bittiği, neyin sınandığı, bilinen sınırlar
-- [`docs/YOL-HARITASI.md`](docs/YOL-HARITASI.md): yol haritası
-- [`docs/api.md`](docs/api.md): API uçları
-- [`docs/komut-satiri.md`](docs/komut-satiri.md): `pixpanel` komut satırı
-- [`docs/infra/`](docs/infra): sürüm yayınlama ve felaket kurtarma
+The interface is available in Turkish and English; each user picks a language under Account. Messages produced by the server (error messages, health findings, job logs) are currently Turkish only.
 
-## Lisans
+## Documentation
 
-Lisans henüz belirlenmedi; belirlenene kadar tüm hakları Pixenzo'ya aittir.
+The documentation is written in Turkish.
+
+- [`docs/DURUM.md`](docs/DURUM.md): what is finished, what is tested, known limits
+- [`docs/YOL-HARITASI.md`](docs/YOL-HARITASI.md): roadmap
+- [`docs/api.md`](docs/api.md): API endpoints
+- [`docs/komut-satiri.md`](docs/komut-satiri.md): the `pixpanel` command line
+- [`docs/infra/`](docs/infra): releasing and disaster recovery
+
+## Security
+
+Commands are run as a program plus an argument list, never through a shell; every name coming from a user is validated against an allow-list; user files are accessed by a process running as that user. If you find a vulnerability, please report it privately through GitHub's "Report a vulnerability" button on the Security tab instead of opening a public issue.
+
+## License
+
+No license has been chosen yet; until one is, all rights are reserved by Pixenzo.
